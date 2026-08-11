@@ -251,6 +251,7 @@ export interface components {
       id: string;
       number: number;
       title?: string | null;
+      imageUrl?: string | null;
       publishedAt?: string | null;
     };
     RecentEpisodeDto: {

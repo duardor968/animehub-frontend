@@ -18,8 +18,8 @@ export function EpisodeDownloadButton({
   return (
     <button
       className={`episode-download ${className}`}
-      aria-label={`Preparar episodio ${episodeNumber} de ${title}`}
-      title="Preparar descarga"
+      aria-label={`Descargar episodio ${episodeNumber} de ${title}`}
+      title="Descargar episodio"
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();

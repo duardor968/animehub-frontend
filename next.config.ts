@@ -20,7 +20,7 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "cdn.animeav1.com",
-        pathname: "/thumbnails/**",
+        pathname: "/screenshots/**",
       },
     ],
   },

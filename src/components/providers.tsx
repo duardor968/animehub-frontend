@@ -1,6 +1,7 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Toast } from "@heroui/react";
 import { useState, type ReactNode } from "react";
 import { DownloadProvider } from "./downloads/download-provider";
 
@@ -15,6 +16,10 @@ export function Providers({ children }: { children: ReactNode }) {
   );
   return (
     <QueryClientProvider client={queryClient}>
+      <Toast.Provider
+        placement="bottom end"
+        width="min(26rem, calc(100vw - 2rem))"
+      />
       <DownloadProvider>{children}</DownloadProvider>
     </QueryClientProvider>
   );

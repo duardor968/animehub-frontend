@@ -1,4 +1,10 @@
-import { ExternalLink, Star } from "lucide-react";
+import {
+  CalendarDays,
+  ExternalLink,
+  Film,
+  ShieldAlert,
+  Star,
+} from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -9,6 +15,7 @@ import {
   type AnimeResponse,
   type EpisodePageResponse,
 } from "@/lib/api/client";
+import { formatStatus } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +64,7 @@ export default async function AnimePage({
   );
   const relationGroups = [
     { title: "Línea principal", kinds: ["PREQUEL", "SEQUEL"] },
-    { title: "Historias principales", kinds: ["MAIN_STORY"] },
+    { title: "Historia principal", kinds: ["MAIN_STORY"] },
     { title: "Historias paralelas", kinds: ["SIDE_STORY"] },
     { title: "Resúmenes y especiales", kinds: ["SUMMARY"] },
     { title: "Versiones alternativas", kinds: ["ALTERNATIVE"] },
@@ -76,6 +83,7 @@ export default async function AnimePage({
     image: anime.posterUrl,
     url: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/anime/${anime.slug}`,
   };
+
   return (
     <main>
       <script
@@ -85,59 +93,84 @@ export default async function AnimePage({
         }}
       />
       <section className="anime-hero">
-        <div className="anime-backdrop">
-          <AnimeImage src={anime.backdropUrl} alt="" priority sizes="100vw" />
+        <div className="anime-backdrop" aria-hidden="true">
+          <AnimeImage
+            src={anime.backdropUrl}
+            fallbackSrc={anime.posterUrl}
+            alt=""
+            priority
+            sizes="100vw"
+          />
         </div>
-        <div className="anime-vignette" />
+        <div className="anime-vignette" aria-hidden="true" />
         <div className="anime-hero-inner enter">
           <div className="anime-poster">
             <AnimeImage
               src={anime.posterUrl}
-              alt={anime.title}
+              alt={`Póster de ${anime.title}`}
               priority
-              sizes="220px"
+              sizes="240px"
             />
           </div>
           <div className="anime-copy">
             <div className="anime-kickers">
-              {anime.mature && <span>Contenido sensible</span>}
-              <span>
-                {anime.status === "AIRING"
-                  ? "En emisión"
-                  : anime.status === "FINISHED"
-                    ? "Finalizado"
-                    : "Próximamente"}
+              <span className="status-pill">
+                <i aria-hidden="true" /> {formatStatus(anime.status)}
               </span>
+              {anime.mature && (
+                <span className="mature-pill">
+                  <ShieldAlert size={13} /> Contenido sensible
+                </span>
+              )}
             </div>
             <h1>{anime.title}</h1>
             {anime.alternativeTitle && (
               <p className="alternative-title">{anime.alternativeTitle}</p>
             )}
             <div className="anime-facts">
-              {anime.score && (
+              {anime.score !== null && anime.score !== undefined && (
                 <span>
                   <Star size={14} fill="currentColor" />{" "}
                   {anime.score.toFixed(2)}
+                  {anime.votes ? (
+                    <small>{anime.votes.toLocaleString("es")} votos</small>
+                  ) : null}
                 </span>
               )}
               {anime.startDate && (
-                <span>{new Date(anime.startDate).getUTCFullYear()}</span>
+                <span>
+                  <CalendarDays size={14} />
+                  {new Date(anime.startDate).getUTCFullYear()}
+                </span>
               )}
-              {anime.category && <span>{anime.category.name}</span>}
+              {anime.category && (
+                <span>
+                  <Film size={14} /> {anime.category.name}
+                </span>
+              )}
               {anime.episodeCount && (
                 <span>{anime.episodeCount} episodios</span>
               )}
             </div>
+            {anime.genres.length > 0 && (
+              <div className="genre-list" aria-label="Géneros">
+                {anime.genres.map((genre) => (
+                  <Link href={`/catalogo?genre=${genre.slug}`} key={genre.id}>
+                    {genre.name}
+                  </Link>
+                ))}
+              </div>
+            )}
             <p className="synopsis">{anime.synopsis}</p>
             <div className="hero-actions">
               {anime.trailerUrl && (
                 <a
-                  className="secondary-button"
+                  className="primary-button"
                   href={anime.trailerUrl}
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Tráiler <ExternalLink size={14} />
+                  Ver tráiler <ExternalLink size={14} />
                 </a>
               )}
               <a
@@ -146,13 +179,19 @@ export default async function AnimePage({
                 target="_blank"
                 rel="noreferrer"
               >
-                AnimeAV1 <ExternalLink size={14} />
+                Ficha original <ExternalLink size={14} />
               </a>
             </div>
           </div>
         </div>
       </section>
       <div className="page-shell anime-content">
+        <EpisodeBrowser
+          slug={anime.slug}
+          title={anime.title}
+          initial={episodes.data}
+          totalRecords={episodes.meta.totalRecords}
+        />
         {relationGroups.map((group) =>
           group.relations.length > 0 ? (
             <RelationSection
@@ -162,12 +201,6 @@ export default async function AnimePage({
             />
           ) : null,
         )}
-        <EpisodeBrowser
-          slug={anime.slug}
-          title={anime.title}
-          initial={episodes.data}
-          totalRecords={episodes.meta.totalRecords}
-        />
       </div>
     </main>
   );
@@ -192,7 +225,10 @@ function RelationSection({
   return (
     <section className="relations-section">
       <div className="section-header">
-        <h2>{title}</h2>
+        <div>
+          <span className="eyebrow">Conexiones</span>
+          <h2>{title}</h2>
+        </div>
       </div>
       <div className="relation-strip">
         {relations.map((relation) => (
@@ -200,13 +236,16 @@ function RelationSection({
             href={`/anime/${relation.anime.slug}`}
             key={`${relation.kind}-${relation.anime.slug}`}
           >
-            <span>{labels[relation.kind] ?? relation.kind}</span>
-            <strong>{relation.anime.title}</strong>
-            {relation.anime.startDate && (
-              <small>
-                {new Date(relation.anime.startDate).getUTCFullYear()}
-              </small>
-            )}
+            <div className="relation-poster">
+              <AnimeImage src={relation.anime.posterUrl} alt="" sizes="80px" />
+            </div>
+            <span>
+              <small>{labels[relation.kind] ?? relation.kind}</small>
+              <strong>{relation.anime.title}</strong>
+              {relation.anime.startDate && (
+                <em>{new Date(relation.anime.startDate).getUTCFullYear()}</em>
+              )}
+            </span>
           </Link>
         ))}
       </div>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { components } from "@/lib/api/generated";
+import { formatEpisodeNumber, formatRelativeTime } from "@/lib/format";
 import { AnimeImage } from "../anime-image";
 import { EpisodeDownloadButton } from "../downloads/episode-download-button";
 
@@ -17,16 +18,22 @@ export function RecentEpisodes({ episodes }: { episodes: RecentEpisode[] }) {
           >
             <div className="recent-image">
               <AnimeImage
-                src={anime.backdropUrl}
-                alt={anime.title}
-                sizes="(max-width: 700px) 100vw, 33vw"
+                src={episode.imageUrl}
+                fallbackSrc={anime.posterUrl}
+                alt={`Fotograma del episodio ${episode.number} de ${anime.title}`}
+                sizes="(max-width: 700px) 92vw, (max-width: 1100px) 45vw, 23vw"
               />
+              <div className="recent-shade" />
+              <div className="episode-badge">
+                <span>EP</span>
+                <strong>{formatEpisodeNumber(episode.number)}</strong>
+              </div>
+              <time dateTime={episode.publishedAt ?? undefined}>
+                {formatRelativeTime(episode.publishedAt)}
+              </time>
             </div>
-            <div className="recent-shade" />
-            <div className="recent-copy">
-              <span>Episodio {episode.number}</span>
-              <h3>{anime.title}</h3>
-            </div>
+            <h3>{anime.title}</h3>
+            {episode.title && <p>{episode.title}</p>}
           </Link>
           <EpisodeDownloadButton
             slug={anime.slug}

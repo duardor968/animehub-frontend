@@ -2,41 +2,62 @@ import Link from "next/link";
 import { FeaturedHero } from "@/components/home/featured-hero";
 import { RecentEpisodes } from "@/components/home/recent-episodes";
 import { PosterGrid } from "@/components/poster-grid";
-import { apiFetch, type HomeResponse } from "@/lib/api/client";
+import {
+  ApiConnectionError,
+  apiFetch,
+  type HomeResponse,
+} from "@/lib/api/client";
 
 export const dynamic = "force-dynamic";
 
 async function loadHome() {
   try {
-    return await apiFetch<HomeResponse>("/home");
-  } catch {
-    return null;
+    return {
+      response: await apiFetch<HomeResponse>("/home"),
+      apiUnavailable: false,
+    };
+  } catch (error) {
+    return {
+      response: null,
+      apiUnavailable: error instanceof ApiConnectionError,
+    };
   }
 }
 
 export default async function HomePage() {
-  const response = await loadHome();
+  const { response, apiUnavailable } = await loadHome();
   if (!response) {
     return (
       <main className="page-shell error-state">
         <div>
-          <h1>La fuente no responde</h1>
-          <p>AnimeHub volverá a intentarlo cuando recargues.</p>
+          <h1>
+            {apiUnavailable
+              ? "AnimeHub todavía está iniciando"
+              : "El contenido no está disponible"}
+          </h1>
+          <p>
+            {apiUnavailable
+              ? "Vuelve a cargar en unos segundos."
+              : "La última copia no pudo recuperarse."}
+          </p>
         </div>
       </main>
     );
   }
 
-  const featured = response.data.featured[0] ?? response.data.recentAnime[0];
+  const featured =
+    response.data.featured.length > 0
+      ? response.data.featured
+      : response.data.recentAnime.slice(0, 3);
   return (
     <main>
-      {featured && <FeaturedHero anime={featured} />}
+      {featured.length > 0 && <FeaturedHero anime={featured} />}
       <div className="page-shell home-sections">
         <section className="enter-late">
           <div className="section-header">
             <div>
-              <span className="eyebrow">Ahora</span>
-              <h2>Episodios recientes</h2>
+              <span className="eyebrow">Estrenos</span>
+              <h2>Recién publicados</h2>
             </div>
             <Link className="quiet-link" href="/horario">
               Ver horario
@@ -47,8 +68,8 @@ export default async function HomePage() {
         <section>
           <div className="section-header">
             <div>
-              <span className="eyebrow">Descubrir</span>
-              <h2>Añadidos al catálogo</h2>
+              <span className="eyebrow">Catálogo</span>
+              <h2>Nuevas incorporaciones</h2>
             </div>
             <Link className="quiet-link" href="/catalogo">
               Catálogo completo
