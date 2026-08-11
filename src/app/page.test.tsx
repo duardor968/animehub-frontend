@@ -1,15 +1,16 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import Home from "./page";
+import { Brand } from "@/components/brand";
 
-describe("Home", () => {
-  it("presents the AnimeHub foundation", () => {
-    render(<Home />);
+describe("Brand", () => {
+  it("provides one accessible route home", () => {
+    render(<Brand />);
 
-    expect(screen.getByText("AnimeHub")).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: /anime,\s*sin fricción/i }),
-    ).toBeInTheDocument();
+      screen.getByRole("link", { name: "AnimeHub, inicio" }),
+    ).toHaveAttribute("href", "/");
+    expect(screen.getByText("Anime")).toBeInTheDocument();
+    expect(screen.getByText("Hub")).toBeInTheDocument();
   });
 });
