@@ -240,18 +240,18 @@ export function EpisodeBrowser({
                 {checked && (
                   <span
                     aria-hidden="true"
-                    className="pointer-events-none absolute inset-0 z-20 rounded-t-2xl border-x-2 border-t-2 border-[#2F81F7]"
+                    className="pointer-events-none absolute inset-0 z-20 rounded-2xl ring-2 ring-inset ring-[#2F81F7]"
                   />
                 )}
                 <Button
                   isIconOnly
                   variant="secondary"
-                  className={`absolute right-0 top-0 z-30 h-13 w-13 min-w-13 rounded-none p-0 text-[#F3F8FC] shadow-none [clip-path:polygon(0_0,100%_0,100%_100%)] transition-[opacity,transform,background-color] duration-300 ease-[cubic-bezier(.22,1,.36,1)] ${checked ? "translate-x-0 translate-y-0 bg-[#2F81F7] opacity-100 hover:bg-[#2F81F7]" : "translate-x-[65%] -translate-y-[65%] bg-[#182235] opacity-0 group-hover:translate-x-0 group-hover:translate-y-0 group-hover:opacity-100 hover:bg-[#202D44] focus-visible:translate-x-0 focus-visible:translate-y-0 focus-visible:opacity-100 [@media(hover:none)]:translate-x-0 [@media(hover:none)]:translate-y-0 [@media(hover:none)]:opacity-100"}`}
+                  className={`absolute -right-px -top-px z-30 h-[54px] w-[54px] min-w-[54px] rounded-none p-0 text-[#F3F8FC] shadow-none [clip-path:polygon(0_0,100%_0,100%_100%)] transition-[opacity,transform,background-color] duration-300 ease-[cubic-bezier(.22,1,.36,1)] ${checked ? "translate-x-0 translate-y-0 bg-[#2F81F7] opacity-100 hover:bg-[#2F81F7]" : "translate-x-[65%] -translate-y-[65%] bg-[#182235] opacity-0 group-hover:translate-x-0 group-hover:translate-y-0 group-hover:opacity-100 hover:bg-[#202D44] focus-visible:translate-x-0 focus-visible:translate-y-0 focus-visible:opacity-100 [@media(hover:none)]:translate-x-0 [@media(hover:none)]:translate-y-0 [@media(hover:none)]:opacity-100"}`}
                   aria-label={`${checked ? "Quitar" : "Seleccionar"} episodio ${episode.number}`}
                   aria-pressed={checked}
                   onPress={() => toggleEpisode(episode.number)}
                 >
-                  <span className="absolute right-2 top-2 grid size-4 place-items-center">
+                  <span className="absolute right-[10px] top-[10px] grid size-4 place-items-center">
                     {checked ? (
                       <Check size={15} strokeWidth={2.8} />
                     ) : (
@@ -289,15 +289,15 @@ export function EpisodeBrowser({
 
       {selected.length > 0 && (
         <div
-          className="fixed inset-x-1/2 bottom-5 z-40 flex w-[min(92vw,620px)] -translate-x-1/2 items-center gap-4 rounded-2xl bg-[#111A2A]/96 p-3 pl-5 shadow-[0_24px_80px_rgba(0,0,0,.62)] backdrop-blur-xl max-md:bottom-24"
+          className="fixed inset-x-1/2 bottom-5 z-40 flex w-[min(92vw,620px)] -translate-x-1/2 items-center gap-4 rounded-2xl bg-[#111A2A]/96 p-3 pl-5 shadow-[0_24px_80px_rgba(0,0,0,.62)] backdrop-blur-xl max-md:bottom-24 max-sm:gap-2 max-sm:p-2.5 max-sm:pl-3"
           role="status"
         >
-          <span>
+          <span className="max-sm:text-xs">
             <strong>{selected.length}</strong> seleccionado
             {selected.length === 1 ? "" : "s"}
           </span>
           <Button
-            className="ml-auto rounded-full bg-[#2F81F7] px-5 font-semibold text-white shadow-none hover:bg-[#4B93F7]"
+            className="ml-auto rounded-full bg-[#2F81F7] px-5 font-semibold text-white shadow-none hover:bg-[#4B93F7] max-sm:px-3 max-sm:text-xs"
             onPress={() =>
               openDownload({ slug, title, episodeNumbers: selected })
             }
@@ -306,7 +306,7 @@ export function EpisodeBrowser({
           </Button>
           <Button
             variant="ghost"
-            className="min-h-10 px-2 text-xs font-semibold text-[#8FA3B4] shadow-none hover:text-[#F3F8FC]"
+            className="min-h-10 px-2 text-xs font-semibold text-[#8FA3B4] shadow-none hover:text-[#F3F8FC] max-sm:px-1"
             onPress={() => setSelected([])}
           >
             Limpiar

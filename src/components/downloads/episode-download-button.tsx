@@ -24,6 +24,8 @@ export function EpisodeDownloadButton({
         isIconOnly
         variant="ghost"
         className={`h-11 w-11 min-w-11 rounded-full bg-[#2F81F7] text-white shadow-[0_12px_34px_rgba(47,129,247,.32)] hover:bg-[#4B93F7] active:scale-95 ${className}`}
+        style={pending ? { opacity: 1, transform: "scale(1)" } : undefined}
+        data-processing={pending || undefined}
         aria-label={`Descargar episodio ${episodeNumber} de ${title}`}
         aria-busy={pending}
         isDisabled={pending}
