@@ -159,7 +159,7 @@ export function EpisodeBrowser({
         </ProgressBar>
       )}
 
-      <div className="mt-5 flex min-h-10 items-center">
+      <div className="mt-5 flex min-h-10 items-center gap-2.5">
         <Checkbox
           isSelected={allVisible}
           isIndeterminate={
@@ -175,13 +175,16 @@ export function EpisodeBrowser({
           }
           className="text-sm text-[#C4D2DE]"
         >
-          <Checkbox.Control>
-            <Checkbox.Indicator />
-          </Checkbox.Control>
-          <Checkbox.Content>
-            Seleccionar los {visibleNumbers.length} episodios de esta página
+          <Checkbox.Content className="gap-2.5">
+            <Checkbox.Control>
+              <Checkbox.Indicator />
+            </Checkbox.Control>
+            Seleccionar todo
           </Checkbox.Content>
         </Checkbox>
+        <span className="text-xs text-[#718596] max-sm:hidden">
+          {visibleNumbers.length} episodios en esta página
+        </span>
         {selected.length > 0 && (
           <span className="ml-auto text-xs text-[#69A7FF]">
             {selected.length} seleccionado{selected.length === 1 ? "" : "s"}
@@ -237,16 +240,18 @@ export function EpisodeBrowser({
                     {formatRelativeTime(episode.publishedAt)}
                   </time>
                 </Card.Content>
-                {checked && (
-                  <span
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-0 z-20 rounded-2xl ring-2 ring-inset ring-[#2F81F7]"
-                  />
-                )}
+              </Card>
+              {checked && (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 z-20 rounded-2xl ring-2 ring-inset ring-[#2F81F7]"
+                />
+              )}
+              <div className="pointer-events-none absolute inset-0 z-30 overflow-hidden rounded-2xl">
                 <Button
                   isIconOnly
                   variant="secondary"
-                  className={`absolute -right-px -top-px z-30 h-[54px] w-[54px] min-w-[54px] rounded-none p-0 text-[#F3F8FC] shadow-none [clip-path:polygon(0_0,100%_0,100%_100%)] transition-[opacity,transform,background-color] duration-300 ease-[cubic-bezier(.22,1,.36,1)] ${checked ? "translate-x-0 translate-y-0 bg-[#2F81F7] opacity-100 hover:bg-[#2F81F7]" : "translate-x-[65%] -translate-y-[65%] bg-[#182235] opacity-0 group-hover:translate-x-0 group-hover:translate-y-0 group-hover:opacity-100 hover:bg-[#202D44] focus-visible:translate-x-0 focus-visible:translate-y-0 focus-visible:opacity-100 [@media(hover:none)]:translate-x-0 [@media(hover:none)]:translate-y-0 [@media(hover:none)]:opacity-100"}`}
+                  className={`pointer-events-auto absolute right-0 top-0 h-[52px] w-[52px] min-w-[52px] rounded-none p-0 text-[#F3F8FC] shadow-none [clip-path:polygon(0_0,100%_0,100%_100%)] transition-[opacity,transform,background-color] duration-300 ease-[cubic-bezier(.22,1,.36,1)] ${checked ? "translate-x-0 translate-y-0 bg-[#2F81F7] opacity-100 hover:bg-[#2F81F7]" : "translate-x-[65%] -translate-y-[65%] bg-[#182235] opacity-0 group-hover:translate-x-0 group-hover:translate-y-0 group-hover:opacity-100 hover:bg-[#202D44] focus-visible:translate-x-0 focus-visible:translate-y-0 focus-visible:opacity-100 [@media(hover:none)]:translate-x-0 [@media(hover:none)]:translate-y-0 [@media(hover:none)]:opacity-100"}`}
                   aria-label={`${checked ? "Quitar" : "Seleccionar"} episodio ${episode.number}`}
                   aria-pressed={checked}
                   onPress={() => toggleEpisode(episode.number)}
@@ -259,7 +264,7 @@ export function EpisodeBrowser({
                     )}
                   </span>
                 </Button>
-              </Card>
+              </div>
             </div>
           );
         })}

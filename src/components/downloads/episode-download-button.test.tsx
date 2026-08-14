@@ -31,9 +31,9 @@ describe("EpisodeDownloadButton", () => {
     );
 
     const button = screen.getByRole("button", {
-      name: "Descargar episodio 2 de Anime",
+      name: /Descargar episodio 2 de Anime/,
     });
-    expect(button).toHaveAttribute("data-processing", "true");
+    expect(button).toHaveAttribute("data-pending", "true");
     expect(button).toHaveStyle({ opacity: "1", transform: "scale(1)" });
     expect(
       screen.getByRole("progressbar", { name: "Preparando descarga" }),
