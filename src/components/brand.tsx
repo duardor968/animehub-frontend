@@ -1,27 +1,30 @@
+import Image from "next/image";
 import Link from "next/link";
 
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
-    <Link className="brand" href="/" aria-label="AnimeHub, inicio">
-      <svg
-        aria-hidden="true"
-        className="brand-mark"
-        viewBox="0 0 44 44"
-        fill="none"
-      >
-        <path
-          d="M7 35 18.7 8h6.4L37 35h-7.1l-2.2-5.8H15.6L13.4 35H7Z"
-          fill="currentColor"
-        />
-        <path d="M17.9 23.2h7.5l-3.7-9.8-3.8 9.8Z" fill="#050A11" />
-        <path d="M29.4 10.5h6v23.9h-6z" fill="#050A11" />
-        <path d="M25.5 20.2h12v6h-12z" fill="#050A11" />
-      </svg>
-      {!compact && (
-        <span className="brand-wordmark">
-          Anime<span>Hub</span>
-        </span>
-      )}
+    <Link
+      className={
+        compact
+          ? "flex h-11 w-11 shrink-0 items-center overflow-hidden rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5FA8FF]"
+          : "flex h-11 w-[148px] shrink-0 items-center overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5FA8FF] max-sm:w-[132px]"
+      }
+      href="/"
+      aria-label="AnimeHub, inicio"
+    >
+      <Image
+        src="/brand/animehub-lockup.png"
+        width={compact ? 48 : 148}
+        height={compact ? 11 : 34}
+        sizes={compact ? "44px" : "148px"}
+        priority
+        alt="AnimeHub"
+        className={
+          compact
+            ? "h-auto w-12 max-w-none object-contain object-left"
+            : "h-auto w-[148px] max-w-full object-contain object-left"
+        }
+      />
     </Link>
   );
 }

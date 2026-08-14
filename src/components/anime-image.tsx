@@ -1,45 +1,61 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+
+const neutralImage = "/brand/cinematic-fallback.png";
 
 export function AnimeImage({
   src,
   fallbackSrc,
   alt,
-  fill = true,
   priority = false,
   sizes = "(max-width: 600px) 50vw, 20vw",
 }: {
   src?: string | null;
   fallbackSrc?: string | null;
   alt: string;
-  fill?: boolean;
   priority?: boolean;
   sizes?: string;
 }) {
-  const [failedSource, setFailedSource] = useState(false);
-  const [failedFallback, setFailedFallback] = useState(false);
-  const activeSource = failedSource ? fallbackSrc : src;
-  if (!activeSource || (failedSource && failedFallback))
-    return (
-      <span className="image-fallback" aria-label={`Sin imagen para ${alt}`} />
-    );
+  const sources = useMemo(
+    () =>
+      Array.from(
+        new Set([src, fallbackSrc, neutralImage].filter(Boolean)),
+      ) as string[],
+    [fallbackSrc, src],
+  );
+  const [failed, setFailed] = useState<string[]>([]);
+  const [loadedSource, setLoadedSource] = useState<string | null>(null);
+  const activeSource =
+    sources.find((source) => !failed.includes(source)) ?? neutralImage;
+  const loaded = loadedSource === activeSource;
+
   return (
-    <Image
-      src={activeSource}
-      alt={alt}
-      fill={fill}
-      priority={priority}
-      loading={priority ? "eager" : "lazy"}
-      sizes={sizes}
-      onError={() => {
-        if (!failedSource && fallbackSrc && fallbackSrc !== src) {
-          setFailedSource(true);
-        } else {
-          setFailedFallback(true);
-        }
-      }}
-    />
+    <span
+      className={loaded ? "anime-image is-loaded" : "anime-image is-loading"}
+    >
+      <span className="image-skeleton" aria-hidden="true" />
+      <Image
+        key={activeSource}
+        src={activeSource}
+        alt={alt}
+        fill
+        priority={priority}
+        loading={priority ? "eager" : "lazy"}
+        sizes={sizes}
+        unoptimized
+        referrerPolicy="no-referrer"
+        onLoad={() => setLoadedSource(activeSource)}
+        onError={() => {
+          setLoadedSource(null);
+          setFailed((current) =>
+            current.includes(activeSource)
+              ? current
+              : [...current, activeSource],
+          );
+        }}
+      />
+    </span>
   );
 }

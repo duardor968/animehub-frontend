@@ -31,25 +31,35 @@ export default async function CatalogPage({
   if (!params.has("page")) params.set("page", "1");
   const response = await apiFetch<CatalogResponse>(`/catalog?${params}`);
   return (
-    <main className="page-shell">
-      <div className="section-header enter">
+    <main className="mx-auto w-full max-w-[1600px] px-6 py-12 max-sm:px-4 max-sm:pb-28 max-sm:pt-9">
+      <div className="mb-10">
         <div>
-          <span className="eyebrow">Directorio</span>
-          <h1>Catálogo</h1>
-          <p>{response.meta.totalRecords} obras disponibles desde AnimeAV1.</p>
+          <span className="text-[10px] font-bold uppercase tracking-[.18em] text-[#2F81F7]">
+            Directorio
+          </span>
+          <h1 className="mt-2 font-(family-name:--font-display) text-5xl font-semibold tracking-[-.04em] text-[#F3F8FC] max-sm:text-4xl">
+            Catálogo
+          </h1>
+          <p className="mt-3 text-sm text-[#8FA3B4]">
+            {response.meta.totalRecords} obras disponibles.
+          </p>
         </div>
       </div>
       <CatalogFilters
         categories={response.meta.categories}
         genres={response.meta.genres}
         years={response.meta.years}
-      />
-      <PosterGrid anime={response.data} />
-      <Pagination
-        page={response.meta.page}
-        totalPages={response.meta.totalPages}
-        params={params}
-      />
+        totalRecords={response.meta.totalRecords}
+        footer={
+          <Pagination
+            page={response.meta.page}
+            totalPages={response.meta.totalPages}
+            params={params}
+          />
+        }
+      >
+        <PosterGrid anime={response.data} />
+      </CatalogFilters>
     </main>
   );
 }

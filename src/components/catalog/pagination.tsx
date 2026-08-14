@@ -16,20 +16,31 @@ export function Pagination({
     return `?${next}`;
   };
   return (
-    <nav className="pagination" aria-label="Paginación">
+    <nav
+      className="mt-10 flex items-center justify-center gap-3"
+      aria-label="Paginación"
+    >
       {page > 1 ? (
-        <Link href={href(page - 1)} aria-label="Página anterior">
+        <Link
+          className="grid size-11 place-items-center rounded-lg border border-white/10 bg-[#0B1621] text-[#F3F8FC] transition-colors hover:border-[#5FA8FF]/45 hover:bg-[#102130]"
+          href={href(page - 1)}
+          aria-label="Página anterior"
+        >
           <ChevronLeft size={17} />
         </Link>
       ) : (
         <span />
       )}
-      <p>
+      <p className="min-w-20 text-center text-sm text-[#8FA3B4]">
         <strong>{page}</strong>
         <span> / {totalPages}</span>
       </p>
       {page < totalPages ? (
-        <Link href={href(page + 1)} aria-label="Página siguiente">
+        <Link
+          className="grid size-11 place-items-center rounded-lg border border-white/10 bg-[#0B1621] text-[#F3F8FC] transition-colors hover:border-[#5FA8FF]/45 hover:bg-[#102130]"
+          href={href(page + 1)}
+          aria-label="Página siguiente"
+        >
           <ChevronRight size={17} />
         </Link>
       ) : (

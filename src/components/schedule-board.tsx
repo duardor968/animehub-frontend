@@ -1,8 +1,10 @@
 "use client";
 
+import { Tabs } from "@heroui/react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { components } from "@/lib/api/generated";
+import { AnimeImage } from "./anime-image";
 
 type ScheduleEntry = components["schemas"]["ScheduleEntryDto"];
 const days = [
@@ -32,40 +34,66 @@ export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
     return groups;
   }, [entries]);
   return (
-    <div className="schedule-board">
-      <div className="day-tabs" role="tablist" aria-label="Días de la semana">
-        {days.map((day, index) => (
-          <button
-            role="tab"
-            aria-selected={selected === index}
-            key={day}
-            onClick={() => setSelected(index)}
-          >
-            {day.slice(0, 3)}
-          </button>
-        ))}
-      </div>
-      <div className="schedule-list" role="tabpanel">
+    <div>
+      <Tabs
+        aria-label="Días de la semana"
+        selectedKey={String(selected)}
+        onSelectionChange={(key) => setSelected(Number(key))}
+        className="w-full"
+      >
+        <Tabs.ListContainer className="mb-6 overflow-x-auto border-b border-white/8">
+          <Tabs.List className="min-w-max gap-1 bg-transparent p-0">
+            {days.map((day, index) => (
+              <Tabs.Tab
+                id={String(index)}
+                key={day}
+                className="min-h-12 min-w-24 rounded-none border-b-2 border-transparent px-4 text-sm capitalize text-[#8FA3B4] data-[selected=true]:border-[#2F81F7] data-[selected=true]:text-[#F3F8FC]"
+              >
+                {day}
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
+        </Tabs.ListContainer>
+      </Tabs>
+      <div
+        className="divide-y divide-white/8 border-y border-white/8"
+        role="tabpanel"
+      >
         {grouped[selected].map((entry) => (
           <Link
             href={`/anime/${entry.anime.slug}`}
-            className="schedule-row"
+            className="grid min-h-24 grid-cols-[72px_128px_1fr] items-center gap-5 py-3 text-[#F3F8FC] transition-colors hover:bg-[#0B1621]/55 focus-visible:bg-[#0B1621]/55 focus-visible:outline-none max-sm:grid-cols-[56px_88px_1fr] max-sm:gap-3"
             key={entry.anime.id}
           >
-            <time dateTime={entry.basisPublishedAt}>
+            <time
+              className="font-mono text-sm font-semibold text-[#5FA8FF]"
+              dateTime={entry.basisPublishedAt}
+            >
               {new Intl.DateTimeFormat("es", {
                 hour: "2-digit",
                 minute: "2-digit",
               }).format(new Date(entry.basisPublishedAt))}
             </time>
-            <span>
-              <strong>{entry.anime.title}</strong>
-              <small>Último: episodio {entry.latestEpisode.number}</small>
+            <div className="relative aspect-video overflow-hidden rounded-md bg-[#0B1621]">
+              <AnimeImage
+                src={entry.latestEpisode.imageUrl}
+                fallbackSrc={entry.anime.backdropUrl ?? entry.anime.posterUrl}
+                alt=""
+                sizes="120px"
+              />
+            </div>
+            <span className="min-w-0">
+              <strong className="block truncate text-sm font-semibold">
+                {entry.anime.title}
+              </strong>
+              <small className="mt-1 block text-xs text-[#8FA3B4]">
+                Último: episodio {entry.latestEpisode.number}
+              </small>
             </span>
           </Link>
         ))}
         {grouped[selected].length === 0 && (
-          <p className="empty-copy">
+          <p className="py-16 text-center text-sm text-[#8FA3B4]">
             Sin publicaciones observadas para este día.
           </p>
         )}

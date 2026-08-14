@@ -7,8 +7,19 @@ export interface DownloadPreferences {
   audio: AudioPreference;
   providers: DownloadProviderId[];
   destination: DownloadDestination;
-  quickSend: boolean;
 }
+
+export type DownloadActivityStatus =
+  | "resolving"
+  | "processing"
+  | "sending"
+  | "handed-off"
+  | "waiting-device"
+  | "success"
+  | "partial"
+  | "error"
+  | "cancelled"
+  | "recoverable";
 
 export interface DownloadRequest {
   slug: string;

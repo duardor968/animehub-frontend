@@ -10,7 +10,6 @@ describe("Brand", () => {
     expect(
       screen.getByRole("link", { name: "AnimeHub, inicio" }),
     ).toHaveAttribute("href", "/");
-    expect(screen.getByText("Anime")).toBeInTheDocument();
-    expect(screen.getByText("Hub")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "AnimeHub" })).toBeInTheDocument();
   });
 });

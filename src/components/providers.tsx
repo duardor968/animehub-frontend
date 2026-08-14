@@ -19,6 +19,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <Toast.Provider
         placement="bottom end"
         width="min(26rem, calc(100vw - 2rem))"
+        className="max-sm:!bottom-24"
       />
       <DownloadProvider>{children}</DownloadProvider>
     </QueryClientProvider>

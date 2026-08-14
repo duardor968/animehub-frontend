@@ -55,40 +55,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/catalog": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Busca y filtra el catálogo paginado */
-    get: operations["CatalogController_getCatalog"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/catalog/suggestions": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Devuelve hasta ocho sugerencias de búsqueda */
-    get: operations["CatalogController_getSuggestions"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/anime/{slug}": {
     parameters: {
       query?: never;
@@ -115,6 +81,40 @@ export interface paths {
     };
     /** Devuelve episodios en páginas de cincuenta */
     get: operations["AnimeController_getEpisodes"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/catalog": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Busca y filtra el catálogo paginado */
+    get: operations["CatalogController_getCatalog"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/catalog/suggestions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Devuelve hasta ocho sugerencias de búsqueda */
+    get: operations["CatalogController_getSuggestions"];
     put?: never;
     post?: never;
     delete?: never;
@@ -234,6 +234,22 @@ export interface components {
       name: string;
       slug: string;
     };
+    FeaturedAnimeDto: {
+      id: string;
+      slug: string;
+      title: string;
+      synopsis?: string | null;
+      posterUrl?: string | null;
+      backdropUrl?: string | null;
+      category?: components["schemas"]["CategoryDto"] | null;
+      /** @enum {string} */
+      status: "UNKNOWN" | "AIRING" | "FINISHED" | "UPCOMING";
+      startDate?: string | null;
+      mature: boolean;
+      genres: components["schemas"]["CategoryDto"][];
+      episodeCount?: number | null;
+      trailerUrl?: string | null;
+    };
     AnimeSummaryDto: {
       id: string;
       slug: string;
@@ -259,7 +275,7 @@ export interface components {
       episode: components["schemas"]["EpisodeDto"];
     };
     HomeDataDto: {
-      featured: components["schemas"]["AnimeSummaryDto"][];
+      featured: components["schemas"]["FeaturedAnimeDto"][];
       recentEpisodes: components["schemas"]["RecentEpisodeDto"][];
       recentAnime: components["schemas"]["AnimeSummaryDto"][];
     };
@@ -271,25 +287,6 @@ export interface components {
     HomeResponseDto: {
       data: components["schemas"]["HomeDataDto"];
       meta: components["schemas"]["FreshnessDto"];
-    };
-    CatalogMetaDto: {
-      fetchedAt: string;
-      nextRefreshAt: string;
-      stale: boolean;
-      page: number;
-      perPage: number;
-      totalPages: number;
-      totalRecords: number;
-      categories: components["schemas"]["CategoryDto"][];
-      genres: components["schemas"]["CategoryDto"][];
-      years: number[];
-    };
-    CatalogResponseDto: {
-      data: components["schemas"]["AnimeSummaryDto"][];
-      meta: components["schemas"]["CatalogMetaDto"];
-    };
-    SuggestionResponseDto: {
-      data: components["schemas"]["AnimeSummaryDto"][];
     };
     RelationDto: {
       /** @enum {string} */
@@ -340,6 +337,25 @@ export interface components {
     EpisodePageResponseDto: {
       data: components["schemas"]["EpisodeDto"][];
       meta: components["schemas"]["EpisodePageMetaDto"];
+    };
+    CatalogMetaDto: {
+      fetchedAt: string;
+      nextRefreshAt: string;
+      stale: boolean;
+      page: number;
+      perPage: number;
+      totalPages: number;
+      totalRecords: number;
+      categories: components["schemas"]["CategoryDto"][];
+      genres: components["schemas"]["CategoryDto"][];
+      years: number[];
+    };
+    CatalogResponseDto: {
+      data: components["schemas"]["AnimeSummaryDto"][];
+      meta: components["schemas"]["CatalogMetaDto"];
+    };
+    SuggestionResponseDto: {
+      data: components["schemas"]["AnimeSummaryDto"][];
     };
     ScheduleEntryDto: {
       anime: components["schemas"]["AnimeSummaryDto"];
@@ -471,44 +487,6 @@ export interface operations {
       };
     };
   };
-  CatalogController_getCatalog: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CatalogResponseDto"];
-        };
-      };
-    };
-  };
-  CatalogController_getSuggestions: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SuggestionResponseDto"];
-        };
-      };
-    };
-  };
   AnimeController_getAnime: {
     parameters: {
       query?: never;
@@ -547,6 +525,44 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["EpisodePageResponseDto"];
+        };
+      };
+    };
+  };
+  CatalogController_getCatalog: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CatalogResponseDto"];
+        };
+      };
+    };
+  };
+  CatalogController_getSuggestions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SuggestionResponseDto"];
         };
       };
     };

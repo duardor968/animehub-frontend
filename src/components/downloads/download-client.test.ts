@@ -39,7 +39,9 @@ describe("download clients", () => {
     const devices = await connectMyJd("user@example.com", "password");
 
     expect(devices).toHaveLength(2);
-    expect(sessionStorage.getItem("animehub.myjd.session")).toBe("active");
+    expect(
+      JSON.parse(sessionStorage.getItem("animehub.myjd.session") ?? "{}"),
+    ).toEqual(expect.objectContaining({ active: true }));
     await sendToMyJd("second", "Fixture Anime", ["https://example.com/one"]);
     expect(mocks.addSecond).toHaveBeenCalledWith({
       links: "https://example.com/one",
@@ -49,20 +51,35 @@ describe("download clients", () => {
     expect(mocks.addFirst).not.toHaveBeenCalled();
   });
 
-  it("submits Click'n'Load directly to the loopback service", () => {
-    const submit = vi
-      .spyOn(HTMLFormElement.prototype, "submit")
-      .mockImplementation(() => undefined);
+  it("verifies Click'n'Load and waits for its acknowledgement", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("JDownloader", { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
 
-    sendToClickNLoad("Fixture Anime", ["https://example.com/one"]);
+    await expect(
+      sendToClickNLoad("Fixture Anime", ["https://example.com/one"]),
+    ).resolves.toEqual({ acceptedAt: expect.any(String) });
 
-    const form = document.querySelector(
-      'form[action="http://127.0.0.1:9666/flash/add"]',
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:9666/flash/");
+    const request = fetchMock.mock.calls[1];
+    expect(request[0]).toBe("http://127.0.0.1:9666/flash/add");
+    expect(request[1].method).toBe("POST");
+    expect(request[1].body.toString()).toContain(
+      "urls=https%3A%2F%2Fexample.com%2Fone",
     );
-    expect(submit).toHaveBeenCalledOnce();
-    expect(form).not.toBeNull();
-    expect(new FormData(form as HTMLFormElement).get("urls")).toBe(
-      "https://example.com/one",
+  });
+
+  it("reports when the local JDownloader service is unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("fetch failed")),
     );
+
+    await expect(
+      sendToClickNLoad("Fixture Anime", ["https://example.com/one"]),
+    ).rejects.toThrow("JDownloader no aceptó la solicitud");
   });
 });

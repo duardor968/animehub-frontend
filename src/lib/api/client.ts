@@ -1,6 +1,7 @@
 import type { components } from "./generated";
 
 export type AnimeSummary = components["schemas"]["AnimeSummaryDto"];
+export type FeaturedAnime = components["schemas"]["FeaturedAnimeDto"];
 export type Episode = components["schemas"]["EpisodeDto"];
 export type HomeResponse = components["schemas"]["HomeResponseDto"];
 export type CatalogResponse = components["schemas"]["CatalogResponseDto"];
@@ -17,6 +18,13 @@ export class ApiConnectionError extends Error {
   constructor() {
     super("AnimeHub API is unavailable.");
     this.name = "ApiConnectionError";
+  }
+}
+
+export class ApiTimeoutError extends Error {
+  constructor() {
+    super("La operación superó el tiempo de espera.");
+    this.name = "ApiTimeoutError";
   }
 }
 
@@ -63,7 +71,13 @@ export async function apiFetch<T>(
         cache: init.cache ?? "no-store",
       });
       break;
-    } catch {
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.name === "TimeoutError" || error.name === "AbortError")
+      ) {
+        throw new ApiTimeoutError();
+      }
       if (delay === retryDelays.at(-1)) throw new ApiConnectionError();
     }
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Search, X } from "lucide-react";
+import { SearchField } from "@heroui/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -47,7 +47,14 @@ export function SearchBox({ compact = false }: { compact?: boolean }) {
     };
   }, []);
   return (
-    <div ref={root} className={compact ? "search-box compact" : "search-box"}>
+    <div
+      ref={root}
+      className={
+        compact
+          ? "relative min-w-0 max-w-xl flex-1 max-[800px]:hidden"
+          : "relative w-full max-w-2xl"
+      }
+    >
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -56,44 +63,56 @@ export function SearchBox({ compact = false }: { compact?: boolean }) {
           setOpen(false);
         }}
       >
-        <Search aria-hidden="true" size={17} />
-        <input
+        <SearchField
+          fullWidth
+          name="search"
+          variant="secondary"
           value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
+          onChange={(value) => {
+            setQuery(value);
             setOpen(true);
           }}
-          onFocus={() => setOpen(true)}
-          placeholder="Buscar anime"
           aria-label="Buscar anime"
-        />
-        {query && (
-          <button
-            type="button"
-            onClick={() => setQuery("")}
-            aria-label="Limpiar búsqueda"
-          >
-            <X size={15} />
-          </button>
-        )}
+        >
+          <SearchField.Group className="h-11 rounded-xl border border-white/8 bg-[#0B1621] shadow-none transition-[background-color,box-shadow] duration-200 focus-within:bg-[#0E1B2B] focus-within:shadow-[0_0_0_2px_rgba(91,156,255,.55)]">
+            <SearchField.SearchIcon className="text-[#7F93A8]" />
+            <SearchField.Input
+              className="text-sm text-[#F3F8FC] placeholder:text-[#718596]"
+              onFocus={() => setOpen(true)}
+              placeholder="Buscar anime"
+            />
+            <SearchField.ClearButton
+              className="mr-1 text-[#8FA3B4] hover:text-[#F3F8FC]"
+              aria-label="Limpiar búsqueda"
+            />
+          </SearchField.Group>
+        </SearchField>
       </form>
       {open && debounced.length >= 2 && (
-        <div className="suggestions" aria-live="polite">
+        <div
+          className="absolute inset-x-0 top-[calc(100%+.5rem)] z-50 overflow-hidden rounded-xl border border-white/10 bg-[#0B1621] p-1.5 shadow-[0_22px_70px_rgba(0,0,0,.5)]"
+          aria-live="polite"
+        >
           {suggestions.data?.data.map((anime) => (
             <Link
               key={anime.id}
               href={`/anime/${anime.slug}`}
               onClick={() => setOpen(false)}
+              className="flex min-h-11 items-center justify-between gap-4 rounded-lg px-3 py-2 text-sm text-[#F3F8FC] transition-colors hover:bg-[#102130] focus-visible:bg-[#102130] focus-visible:outline-none"
             >
               <span>{anime.title}</span>
-              <small>{anime.category?.name ?? "Anime"}</small>
+              <small className="shrink-0 text-xs text-[#8FA3B4]">
+                {anime.category?.name ?? "Anime"}
+              </small>
             </Link>
           ))}
           {!suggestions.isLoading && suggestions.data?.data.length === 0 && (
-            <p>Sin coincidencias.</p>
+            <p className="px-3 py-4 text-sm text-[#8FA3B4]">
+              Sin coincidencias.
+            </p>
           )}
           <Link
-            className="all-results"
+            className="mt-1 flex min-h-10 items-center rounded-lg border-t border-white/8 px-3 pt-2 text-sm font-semibold text-[#2F81F7] hover:bg-[#102130] focus-visible:outline-none"
             href={`/buscar?q=${encodeURIComponent(debounced)}`}
             onClick={() => setOpen(false)}
           >

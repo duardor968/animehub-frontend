@@ -1,32 +1,38 @@
 "use client";
 
-import { apiFetch } from "@/lib/api/client";
 import {
   Button,
+  Checkbox,
   Drawer,
+  InputGroup,
+  Label,
   ProgressBar,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   toast,
   useOverlayState,
 } from "@heroui/react";
-import { Check, Clipboard, Download, Send, X } from "lucide-react";
+import { Send, X } from "lucide-react";
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
-  useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
+import { ApiTimeoutError, apiFetch } from "@/lib/api/client";
 import {
   connectMyJd,
-  copyLinks,
   listMyJdDevices,
   providerLabels,
   sendToClickNLoad,
   sendToMyJd,
 } from "./download-client";
 import type {
+  DownloadActivityStatus,
   DownloadPreferences,
   DownloadProviderId,
   DownloadRequest,
@@ -46,8 +52,27 @@ interface SavedJob {
   title: string;
 }
 
+interface Activity {
+  id: string;
+  request: DownloadRequest;
+  status: DownloadActivityStatus;
+  label: string;
+  detail: string;
+  current: number;
+  total: number;
+  packageName: string;
+  episodes: ResolvedEpisode[];
+  receipt?: SavedJob;
+  destination: DownloadPreferences["destination"];
+  createdAt: number;
+}
+
 interface DownloadContextValue {
   openDownload: (request: DownloadRequest) => void;
+  getEpisodeStatus: (
+    slug: string,
+    episodeNumber: number,
+  ) => DownloadActivityStatus | undefined;
   openSettings: () => void;
   preferences: DownloadPreferences;
 }
@@ -56,10 +81,19 @@ const defaults: DownloadPreferences = {
   audio: "SUB",
   providers: ["MEGA", "PIXELDRAIN", "MP4UPLOAD"],
   destination: "CNL",
-  quickSend: false,
 };
-
+const storageKey = "animehub.download-preferences";
 const DownloadContext = createContext<DownloadContextValue | null>(null);
+
+function requiresBackgroundJob(request: DownloadRequest, total: number) {
+  return (
+    request.all ||
+    (!request.episodeNumbers &&
+      request.from !== undefined &&
+      request.to !== undefined) ||
+    total > 50
+  );
+}
 
 export function useDownloads() {
   const value = useContext(DownloadContext);
@@ -70,204 +104,289 @@ export function useDownloads() {
 export function DownloadProvider({ children }: { children: ReactNode }) {
   const drawer = useOverlayState();
   const [preferences, setPreferences] = useState(defaults);
-  const [request, setRequest] = useState<DownloadRequest | null>(null);
-  const [settingsOnly, setSettingsOnly] = useState(false);
-  const [stage, setStage] = useState<
-    "review" | "working" | "ready" | "devices" | "sent" | "error"
-  >("review");
-  const [episodes, setEpisodes] = useState<ResolvedEpisode[]>([]);
-  const [packageName, setPackageName] = useState("AnimeHub");
-  const [message, setMessage] = useState("");
+  const preferencesRef = useRef(defaults);
+  const [mode, setMode] = useState<"settings" | "devices">("settings");
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const activitiesRef = useRef<Activity[]>([]);
+  const toastIds = useRef(new Map<string, string>());
   const [devices, setDevices] = useState<Array<{ id: string; name: string }>>(
     [],
   );
+  const [deviceActivityId, setDeviceActivityId] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [jobReceipt, setJobReceipt] = useState<SavedJob | null>(null);
-  const [retryReceipt, setRetryReceipt] = useState<SavedJob | null>(null);
-  const [savedJobs, setSavedJobs] = useState<SavedJob[]>([]);
-  const [progress, setProgress] = useState({ current: 0, total: 0 });
+
+  const replaceActivities = useCallback((next: Activity[]) => {
+    activitiesRef.current = next;
+    setActivities(next);
+  }, []);
+
+  const removeActivity = useCallback((id: string) => {
+    const next = activitiesRef.current.filter((activity) => activity.id !== id);
+    activitiesRef.current = next;
+    setActivities(next);
+    toastIds.current.delete(id);
+  }, []);
+
+  const publishActivity = useCallback(
+    (activity: Activity) => {
+      const previous = toastIds.current.get(activity.id);
+      if (previous) toast.close(previous);
+      const active = ["resolving", "processing", "sending"].includes(
+        activity.status,
+      );
+      const description = (
+        <div className="flex min-w-0 flex-col gap-2">
+          <span className="text-sm text-muted">{activity.detail}</span>
+          {activity.total > 0 && active && (
+            <ProgressBar
+              aria-label={`Progreso: ${activity.current} de ${activity.total}`}
+              value={activity.current}
+              maxValue={activity.total}
+              color="accent"
+            >
+              <ProgressBar.Track>
+                <ProgressBar.Fill />
+              </ProgressBar.Track>
+            </ProgressBar>
+          )}
+        </div>
+      );
+      let toastId = "";
+      const options = {
+        description,
+        isLoading: active,
+        timeout: active || activity.status === "error" ? 0 : 6_000,
+        onClose: () => {
+          if (toastIds.current.get(activity.id) !== toastId) return;
+          toastIds.current.delete(activity.id);
+          if (!active) removeActivity(activity.id);
+        },
+      };
+      toastId =
+        activity.status === "error"
+          ? toast.danger(activity.label, options)
+          : activity.status === "partial"
+            ? toast.warning(activity.label, options)
+            : activity.status === "handed-off" || activity.status === "success"
+              ? toast.success(activity.label, options)
+              : activity.status === "cancelled"
+                ? toast.warning(activity.label, options)
+                : toast.info(activity.label, options);
+      toastIds.current.set(activity.id, toastId);
+    },
+    [removeActivity],
+  );
+
+  const addActivity = useCallback(
+    (activity: Activity) => {
+      replaceActivities([activity, ...activitiesRef.current]);
+      // A background job has no button-local pending state and must remain
+      // visible even when the requested range is small.
+      if (requiresBackgroundJob(activity.request, activity.total)) {
+        publishActivity(activity);
+      }
+    },
+    [publishActivity, replaceActivities],
+  );
+
+  const updateActivity = useCallback(
+    (id: string, changes: Partial<Activity>) => {
+      const existing = activitiesRef.current.find(
+        (activity) => activity.id === id,
+      );
+      if (!existing) return;
+      const updated = { ...existing, ...changes };
+      replaceActivities(
+        activitiesRef.current.map((activity) =>
+          activity.id === id ? updated : activity,
+        ),
+      );
+      const active = ["resolving", "processing", "sending"].includes(
+        updated.status,
+      );
+      const quickOperation = !requiresBackgroundJob(
+        updated.request,
+        updated.total,
+      );
+      // Quick operations communicate pending state in the download button;
+      // the toast appears only for their terminal result. This prevents a
+      // transient loading toast from racing a near-instant success/error.
+      if (!active || !quickOperation) publishActivity(updated);
+    },
+    [publishActivity, replaceActivities],
+  );
 
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
-      const stored = localStorage.getItem("animehub.download-preferences");
+      const stored = localStorage.getItem(storageKey);
       if (stored) {
         try {
-          setPreferences({
-            ...defaults,
-            ...(JSON.parse(stored) as Partial<DownloadPreferences>),
-          });
+          const legacy = JSON.parse(stored) as Partial<DownloadPreferences> & {
+            quickSend?: boolean;
+            confirmSingleEpisode?: boolean;
+          };
+          const next: DownloadPreferences = {
+            audio: legacy.audio ?? defaults.audio,
+            providers: legacy.providers?.length
+              ? legacy.providers
+              : defaults.providers,
+            destination: legacy.destination ?? defaults.destination,
+          };
+          preferencesRef.current = next;
+          setPreferences(next);
+          localStorage.setItem(storageKey, JSON.stringify(next));
         } catch {
-          localStorage.removeItem("animehub.download-preferences");
+          localStorage.removeItem(storageKey);
         }
       }
       const now = Date.now();
-      const receipts = Object.keys(localStorage)
+      const recovered = Object.keys(localStorage)
         .filter((key) => key.startsWith("animehub.download-job."))
         .flatMap((key) => {
           try {
-            const value = JSON.parse(
+            const receipt = JSON.parse(
               localStorage.getItem(key) ?? "",
             ) as SavedJob;
             if (
-              !value.jobId ||
-              !value.accessToken ||
-              new Date(value.expiresAt).getTime() <= now
+              !receipt.jobId ||
+              !receipt.accessToken ||
+              new Date(receipt.expiresAt).getTime() <= now
             ) {
               localStorage.removeItem(key);
               return [];
             }
-            return [{ ...value, title: value.title || "Trabajo de descarga" }];
+            return [
+              {
+                id: receipt.jobId,
+                request: { slug: "", title: receipt.title },
+                status: "recoverable" as const,
+                label: receipt.title,
+                detail: "Trabajo recuperable durante 24 horas",
+                current: 0,
+                total: 0,
+                packageName: receipt.title,
+                episodes: [],
+                receipt,
+                destination: defaults.destination,
+                createdAt: now,
+              },
+            ];
           } catch {
             localStorage.removeItem(key);
             return [];
           }
         });
-      setSavedJobs(receipts);
+      replaceActivities([
+        ...recovered,
+        ...activitiesRef.current.filter(
+          (activity) => !recovered.some((entry) => entry.id === activity.id),
+        ),
+      ]);
     });
     return () => {
       active = false;
     };
-  }, []);
+  }, [replaceActivities]);
 
   const savePreferences = useCallback((next: DownloadPreferences) => {
+    preferencesRef.current = next;
     setPreferences(next);
-    localStorage.setItem("animehub.download-preferences", JSON.stringify(next));
+    localStorage.setItem(storageKey, JSON.stringify(next));
   }, []);
 
-  const resolveRequest = useCallback(
-    async (current: DownloadRequest, sendImmediately = true) => {
-      setStage("working");
-      setProgress({ current: 0, total: current.episodeNumbers?.length ?? 0 });
-      setMessage(
-        current.all
-          ? "Preparando todos los episodios…"
-          : "Resolviendo espejos…",
-      );
-      const loadingToast = toast("Preparando la descarga", {
-        description: current.all
-          ? "Creando un trabajo para la serie completa"
-          : "Resolviendo audio y espejos disponibles",
-        isLoading: true,
-        timeout: 0,
+  const requestDevice = useCallback(
+    async (activityId: string) => {
+      const available = await listMyJdDevices();
+      setDevices(available.map(({ id, name }) => ({ id, name })));
+      setDeviceActivityId(activityId);
+      setMode("devices");
+      drawer.open();
+      updateActivity(activityId, {
+        status: "waiting-device",
+        label: "Elige un dispositivo",
+        detail: "Este destino necesita un dispositivo de MyJDownloader",
       });
-      try {
-        const requiresJob =
-          current.all ||
-          (!current.episodeNumbers &&
-            current.from !== undefined &&
-            current.to !== undefined) ||
-          (current.episodeNumbers?.length ?? 0) > 50;
-        if (requiresJob) {
-          const receipt = await apiFetch<{
-            data: { jobId: string; accessToken: string; expiresAt: string };
-          }>(
-            `/anime/${encodeURIComponent(current.slug)}/download-jobs`,
-            {
-              method: "POST",
-              body: JSON.stringify({
-                scope: current.all ? "ALL" : "RANGE",
-                from: current.from,
-                to: current.to,
-                audio: preferences.audio,
-                providers: preferences.providers,
-              }),
-            },
-            true,
-          );
-          const value = receipt.data;
-          const saved = { ...value, title: current.title };
-          localStorage.setItem(
-            `animehub.download-job.${value.jobId}`,
-            JSON.stringify(saved),
-          );
-          setSavedJobs((jobs) => [
-            saved,
-            ...jobs.filter((job) => job.jobId !== saved.jobId),
-          ]);
-          setJobReceipt(saved);
-          toast.close(loadingToast);
-          toast.info("Trabajo iniciado", {
-            description: "El progreso seguirá disponible durante 24 horas.",
-          });
-          return;
-        }
-        const response = await apiFetch<{
-          data: { packageName: string; episodes: ResolvedEpisode[] };
-        }>(
-          `/anime/${encodeURIComponent(current.slug)}/downloads/resolve`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              episodeNumbers: current.episodeNumbers,
-              audio: preferences.audio,
-              providers: preferences.providers,
-            }),
-          },
-          true,
-        );
-        const resolvedUrls = response.data.episodes.flatMap((episode) =>
-          episode.links.map((link) => link.url),
-        );
-        setPackageName(response.data.packageName);
-        setEpisodes(response.data.episodes);
-        setProgress({
-          current: response.data.episodes.length,
-          total: response.data.episodes.length,
-        });
-        if (sendImmediately) {
-          if (resolvedUrls.length === 0) {
-            setMessage("No hay enlaces compatibles para enviar.");
-            setStage("error");
-            toast.close(loadingToast);
-            toast.warning("No se encontraron enlaces compatibles");
-          } else if (preferences.destination === "CNL") {
-            sendToClickNLoad(response.data.packageName, resolvedUrls);
-            setMessage(
-              "Enlaces enviados a LinkGrabber. Si no reaccionó, usa MyJD o copia los enlaces.",
-            );
-            setStage("sent");
-            toast.close(loadingToast);
-            toast.success("Enlaces enviados a JDownloader", {
-              description: `${resolvedUrls.length} enlace${resolvedUrls.length === 1 ? "" : "s"} añadido${resolvedUrls.length === 1 ? "" : "s"} a LinkGrabber.`,
-            });
-          } else {
-            const available = await listMyJdDevices();
-            setDevices(available.map(({ id, name }) => ({ id, name })));
-            setStage("devices");
-            drawer.open();
-            toast.close(loadingToast);
-            toast.info("Elige un dispositivo", {
-              description:
-                "MyJDownloader requiere confirmar el destino en cada operación.",
-            });
-          }
-          return;
-        }
-        setStage("ready");
-        toast.close(loadingToast);
-      } catch (error) {
-        setMessage(
-          error instanceof Error
-            ? error.message
-            : "No se pudo resolver la descarga.",
-        );
-        setStage("error");
-        toast.close(loadingToast);
-        toast.danger("No se pudo preparar la descarga", {
-          description: error instanceof Error ? error.message : undefined,
-        });
-      }
     },
-    [drawer, preferences],
+    [drawer, updateActivity],
   );
 
-  useEffect(() => {
-    if (!jobReceipt) return;
-    let cancelled = false;
-    const poll = async () => {
+  const deliver = useCallback(
+    async (
+      id: string,
+      packageName: string,
+      episodes: ResolvedEpisode[],
+      destination: DownloadPreferences["destination"],
+      failed = 0,
+    ) => {
+      const urls = episodes.flatMap((episode) =>
+        episode.links.map((link) => link.url),
+      );
+      if (!urls.length) {
+        updateActivity(id, {
+          status: "error",
+          label: "Sin enlaces compatibles",
+          detail: "No se encontraron espejos para la selección",
+          episodes,
+        });
+        return;
+      }
+      if (destination === "MYJD") {
+        updateActivity(id, { packageName, episodes });
+        await requestDevice(id);
+        return;
+      }
+      updateActivity(id, {
+        status: "sending",
+        label: "Enviando a JDownloader",
+        detail: "Entregando los enlaces a LinkGrabber",
+        packageName,
+        episodes,
+      });
+      try {
+        await sendToClickNLoad(packageName, urls);
+      } catch (error) {
+        updateActivity(id, {
+          status: "error",
+          label: "JDownloader no respondió",
+          detail:
+            error instanceof Error
+              ? error.message
+              : "No se pudo contactar el servicio local de Click'n'Load.",
+          episodes,
+          packageName,
+        });
+        return;
+      }
+      const failedCount = Math.max(
+        failed,
+        episodes.filter((episode) => episode.errorCode).length,
+      );
+      updateActivity(id, {
+        status: failedCount > 0 ? "partial" : "handed-off",
+        label:
+          failedCount > 0
+            ? "Entrega parcial"
+            : "Solicitud aceptada por JDownloader",
+        detail:
+          failedCount > 0
+            ? `${urls.length} enlaces entregados; ${failedCount} episodios requieren atención`
+            : `${urls.length} enlaces añadidos a LinkGrabber`,
+        episodes,
+        packageName,
+      });
+    },
+    [requestDevice, updateActivity],
+  );
+
+  const pollJob = useCallback(
+    async function poll(
+      id: string,
+      receipt: SavedJob,
+      destination: DownloadPreferences["destination"],
+    ) {
       try {
         const response = await apiFetch<{
           data: {
@@ -279,529 +398,336 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
             episodes: ResolvedEpisode[];
           };
         }>(
-          `/download-jobs/${jobReceipt.jobId}`,
-          { headers: { authorization: `Bearer ${jobReceipt.accessToken}` } },
+          `/download-jobs/${receipt.jobId}`,
+          { headers: { authorization: `Bearer ${receipt.accessToken}` } },
           true,
         );
-        if (cancelled) return;
         const job = response.data;
-        setMessage(
-          `${job.completedItems + job.failedItems} de ${job.totalItems} episodios procesados`,
-        );
-        setProgress({
-          current: job.completedItems + job.failedItems,
+        const processed = job.completedItems + job.failedItems;
+        updateActivity(id, {
+          status: "processing",
+          label: "Resolviendo episodios",
+          detail: `${processed} de ${job.totalItems} procesados`,
+          current: processed,
           total: job.totalItems,
+          episodes: job.episodes,
+          packageName: job.packageName,
         });
         if (
           ["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"].includes(job.status)
         ) {
-          setPackageName(job.packageName);
-          setEpisodes(job.episodes);
-          setStage(
-            job.episodes.some((entry) => entry.links.length)
-              ? "ready"
-              : "error",
-          );
-          setRetryReceipt(job.failedItems > 0 ? jobReceipt : null);
-          setJobReceipt(null);
-          if (job.episodes.some((entry) => entry.links.length)) {
-            const resolvedUrls = job.episodes.flatMap((episode) =>
-              episode.links.map((link) => link.url),
-            );
-            if (preferences.destination === "CNL") {
-              sendToClickNLoad(job.packageName, resolvedUrls);
-              setMessage(
-                `${resolvedUrls.length} enlaces enviados a LinkGrabber${job.failedItems ? `; ${job.failedItems} episodios no pudieron resolverse` : ""}.`,
-              );
-              setStage("sent");
-              toast.success("Trabajo enviado a JDownloader", {
-                description: `${job.completedItems} de ${job.totalItems} episodios procesados.`,
-              });
-            } else {
-              const available = await listMyJdDevices();
-              setDevices(available.map(({ id, name }) => ({ id, name })));
-              setStage("devices");
-            }
+          localStorage.removeItem(`animehub.download-job.${receipt.jobId}`);
+          if (job.status === "CANCELLED") {
+            updateActivity(id, {
+              status: "cancelled",
+              label: "Trabajo cancelado",
+              detail: "La operación se detuvo",
+            });
+            return;
           }
+          await deliver(
+            id,
+            job.packageName,
+            job.episodes,
+            destination,
+            job.failedItems,
+          );
           return;
         }
-        window.setTimeout(poll, 1_500);
+        window.setTimeout(() => void poll(id, receipt, destination), 1_250);
       } catch (error) {
-        if (!cancelled) {
-          setMessage(
-            error instanceof Error
-              ? error.message
-              : "No se pudo consultar el trabajo.",
-          );
-          setStage("error");
-        }
-      }
-    };
-    void poll();
-    return () => {
-      cancelled = true;
-    };
-  }, [jobReceipt, preferences.destination]);
-
-  const urls = useMemo(
-    () => episodes.flatMap((episode) => episode.links.map((link) => link.url)),
-    [episodes],
-  );
-
-  const chooseDestination = useCallback(async () => {
-    if (urls.length === 0) {
-      setMessage("No hay enlaces compatibles para enviar.");
-      setStage("error");
-      return;
-    }
-    if (preferences.destination === "CNL") {
-      sendToClickNLoad(packageName, urls);
-      setMessage(
-        "Enlaces enviados a LinkGrabber. Si no reaccionó, usa MyJD o copia los enlaces.",
-      );
-      setStage("sent");
-      return;
-    }
-    const available = await listMyJdDevices();
-    setDevices(available.map(({ id, name }) => ({ id, name })));
-    setStage("devices");
-  }, [packageName, preferences.destination, urls]);
-
-  const openDownload = useCallback(
-    (next: DownloadRequest) => {
-      setRequest(next);
-      setSettingsOnly(false);
-      setEpisodes([]);
-      setMessage("");
-      setJobReceipt(null);
-      setRetryReceipt(null);
-      setStage("review");
-      const isSingle = next.episodeNumbers?.length === 1;
-      if (!preferences.quickSend || !isSingle) drawer.open();
-      if (isSingle) {
-        void resolveRequest(next, true);
+        updateActivity(id, {
+          status: "error",
+          label: "No se pudo consultar el trabajo",
+          detail: error instanceof Error ? error.message : "Error inesperado",
+        });
       }
     },
-    [drawer, preferences.quickSend, resolveRequest],
+    [deliver, updateActivity],
   );
 
+  const startOperation = useCallback(
+    async (next: DownloadRequest) => {
+      const snapshot = preferencesRef.current;
+      const id = crypto.randomUUID();
+      const count =
+        next.episodeNumbers?.length ??
+        (next.from !== undefined && next.to !== undefined
+          ? next.to - next.from + 1
+          : 0);
+      addActivity({
+        id,
+        request: next,
+        status: "resolving",
+        label:
+          next.all || count > 50 ? "Preparando trabajo" : "Resolviendo espejos",
+        detail: next.title,
+        current: 0,
+        total: count,
+        packageName: next.title,
+        episodes: [],
+        destination: snapshot.destination,
+        createdAt: Date.now(),
+      });
+      try {
+        const requiresJob = requiresBackgroundJob(next, count);
+        if (requiresJob) {
+          const response = await apiFetch<{
+            data: { jobId: string; accessToken: string; expiresAt: string };
+          }>(
+            `/anime/${encodeURIComponent(next.slug)}/download-jobs`,
+            {
+              method: "POST",
+              signal: AbortSignal.timeout(25_000),
+              body: JSON.stringify({
+                scope: next.all ? "ALL" : "RANGE",
+                from: next.from,
+                to: next.to,
+                audio: snapshot.audio,
+                providers: snapshot.providers,
+              }),
+            },
+            true,
+          );
+          const receipt = { ...response.data, title: next.title };
+          localStorage.setItem(
+            `animehub.download-job.${receipt.jobId}`,
+            JSON.stringify(receipt),
+          );
+          updateActivity(id, {
+            receipt,
+            status: "processing",
+            label: "Resolviendo episodios",
+            detail: `0 de ${count || "todos"} procesados`,
+          });
+          void pollJob(id, receipt, snapshot.destination);
+          return;
+        }
+        const response = await apiFetch<{
+          data: { packageName: string; episodes: ResolvedEpisode[] };
+        }>(
+          `/anime/${encodeURIComponent(next.slug)}/downloads/resolve`,
+          {
+            method: "POST",
+            signal: AbortSignal.timeout(25_000),
+            body: JSON.stringify({
+              episodeNumbers: next.episodeNumbers,
+              audio: snapshot.audio,
+              providers: snapshot.providers,
+            }),
+          },
+          true,
+        );
+        await deliver(
+          id,
+          response.data.packageName,
+          response.data.episodes,
+          snapshot.destination,
+        );
+      } catch (error) {
+        updateActivity(id, {
+          status: "error",
+          label:
+            error instanceof ApiTimeoutError
+              ? "La fuente tardó demasiado"
+              : "No se pudo preparar la descarga",
+          detail:
+            error instanceof ApiTimeoutError
+              ? "AnimeAV1 no respondió en 25 segundos. No se envió nada a JDownloader."
+              : error instanceof Error
+                ? error.message
+                : "Error inesperado",
+        });
+      }
+    },
+    [addActivity, deliver, pollJob, updateActivity],
+  );
+
+  const openDownload = useCallback(
+    (next: DownloadRequest) => void startOperation(next),
+    [startOperation],
+  );
   const openSettings = useCallback(() => {
-    setSettingsOnly(true);
-    setRequest(null);
-    setStage("review");
+    setMode("settings");
     drawer.open();
   }, [drawer]);
 
-  const recoverJob = useCallback(
-    (saved: SavedJob) => {
-      setSettingsOnly(false);
-      setRequest(null);
-      setPackageName(saved.title);
-      setEpisodes([]);
-      setMessage("Recuperando el trabajo…");
-      setStage("working");
-      setJobReceipt(saved);
-      drawer.open();
-    },
-    [drawer],
-  );
-
-  async function cancelJob() {
-    if (!jobReceipt) return;
-    try {
-      const response = await apiFetch<{
-        data: { packageName: string; episodes: ResolvedEpisode[] };
-      }>(
-        `/download-jobs/${jobReceipt.jobId}/cancel`,
-        {
-          method: "POST",
-          headers: { authorization: `Bearer ${jobReceipt.accessToken}` },
-        },
-        true,
-      );
-      setPackageName(response.data.packageName);
-      setEpisodes(response.data.episodes);
-      setMessage(
-        "Trabajo cancelado. Los resultados ya resueltos siguen disponibles.",
-      );
-      setStage(
-        response.data.episodes.some((entry) => entry.links.length)
-          ? "ready"
-          : "error",
-      );
-      setJobReceipt(null);
-    } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "No se pudo cancelar el trabajo.",
-      );
-      setStage("error");
-    }
-  }
-
-  async function retryFailed() {
-    if (!retryReceipt) return;
-    setStage("working");
-    setMessage("Reintentando únicamente los episodios fallidos…");
-    try {
-      await apiFetch(
-        `/download-jobs/${retryReceipt.jobId}/retry`,
-        {
-          method: "POST",
-          headers: { authorization: `Bearer ${retryReceipt.accessToken}` },
-        },
-        true,
-      );
-      setJobReceipt(retryReceipt);
-      setRetryReceipt(null);
-    } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "No se pudo reintentar el trabajo.",
-      );
-      setStage("error");
-    }
+  function toggleProvider(provider: DownloadProviderId) {
+    const current = preferencesRef.current;
+    const providers = current.providers.includes(provider)
+      ? current.providers.filter((entry) => entry !== provider)
+      : [...current.providers, provider];
+    if (providers.length) savePreferences({ ...current, providers });
   }
 
   async function connect(event: React.FormEvent) {
     event.preventDefault();
-    setStage("working");
-    setMessage("Conectando con MyJDownloader…");
     try {
       const available = await connectMyJd(email, password);
       setPassword("");
       setDevices(available.map(({ id, name }) => ({ id, name })));
-      setStage("devices");
     } catch (error) {
       setPassword("");
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "No se pudo conectar con MyJDownloader.",
-      );
-      setStage("error");
+      toast.danger("No se pudo conectar con MyJDownloader", {
+        description:
+          error instanceof Error ? error.message : "Revisa las credenciales.",
+      });
     }
   }
 
   async function sendDevice(deviceId: string) {
-    setStage("working");
-    setMessage("Enviando a LinkGrabber…");
+    const activity = activitiesRef.current.find(
+      (entry) => entry.id === deviceActivityId,
+    );
+    if (!activity) return;
+    const urls = activity.episodes.flatMap((episode) =>
+      episode.links.map((link) => link.url),
+    );
+    updateActivity(activity.id, {
+      status: "sending",
+      label: "Enviando a MyJDownloader",
+      detail: "Conectando con el dispositivo",
+    });
+    drawer.close();
     try {
-      await sendToMyJd(deviceId, packageName, urls);
-      setMessage("Enlaces añadidos a LinkGrabber.");
-      setStage("sent");
-      toast.success("Enlaces enviados a MyJDownloader");
+      await sendToMyJd(deviceId, activity.packageName, urls);
+      updateActivity(activity.id, {
+        status: "handed-off",
+        label: "Solicitud aceptada por MyJDownloader",
+        detail: `${urls.length} enlaces enviados al dispositivo`,
+      });
     } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "No se pudo enviar a MyJDownloader.",
-      );
-      setStage("error");
+      updateActivity(activity.id, {
+        status: "error",
+        label: "No se pudo enviar",
+        detail: error instanceof Error ? error.message : "Error inesperado",
+      });
     }
   }
 
-  function toggleProvider(provider: DownloadProviderId) {
-    const included = preferences.providers.includes(provider);
-    const providers = included
-      ? preferences.providers.filter((entry) => entry !== provider)
-      : [...preferences.providers, provider];
-    if (providers.length > 0) savePreferences({ ...preferences, providers });
-  }
+  const getEpisodeStatus = useCallback(
+    (slug: string, episodeNumber: number) =>
+      activities.find(
+        (activity) =>
+          activity.request.slug === slug &&
+          activity.request.episodeNumbers?.length === 1 &&
+          activity.request.episodeNumbers[0] === episodeNumber,
+      )?.status,
+    [activities],
+  );
 
   return (
     <DownloadContext.Provider
-      value={{ openDownload, openSettings, preferences }}
+      value={{ openDownload, getEpisodeStatus, openSettings, preferences }}
     >
       {children}
       <Drawer state={drawer}>
         <Drawer.Trigger className="drawer-state-trigger" aria-hidden="true">
           Abrir descargas
         </Drawer.Trigger>
-        <Drawer.Backdrop variant="blur">
-          <Drawer.Content placement="right" className="download-drawer-content">
-            <Drawer.Dialog className="download-drawer" aria-label="Descargas">
-              <Drawer.Header className="dialog-topline">
+        <Drawer.Backdrop variant="blur" className="z-[60]">
+          <Drawer.Content placement="right" className="z-[70]">
+            <Drawer.Dialog
+              className="!w-full !max-w-md border-l border-white/10 bg-[#07101A] text-[#F3F8FC]"
+              aria-label="Descargas"
+            >
+              <Drawer.Header className="flex items-center justify-between border-b border-white/8 px-5 py-4">
                 <div>
-                  <span className="eyebrow">Descargas</span>
+                  <span className="text-[10px] font-bold uppercase tracking-[.18em] text-[#2F81F7]">
+                    Descargas
+                  </span>
                   <h2>
-                    {settingsOnly
+                    {mode === "settings"
                       ? "Preferencias"
-                      : (request?.title ?? packageName)}
+                      : "Elegir dispositivo"}
                   </h2>
                 </div>
                 <Drawer.CloseTrigger
-                  className="icon-button"
+                  className="grid size-10 place-items-center rounded-lg text-[#8FA3B4] hover:bg-[#102130]"
                   aria-label="Cerrar"
                 >
                   <X size={18} />
                 </Drawer.CloseTrigger>
               </Drawer.Header>
-
-              <Drawer.Body className="download-drawer-body">
-                {stage === "review" && (
-                  <div className="download-review">
-                    {!settingsOnly && (
-                      <p className="dialog-summary">
-                        {request?.all
-                          ? "Serie completa. La resolución continuará aunque cierres esta pestaña."
-                          : request?.from !== undefined &&
-                              request?.to !== undefined
-                            ? `Episodios ${request.from}–${request.to}. Los rangos extensos continuarán aunque cierres esta pestaña.`
-                            : `${request?.episodeNumbers?.length ?? 0} episodio${request?.episodeNumbers?.length === 1 ? "" : "s"} seleccionado${request?.episodeNumbers?.length === 1 ? "" : "s"}.`}
-                      </p>
+              <Drawer.Body className="px-5 py-5">
+                {mode === "settings" ? (
+                  <PreferencesPanel
+                    preferences={preferences}
+                    savePreferences={savePreferences}
+                    toggleProvider={toggleProvider}
+                    recovered={activities.filter(
+                      (activity) => activity.status === "recoverable",
                     )}
-                    <fieldset>
-                      <legend>Audio preferido</legend>
-                      <div className="choice-row">
-                        {(["SUB", "DUB"] as const).map((audio) => (
-                          <button
-                            className={
-                              preferences.audio === audio
-                                ? "choice active"
-                                : "choice"
-                            }
-                            key={audio}
-                            onClick={() =>
-                              savePreferences({ ...preferences, audio })
-                            }
-                          >
-                            {audio}
-                          </button>
-                        ))}
-                      </div>
-                    </fieldset>
-                    <fieldset>
-                      <legend>Espejos</legend>
-                      <div className="provider-list">
-                        {(
-                          Object.keys(providerLabels) as DownloadProviderId[]
-                        ).map((provider) => (
-                          <label key={provider}>
-                            <input
-                              type="checkbox"
-                              checked={preferences.providers.includes(provider)}
-                              onChange={() => toggleProvider(provider)}
-                            />
-                            <span>{providerLabels[provider]}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </fieldset>
-                    <fieldset>
-                      <legend>Destino</legend>
-                      <div className="choice-row destination-row">
-                        <button
-                          className={
-                            preferences.destination === "CNL"
-                              ? "choice active"
-                              : "choice"
-                          }
-                          onClick={() =>
-                            savePreferences({
-                              ...preferences,
-                              destination: "CNL",
-                            })
-                          }
-                        >
-                          Click&apos;n&apos;Load
-                        </button>
-                        <button
-                          className={
-                            preferences.destination === "MYJD"
-                              ? "choice active"
-                              : "choice"
-                          }
-                          onClick={() =>
-                            savePreferences({
-                              ...preferences,
-                              destination: "MYJD",
-                            })
-                          }
-                        >
-                          MyJDownloader
-                        </button>
-                      </div>
-                    </fieldset>
-                    <label className="quick-toggle">
-                      <input
-                        type="checkbox"
-                        checked={preferences.quickSend}
-                        onChange={(event) =>
-                          savePreferences({
-                            ...preferences,
-                            quickSend: event.target.checked,
-                          })
-                        }
-                      />
-                      <span>
-                        <strong>Envío rápido</strong>
-                        <small>
-                          Envía episodios individuales sin abrir el panel.
-                        </small>
-                      </span>
-                    </label>
-                    {settingsOnly && savedJobs.length > 0 && (
-                      <fieldset>
-                        <legend>Trabajos recientes</legend>
-                        <div className="recent-jobs">
-                          {savedJobs.map((saved) => (
-                            <button
-                              key={saved.jobId}
-                              onClick={() => recoverJob(saved)}
-                            >
-                              <span>{saved.title}</span>
-                              <small>Recuperar progreso</small>
-                            </button>
-                          ))}
-                        </div>
-                      </fieldset>
-                    )}
-                    {!settingsOnly && request && (
-                      <Button
-                        className="primary-button full-button"
-                        onPress={() => void resolveRequest(request, true)}
-                      >
-                        <Download size={16} /> Resolver y enviar
-                      </Button>
-                    )}
-                  </div>
-                )}
-
-                {stage === "working" && (
-                  <div className="dialog-status" aria-live="polite">
-                    <ProgressBar
-                      aria-label="Progreso de la descarga"
-                      isIndeterminate={progress.total === 0}
-                      value={progress.current}
-                      maxValue={Math.max(progress.total, 1)}
-                      color="accent"
-                    >
-                      <ProgressBar.Track>
-                        <ProgressBar.Fill />
-                      </ProgressBar.Track>
-                    </ProgressBar>
-                    <p>{message}</p>
-                    {jobReceipt && (
-                      <button
-                        className="secondary-button full-button"
-                        onClick={() => void cancelJob()}
-                      >
-                        Cancelar trabajo
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {stage === "ready" && (
-                  <div className="dialog-status">
-                    <Check size={28} />
-                    <p>
-                      {urls.length} enlaces preparados en {episodes.length}{" "}
-                      episodios.
-                    </p>
-                    {episodes.some((episode) => episode.errorCode) && (
-                      <span className="status-note">
-                        Los episodios sin enlace quedaron fuera; puedes
-                        reintentarlos desde el trabajo.
-                      </span>
-                    )}
-                    {retryReceipt && (
-                      <button
-                        className="secondary-button full-button"
-                        onClick={() => void retryFailed()}
-                      >
-                        Reintentar fallidos
-                      </button>
-                    )}
-                    <button
-                      className="primary-button full-button"
-                      onClick={() => void chooseDestination()}
-                    >
-                      <Send size={16} /> Enviar a{" "}
-                      {preferences.destination === "CNL"
-                        ? "Click'n'Load"
-                        : "MyJDownloader"}
-                    </button>
-                  </div>
-                )}
-
-                {stage === "devices" && (
-                  <div className="device-stage">
+                    recover={(activity) => {
+                      if (!activity.receipt) return;
+                      updateActivity(activity.id, {
+                        status: "processing",
+                        label: "Recuperando trabajo",
+                        detail: "Consultando el progreso actual",
+                      });
+                      drawer.close();
+                      void pollJob(
+                        activity.id,
+                        activity.receipt,
+                        activity.destination,
+                      );
+                    }}
+                  />
+                ) : (
+                  <div className="flex flex-col gap-4">
                     {devices.length > 0 ? (
                       <>
-                        <p>Elige el dispositivo para esta operación.</p>
+                        <p className="text-sm text-[#8FA3B4]">
+                          El dispositivo se aplica únicamente a esta operación.
+                        </p>
                         {devices.map((device) => (
-                          <button
-                            className="device-row"
+                          <Button
+                            variant="secondary"
+                            className="justify-between rounded-xl bg-[#0B1621] text-[#F3F8FC]"
                             key={device.id}
-                            onClick={() => void sendDevice(device.id)}
+                            onPress={() => void sendDevice(device.id)}
                           >
-                            <span>{device.name}</span>
+                            {device.name}
                             <Send size={16} />
-                          </button>
+                          </Button>
                         ))}
                       </>
                     ) : (
-                      <form className="myjd-form" onSubmit={connect}>
-                        <p>
-                          Conecta tu cuenta. La contraseña se descarta al crear
-                          la sesión.
+                      <form className="flex flex-col gap-4" onSubmit={connect}>
+                        <p className="text-sm text-[#8FA3B4]">
+                          La contraseña se descarta al derivar la sesión.
                         </p>
-                        <label>
-                          Correo
-                          <input
-                            type="email"
-                            autoComplete="username"
-                            required
-                            value={email}
-                            onChange={(event) => setEmail(event.target.value)}
-                          />
-                        </label>
-                        <label>
-                          Contraseña
-                          <input
-                            type="password"
-                            autoComplete="current-password"
-                            required
-                            value={password}
-                            onChange={(event) =>
-                              setPassword(event.target.value)
-                            }
-                          />
-                        </label>
-                        <button
-                          className="primary-button full-button"
+                        <TextField
+                          type="email"
+                          value={email}
+                          onChange={setEmail}
+                          variant="secondary"
+                          isRequired
+                        >
+                          <Label>Correo</Label>
+                          <InputGroup>
+                            <InputGroup.Input autoComplete="username" />
+                          </InputGroup>
+                        </TextField>
+                        <TextField
+                          type="password"
+                          value={password}
+                          onChange={setPassword}
+                          variant="secondary"
+                          isRequired
+                        >
+                          <Label>Contraseña</Label>
+                          <InputGroup>
+                            <InputGroup.Input autoComplete="current-password" />
+                          </InputGroup>
+                        </TextField>
+                        <Button
                           type="submit"
+                          className="bg-[#2F81F7] text-white"
                         >
                           Conectar
-                        </button>
+                        </Button>
                       </form>
-                    )}
-                  </div>
-                )}
-
-                {(stage === "sent" || stage === "error") && (
-                  <div className="dialog-status" aria-live="polite">
-                    {stage === "sent" ? <Check size={28} /> : <X size={28} />}
-                    <p>{message}</p>
-                    {urls.length > 0 && (
-                      <button
-                        className="secondary-button full-button"
-                        onClick={() => void copyLinks(urls)}
-                      >
-                        <Clipboard size={16} /> Copiar enlaces
-                      </button>
-                    )}
-                    {stage === "error" && request && (
-                      <button
-                        className="primary-button full-button"
-                        onClick={() => void resolveRequest(request)}
-                      >
-                        Reintentar
-                      </button>
                     )}
                   </div>
                 )}
@@ -811,5 +737,110 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         </Drawer.Backdrop>
       </Drawer>
     </DownloadContext.Provider>
+  );
+}
+
+function PreferencesPanel({
+  preferences,
+  savePreferences,
+  toggleProvider,
+  recovered,
+  recover,
+}: {
+  preferences: DownloadPreferences;
+  savePreferences: (next: DownloadPreferences) => void;
+  toggleProvider: (provider: DownloadProviderId) => void;
+  recovered: Activity[];
+  recover: (activity: Activity) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-6">
+      <fieldset className="border-b border-white/8 pb-5">
+        <legend className="mb-3 text-sm font-semibold text-[#F3F8FC]">
+          Audio preferido
+        </legend>
+        <ToggleButtonGroup
+          selectionMode="single"
+          selectedKeys={new Set([preferences.audio])}
+          onSelectionChange={(keys) => {
+            const audio = Array.from(keys)[0] as "SUB" | "DUB" | undefined;
+            if (audio) savePreferences({ ...preferences, audio });
+          }}
+          className="grid grid-cols-2 gap-2"
+        >
+          {(["SUB", "DUB"] as const).map((audio) => (
+            <ToggleButton id={audio} key={audio} className="h-10 rounded-lg">
+              {audio}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+        <p className="mt-2 text-xs text-[#8FA3B4]">
+          Si no está disponible, se usará el otro audio.
+        </p>
+      </fieldset>
+      <fieldset className="border-b border-white/8 pb-5">
+        <legend className="mb-3 text-sm font-semibold text-[#F3F8FC]">
+          Proveedores
+        </legend>
+        <div className="grid grid-cols-2 gap-3">
+          {(Object.keys(providerLabels) as DownloadProviderId[]).map(
+            (provider) => (
+              <Checkbox
+                key={provider}
+                isSelected={preferences.providers.includes(provider)}
+                onChange={() => toggleProvider(provider)}
+              >
+                <Checkbox.Control>
+                  <Checkbox.Indicator />
+                </Checkbox.Control>
+                <Checkbox.Content>{providerLabels[provider]}</Checkbox.Content>
+              </Checkbox>
+            ),
+          )}
+        </div>
+      </fieldset>
+      <fieldset className="border-b border-white/8 pb-5">
+        <legend className="mb-3 text-sm font-semibold text-[#F3F8FC]">
+          Destino
+        </legend>
+        <ToggleButtonGroup
+          selectionMode="single"
+          selectedKeys={new Set([preferences.destination])}
+          onSelectionChange={(keys) => {
+            const destination = Array.from(keys)[0] as
+              "CNL" | "MYJD" | undefined;
+            if (destination) savePreferences({ ...preferences, destination });
+          }}
+          className="grid grid-cols-2 gap-2"
+        >
+          <ToggleButton id="CNL" className="h-11 rounded-lg">
+            Click&apos;n&apos;Load
+          </ToggleButton>
+          <ToggleButton id="MYJD" className="h-11 rounded-lg">
+            MyJDownloader
+          </ToggleButton>
+        </ToggleButtonGroup>
+      </fieldset>
+      {recovered.length > 0 && (
+        <fieldset>
+          <legend className="text-sm font-semibold">
+            Trabajos recuperables
+          </legend>
+          <div className="mt-3 flex flex-col gap-2">
+            {recovered.map((activity) => (
+              <Button
+                variant="secondary"
+                className="justify-between rounded-xl bg-[#0B1621] text-left"
+                key={activity.id}
+                onPress={() => recover(activity)}
+              >
+                <span className="truncate">{activity.label}</span>
+                <small>Recuperar</small>
+              </Button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+    </div>
   );
 }
