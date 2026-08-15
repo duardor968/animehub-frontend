@@ -18,8 +18,7 @@ export type DownloadActivityStatus =
   | "success"
   | "partial"
   | "error"
-  | "cancelled"
-  | "recoverable";
+  | "cancelled";
 
 export interface DownloadRequest {
   slug: string;

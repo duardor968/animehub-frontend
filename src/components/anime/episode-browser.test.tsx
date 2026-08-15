@@ -46,10 +46,10 @@ describe("EpisodeBrowser", () => {
     expect(selectAll).toBeChecked();
     expect(screen.getByText("2 seleccionados")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Quitar episodio 1" }),
-    ).toHaveAttribute("aria-pressed", "true");
+      screen.getByRole("checkbox", { name: "Quitar episodio 1" }),
+    ).toBeChecked();
     expect(
-      screen.getByRole("button", { name: "Quitar episodio 2" }),
-    ).toHaveAttribute("aria-pressed", "true");
+      screen.getByRole("checkbox", { name: "Quitar episodio 2" }),
+    ).toBeChecked();
   });
 });

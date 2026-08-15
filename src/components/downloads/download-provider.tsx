@@ -242,54 +242,11 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           localStorage.removeItem(storageKey);
         }
       }
-      const now = Date.now();
-      const recovered = Object.keys(localStorage)
-        .filter((key) => key.startsWith("animehub.download-job."))
-        .flatMap((key) => {
-          try {
-            const receipt = JSON.parse(
-              localStorage.getItem(key) ?? "",
-            ) as SavedJob;
-            if (
-              !receipt.jobId ||
-              !receipt.accessToken ||
-              new Date(receipt.expiresAt).getTime() <= now
-            ) {
-              localStorage.removeItem(key);
-              return [];
-            }
-            return [
-              {
-                id: receipt.jobId,
-                request: { slug: "", title: receipt.title },
-                status: "recoverable" as const,
-                label: receipt.title,
-                detail: "Trabajo recuperable durante 24 horas",
-                current: 0,
-                total: 0,
-                packageName: receipt.title,
-                episodes: [],
-                receipt,
-                destination: defaults.destination,
-                createdAt: now,
-              },
-            ];
-          } catch {
-            localStorage.removeItem(key);
-            return [];
-          }
-        });
-      replaceActivities([
-        ...recovered,
-        ...activitiesRef.current.filter(
-          (activity) => !recovered.some((entry) => entry.id === activity.id),
-        ),
-      ]);
     });
     return () => {
       active = false;
     };
-  }, [replaceActivities]);
+  }, []);
 
   const savePreferences = useCallback((next: DownloadPreferences) => {
     preferencesRef.current = next;
@@ -416,7 +373,6 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         if (
           ["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"].includes(job.status)
         ) {
-          localStorage.removeItem(`animehub.download-job.${receipt.jobId}`);
           if (job.status === "CANCELLED") {
             updateActivity(id, {
               status: "cancelled",
@@ -490,10 +446,6 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
             true,
           );
           const receipt = { ...response.data, title: next.title };
-          localStorage.setItem(
-            `animehub.download-job.${receipt.jobId}`,
-            JSON.stringify(receipt),
-          );
           updateActivity(id, {
             receipt,
             status: "processing",
@@ -557,7 +509,14 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     const providers = current.providers.includes(provider)
       ? current.providers.filter((entry) => entry !== provider)
       : [...current.providers, provider];
-    if (providers.length) savePreferences({ ...current, providers });
+    if (!providers.length) {
+      toast.warning("Mantén al menos un proveedor", {
+        description: "Necesitas al menos uno para resolver los enlaces.",
+        timeout: 4_000,
+      });
+      return;
+    }
+    savePreferences({ ...current, providers });
   }
 
   async function connect(event: React.FormEvent) {
@@ -655,23 +614,6 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                     preferences={preferences}
                     savePreferences={savePreferences}
                     toggleProvider={toggleProvider}
-                    recovered={activities.filter(
-                      (activity) => activity.status === "recoverable",
-                    )}
-                    recover={(activity) => {
-                      if (!activity.receipt) return;
-                      updateActivity(activity.id, {
-                        status: "processing",
-                        label: "Recuperando trabajo",
-                        detail: "Consultando el progreso actual",
-                      });
-                      drawer.close();
-                      void pollJob(
-                        activity.id,
-                        activity.receipt,
-                        activity.destination,
-                      );
-                    }}
                   />
                 ) : (
                   <div className="flex flex-col gap-4">
@@ -744,14 +686,10 @@ function PreferencesPanel({
   preferences,
   savePreferences,
   toggleProvider,
-  recovered,
-  recover,
 }: {
   preferences: DownloadPreferences;
   savePreferences: (next: DownloadPreferences) => void;
   toggleProvider: (provider: DownloadProviderId) => void;
-  recovered: Activity[];
-  recover: (activity: Activity) => void;
 }) {
   return (
     <div className="flex flex-col gap-6">
@@ -790,10 +728,12 @@ function PreferencesPanel({
                 isSelected={preferences.providers.includes(provider)}
                 onChange={() => toggleProvider(provider)}
               >
-                <Checkbox.Control>
-                  <Checkbox.Indicator />
-                </Checkbox.Control>
-                <Checkbox.Content>{providerLabels[provider]}</Checkbox.Content>
+                <Checkbox.Content>
+                  <Checkbox.Control>
+                    <Checkbox.Indicator />
+                  </Checkbox.Control>
+                  {providerLabels[provider]}
+                </Checkbox.Content>
               </Checkbox>
             ),
           )}
@@ -821,26 +761,6 @@ function PreferencesPanel({
           </ToggleButton>
         </ToggleButtonGroup>
       </fieldset>
-      {recovered.length > 0 && (
-        <fieldset>
-          <legend className="text-sm font-semibold">
-            Trabajos recuperables
-          </legend>
-          <div className="mt-3 flex flex-col gap-2">
-            {recovered.map((activity) => (
-              <Button
-                variant="secondary"
-                className="justify-between rounded-xl bg-[#0B1621] text-left"
-                key={activity.id}
-                onPress={() => recover(activity)}
-              >
-                <span className="truncate">{activity.label}</span>
-                <small>Recuperar</small>
-              </Button>
-            ))}
-          </div>
-        </fieldset>
-      )}
     </div>
   );
 }

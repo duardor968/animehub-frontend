@@ -240,31 +240,37 @@ export function EpisodeBrowser({
                     {formatRelativeTime(episode.publishedAt)}
                   </time>
                 </Card.Content>
+                {/* Corner selector lives inside the card and OVERSHOOTS the top/right
+                    edges by 2px. The card's overflow-hidden clips the overshoot, so the
+                    triangle's SOLID body (not its anti-aliased edge) covers the card's
+                    top row — under fractional DPR (e.g. 125%) that top edge is soft, so
+                    without the overshoot the image bled through ~1px. Overshooting hides
+                    it: the card can never show through the solid triangle. */}
+                <Checkbox
+                  isSelected={checked}
+                  onChange={() => toggleEpisode(episode.number)}
+                  aria-label={`${checked ? "Quitar" : "Seleccionar"} episodio ${episode.number}`}
+                  className={`pointer-events-auto absolute right-[-2px] top-[-2px] z-30 block h-[54px] w-[54px] rounded-none transition-opacity duration-300 ${checked ? "opacity-100" : "opacity-0 group-hover:opacity-100 has-[:focus-visible]:opacity-100 [@media(hover:none)]:opacity-100"}`}
+                >
+                  <Checkbox.Content
+                    className={`relative block h-full w-full gap-0 rounded-none p-0 text-[#F3F8FC] shadow-none [clip-path:polygon(0_0,100%_0,100%_100%)] transition-colors duration-300 ${checked ? "bg-[#2F81F7]" : "bg-[#182235] hover:bg-[#202D44]"}`}
+                  >
+                    <span className="pointer-events-none absolute right-[11px] top-[11px] grid size-4 place-items-center">
+                      {checked ? (
+                        <Check size={15} strokeWidth={2.8} />
+                      ) : (
+                        <Square size={14} />
+                      )}
+                    </span>
+                  </Checkbox.Content>
+                </Checkbox>
               </Card>
               {checked && (
                 <span
                   aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 z-20 rounded-2xl ring-2 ring-inset ring-[#2F81F7]"
+                  className="pointer-events-none absolute inset-0 z-40 rounded-2xl ring-2 ring-inset ring-[#2F81F7]"
                 />
               )}
-              <div className="pointer-events-none absolute inset-0 z-30 overflow-hidden rounded-2xl">
-                <Button
-                  isIconOnly
-                  variant="secondary"
-                  className={`pointer-events-auto absolute right-0 top-0 h-[52px] w-[52px] min-w-[52px] rounded-none p-0 text-[#F3F8FC] shadow-none [clip-path:polygon(0_0,100%_0,100%_100%)] transition-[opacity,transform,background-color] duration-300 ease-[cubic-bezier(.22,1,.36,1)] ${checked ? "translate-x-0 translate-y-0 bg-[#2F81F7] opacity-100 hover:bg-[#2F81F7]" : "translate-x-[65%] -translate-y-[65%] bg-[#182235] opacity-0 group-hover:translate-x-0 group-hover:translate-y-0 group-hover:opacity-100 hover:bg-[#202D44] focus-visible:translate-x-0 focus-visible:translate-y-0 focus-visible:opacity-100 [@media(hover:none)]:translate-x-0 [@media(hover:none)]:translate-y-0 [@media(hover:none)]:opacity-100"}`}
-                  aria-label={`${checked ? "Quitar" : "Seleccionar"} episodio ${episode.number}`}
-                  aria-pressed={checked}
-                  onPress={() => toggleEpisode(episode.number)}
-                >
-                  <span className="absolute right-[10px] top-[10px] grid size-4 place-items-center">
-                    {checked ? (
-                      <Check size={15} strokeWidth={2.8} />
-                    ) : (
-                      <Square size={14} />
-                    )}
-                  </span>
-                </Button>
-              </div>
             </div>
           );
         })}

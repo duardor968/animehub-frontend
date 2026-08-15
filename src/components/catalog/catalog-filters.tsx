@@ -372,10 +372,12 @@ function FilterPanel({
               onChange={() => update("category", item.slug)}
               className="min-h-8 text-sm text-[#C4D2DE]"
             >
-              <Checkbox.Control>
-                <Checkbox.Indicator />
-              </Checkbox.Control>
-              <Checkbox.Content>{item.name}</Checkbox.Content>
+              <Checkbox.Content>
+                <Checkbox.Control>
+                  <Checkbox.Indicator />
+                </Checkbox.Control>
+                {item.name}
+              </Checkbox.Content>
             </Checkbox>
           ))}
         </div>
@@ -454,10 +456,12 @@ function FilterPanel({
               onChange={() => update("genre", item.slug)}
               className="min-h-8 text-sm text-[#C4D2DE]"
             >
-              <Checkbox.Control>
-                <Checkbox.Indicator />
-              </Checkbox.Control>
-              <Checkbox.Content>{item.name}</Checkbox.Content>
+              <Checkbox.Content>
+                <Checkbox.Control>
+                  <Checkbox.Indicator />
+                </Checkbox.Control>
+                {item.name}
+              </Checkbox.Content>
             </Checkbox>
           ))}
         </div>
