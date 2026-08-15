@@ -21,6 +21,8 @@ FROM node:24-alpine AS runtime
 ENV NODE_ENV=production
 ENV PORT=3000
 RUN corepack enable
+# curl for Coolify's container health check (Alpine ships without it).
+RUN apk add --no-cache curl
 WORKDIR /workspace
 
 COPY --from=build /workspace/apps/web/.next/standalone ./
