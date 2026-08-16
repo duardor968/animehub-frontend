@@ -19,32 +19,18 @@ const days = [
 ];
 const daysShort = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 
-const DAY_MS = 86_400_000;
-type ReleaseStatus = "aired" | "delayed";
-
-const statusMeta: Record<
-  ReleaseStatus,
-  { label: string; color: "success" | "warning" }
-> = {
-  aired: { label: "Emitido", color: "success" },
-  delayed: { label: "Retrasado", color: "warning" },
-};
-
-// The source /horario only gives us each series' latest episode date, so — like
-// animeav1 itself — the status is derived from that emission date, not a flag:
-// - "aired" (Emitido) = this week's episode already emitted TODAY (emission-based,
-//   not clock-based); it drops once the day passes.
-// - "delayed" (Retrasado) = the weekly slot passed (>7 days since the last episode)
-//   and the new one hasn't emitted yet.
-// - otherwise no chip.
-function getReleaseStatus(
-  basisPublishedAt: string,
-  now: Date,
-): ReleaseStatus | null {
-  const published = new Date(basisPublishedAt);
-  if ((now.getTime() - published.getTime()) / DAY_MS > 7) return "delayed";
-  if (published.toDateString() === now.toDateString()) return "aired";
-  return null;
+// The source /horario never exposes a real weekday, air time or status flag — it
+// only gives each series' latest episode and when it was published. animeav1
+// derives "Emitido - HH:MM" from exactly that timestamp, and so do we: an entry's
+// weekly slot is the weekday + time its latest episode landed on. It counts as
+// "aired" once this week's occurrence of that slot has already passed; before it,
+// it's simply upcoming (the time is shown, no success accent).
+function isAired(basisPublishedAt: string, now: Date): boolean {
+  const basis = new Date(basisPublishedAt);
+  const occurrence = new Date(now);
+  occurrence.setDate(now.getDate() + (basis.getDay() - now.getDay()));
+  occurrence.setHours(basis.getHours(), basis.getMinutes(), 0, 0);
+  return now.getTime() >= occurrence.getTime();
 }
 
 // Slot time-of-day (minutes since midnight) — the schedule is ordered by the hour
@@ -80,14 +66,15 @@ export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
 
   return (
     <Tabs
+      variant="secondary"
       aria-label="Días de la semana"
       defaultSelectedKey={String(todayIndex)}
       className="w-full gap-0"
     >
-      <Tabs.ListContainer className="mb-7 rounded-none bg-transparent">
+      <Tabs.ListContainer className="mb-7 bg-transparent">
         <Tabs.List
           aria-label="Días de la semana"
-          className="min-w-max gap-1.5 bg-transparent p-0"
+          className="min-w-max gap-1 border-white/8 bg-transparent"
         >
           {days.map((day, index) => {
             const count = grouped[index].length;
@@ -96,10 +83,10 @@ export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
                 id={String(index)}
                 key={day}
                 aria-label={`${day}, ${count} lanzamientos`}
-                className="flex min-h-11 items-center gap-2 rounded-xl px-3.5 text-sm text-[#8FA3B4] shadow-none transition-colors data-[hovered=true]:not-data-[selected=true]:bg-[#0B1621] data-[hovered=true]:not-data-[selected=true]:text-[#C4D2DE] data-[selected=true]:bg-[#16233A] data-[selected=true]:font-semibold data-[selected=true]:text-[#F3F8FC]"
+                className="flex min-h-11 items-center gap-2 px-3 text-sm text-[#8FA3B4] shadow-none transition-colors data-[hovered=true]:text-[#C4D2DE] data-[selected=true]:font-semibold data-[selected=true]:text-[#F3F8FC]"
               >
                 <span className="capitalize">{daysShort[index]}</span>
-                <span className="min-w-5 rounded-full bg-[#1B2C44] px-1.5 text-center text-[11px] font-semibold tabular-nums text-[#93A4B8]">
+                <span className="text-xs tabular-nums text-[#5C6E82]">
                   {count}
                 </span>
                 {index === todayIndex && (
@@ -109,6 +96,7 @@ export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
                     title="hoy"
                   />
                 )}
+                <Tabs.Indicator className="bg-[#2F81F7]" />
               </Tabs.Tab>
             );
           })}
@@ -125,12 +113,6 @@ export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
               {grouped[index].length}{" "}
               {grouped[index].length === 1 ? "lanzamiento" : "lanzamientos"}
             </span>
-            {index === todayIndex && (
-              <span className="ml-auto flex items-center gap-1.5 text-[11px] text-[#69A7FF]">
-                <span className="size-1.5 rounded-full bg-[#30C8B0]" />
-                Hoy
-              </span>
-            )}
           </div>
 
           {grouped[index].length === 0 ? (
@@ -140,9 +122,14 @@ export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-4 gap-x-4 gap-y-6 max-xl:grid-cols-3 max-lg:grid-cols-2 max-sm:grid-cols-1">
+            <div className="grid grid-cols-5 gap-x-4 gap-y-7 max-xl:grid-cols-4 max-lg:grid-cols-3 max-sm:grid-cols-2">
               {grouped[index].map((entry) => {
-                const status = getReleaseStatus(entry.basisPublishedAt, now);
+                const aired = isAired(entry.basisPublishedAt, now);
+                // The slot's latest episode already aired; if this week's slot
+                // hasn't passed yet, what's upcoming is the next episode.
+                const shownEpisode = aired
+                  ? entry.latestEpisode.number
+                  : entry.latestEpisode.number + 1;
                 return (
                   <Link
                     href={`/anime/${entry.anime.slug}`}
@@ -150,14 +137,12 @@ export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
                     key={entry.anime.id}
                   >
                     <Card className="relative min-w-0 gap-0 overflow-hidden rounded-xl bg-[#0A1424] p-0 transition-shadow duration-300 group-hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]">
-                      <div className="relative aspect-video overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04]">
+                      <div className="relative aspect-[2/3] overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04]">
                         <AnimeImage
-                          src={entry.latestEpisode.imageUrl}
-                          fallbackSrc={
-                            entry.anime.backdropUrl ?? entry.anime.posterUrl
-                          }
-                          alt=""
-                          sizes="(max-width: 680px) 90vw, (max-width: 1100px) 42vw, 22vw"
+                          src={entry.anime.posterUrl}
+                          fallbackSrc={entry.anime.backdropUrl}
+                          alt={`Póster de ${entry.anime.title}`}
+                          sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 18vw"
                         />
                         <time
                           className="absolute left-2 top-2 rounded-lg bg-[#050B15]/85 px-2 py-1 font-mono text-[11px] font-bold text-[#5FA8FF] backdrop-blur-sm"
@@ -167,12 +152,12 @@ export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
                             new Date(entry.basisPublishedAt),
                           )}
                         </time>
-                        <div className="absolute bottom-0 left-0 flex h-6 items-center rounded-tr-lg bg-[#0A1424] px-2.5 text-[10px] font-bold">
+                        <div className="absolute bottom-0 left-0 flex h-6 items-center rounded-tr-lg bg-[#0A1424]/95 px-2.5 text-[10px] font-bold backdrop-blur-sm">
                           <span className="tracking-[.12em] text-[#69A7FF]">
                             EP
                           </span>
                           <strong className="ml-1 tabular-nums text-[#F3F8FC]">
-                            {entry.latestEpisode.number}
+                            {shownEpisode}
                           </strong>
                         </div>
                       </div>
@@ -180,23 +165,15 @@ export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
                         <strong className="truncate text-sm font-semibold text-[#F3F8FC]">
                           {entry.anime.title}
                         </strong>
-                        <div className="flex min-h-6 items-center justify-between gap-2">
-                          <small className="truncate text-xs text-[#8FA3B4]">
-                            Último: episodio {entry.latestEpisode.number}
-                          </small>
-                          {status && (
-                            <Chip
-                              color={statusMeta[status].color}
-                              variant="soft"
-                              size="sm"
-                              className="shrink-0"
-                            >
-                              <Chip.Label>
-                                {statusMeta[status].label}
-                              </Chip.Label>
-                            </Chip>
-                          )}
-                        </div>
+                        {aired ? (
+                          <Chip color="success" variant="soft" size="sm">
+                            <Chip.Label>Emitido</Chip.Label>
+                          </Chip>
+                        ) : (
+                          <span className="text-xs text-[#8FA3B4]">
+                            Próximo
+                          </span>
+                        )}
                       </Card.Content>
                     </Card>
                   </Link>

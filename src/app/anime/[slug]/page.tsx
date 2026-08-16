@@ -1,3 +1,4 @@
+import { Card } from "@heroui/react";
 import {
   CalendarDays,
   ExternalLink,
@@ -62,19 +63,6 @@ export default async function AnimePage({
   const episodes = await apiFetch<EpisodePageResponse>(
     `/anime/${encodeURIComponent(slug)}/episodes?page=1`,
   );
-  const relationGroups = [
-    { title: "Línea principal", kinds: ["PREQUEL", "SEQUEL"] },
-    { title: "Historia principal", kinds: ["MAIN_STORY"] },
-    { title: "Historias paralelas", kinds: ["SIDE_STORY"] },
-    { title: "Resúmenes y especiales", kinds: ["SUMMARY"] },
-    { title: "Versiones alternativas", kinds: ["ALTERNATIVE"] },
-    { title: "Otras conexiones", kinds: ["OTHER"] },
-  ].map((group) => ({
-    ...group,
-    relations: anime.relations.filter((relation) =>
-      group.kinds.includes(relation.kind),
-    ),
-  }));
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": anime.category?.name === "Película" ? "Movie" : "TVSeries",
@@ -122,11 +110,11 @@ export default async function AnimePage({
               <span>
                 {anime.status === "AIRING" && (
                   <i
-                    className="relative mr-0.5 flex size-2.5"
+                    className="relative mr-1 inline-flex size-2.5 items-center justify-center"
                     aria-hidden="true"
                   >
-                    <i className="absolute inline-flex size-full animate-ping rounded-full bg-[#35D39B]/45" />
-                    <i className="relative inline-flex size-2.5 rounded-full bg-[#35D39B] shadow-[0_0_12px_rgba(53,211,155,.72)]" />
+                    <i className="absolute inset-0 animate-ping rounded-full bg-[#35D39B]/45" />
+                    <i className="relative inline-flex size-1.5 rounded-full bg-[#35D39B] shadow-[0_0_10px_rgba(53,211,155,.72)]" />
                   </i>
                 )}
                 {formatStatus(anime.status)}
@@ -202,6 +190,9 @@ export default async function AnimePage({
         </div>
       </section>
       <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-16 px-6 py-12 max-sm:px-4 max-sm:pb-28">
+        {anime.relations.length > 0 && (
+          <RelatedAnime relations={anime.relations} />
+        )}
         <EpisodeBrowser
           slug={anime.slug}
           title={anime.title}
@@ -210,74 +201,124 @@ export default async function AnimePage({
           initial={episodes.data}
           totalRecords={episodes.meta.totalRecords}
         />
-        {relationGroups.map((group) =>
-          group.relations.length > 0 ? (
-            <RelationSection
-              key={group.title}
-              title={group.title}
-              relations={group.relations}
-            />
-          ) : null,
-        )}
       </div>
     </main>
   );
 }
 
-function RelationSection({
-  title,
+const RELATION_LABELS: Record<string, string> = {
+  PREQUEL: "Precuela",
+  SEQUEL: "Secuela",
+  MAIN_STORY: "Historia principal",
+  SIDE_STORY: "Historia paralela",
+  SUMMARY: "Resumen",
+  ALTERNATIVE: "Versión alternativa",
+  OTHER: "Otra conexión",
+};
+
+// A year timeline: each year heads a column with its axis line running to the
+// right (almost touching the next year, like the source's histogram-style axis),
+// and the related titles reuse the catalog card treatment — type badge, and a
+// hover overlay that reveals the synopsis — just sized down for the row.
+function RelatedAnime({
   relations,
 }: {
-  title: string;
   relations: AnimeResponse["data"]["relations"];
 }) {
-  const labels: Record<string, string> = {
-    PREQUEL: "Precuela",
-    SEQUEL: "Secuela",
-    MAIN_STORY: "Historia principal",
-    SIDE_STORY: "Historia paralela",
-    SUMMARY: "Resumen",
-    ALTERNATIVE: "Versión alternativa",
-    OTHER: "Otra conexión",
-  };
+  const yearOf = (date: string | null | undefined) =>
+    date ? new Date(date).getUTCFullYear() : null;
+  const groups = new Map<number | null, AnimeResponse["data"]["relations"]>();
+  for (const relation of relations) {
+    const year = yearOf(relation.anime.startDate);
+    const bucket = groups.get(year);
+    if (bucket) bucket.push(relation);
+    else groups.set(year, [relation]);
+  }
+  const columns = [...groups.entries()].sort(([a], [b]) => {
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return a - b;
+  });
+
   return (
     <section>
-      <div className="mb-5">
-        <div>
-          <span className="text-[10px] font-bold uppercase tracking-[.18em] text-[#69A7FF]">
-            Conexiones
-          </span>
-          <h2 className="mt-1 font-(family-name:--font-display) text-3xl font-semibold tracking-tight text-[#F3F8FC]">
-            {title}
-          </h2>
-        </div>
-      </div>
-      <div className="grid grid-cols-4 gap-x-4 gap-y-3 max-lg:grid-cols-3 max-md:grid-cols-2 max-sm:grid-cols-1">
-        {relations.map((relation) => (
-          <Link
-            href={`/anime/${relation.anime.slug}`}
-            key={`${relation.kind}-${relation.anime.slug}`}
-            className="flex min-w-0 items-center gap-3 rounded-xl px-2 py-3 transition-colors hover:bg-[#111A2A] focus-visible:outline-2 focus-visible:outline-[#5B9CFF]"
-          >
-            <div className="relative h-16 w-11 shrink-0 overflow-hidden rounded-md bg-[#0B1621]">
-              <AnimeImage src={relation.anime.posterUrl} alt="" sizes="80px" />
-            </div>
-            <span className="min-w-0">
-              <small className="block text-[10px] font-bold uppercase tracking-wide text-[#69A7FF]">
-                {labels[relation.kind] ?? relation.kind}
-              </small>
-              <strong className="mt-1 block truncate text-sm font-semibold text-[#F3F8FC]">
-                {relation.anime.title}
-              </strong>
-              {relation.anime.startDate && (
-                <em className="mt-1 block text-xs not-italic text-[#8FA3B4]">
-                  {new Date(relation.anime.startDate).getUTCFullYear()}
-                </em>
-              )}
-            </span>
-          </Link>
-        ))}
+      <h2 className="mb-6 font-(family-name:--font-display) text-3xl font-semibold tracking-tight text-[#F3F8FC]">
+        Relacionados
+      </h2>
+      <div className="-mx-1 overflow-x-auto px-1 pb-3 [scrollbar-width:thin]">
+        <ol className="flex min-w-max items-start gap-3">
+          {columns.map(([year, items]) => (
+            <li key={year ?? "sin-fecha"} className="flex flex-col gap-3.5">
+              {/* Year marker + axis line running right, nearly reaching the next
+                  year, to read as one continuous timeline. */}
+              <div className="flex items-center gap-2.5">
+                <span className="font-(family-name:--font-display) text-lg font-semibold tabular-nums text-[#9FB3C6]">
+                  {year ?? "Sin fecha"}
+                </span>
+                <span className="h-px flex-1 bg-white/12" aria-hidden="true" />
+              </div>
+              <div className="flex gap-3">
+                {items.map((relation) => (
+                  <RelatedCard
+                    key={`${relation.kind}-${relation.anime.slug}`}
+                    relation={relation}
+                  />
+                ))}
+              </div>
+            </li>
+          ))}
+        </ol>
       </div>
     </section>
+  );
+}
+
+function RelatedCard({
+  relation,
+}: {
+  relation: AnimeResponse["data"]["relations"][number];
+}) {
+  const label = RELATION_LABELS[relation.kind] ?? relation.kind;
+  return (
+    <Card className="group w-[152px] min-w-0 shrink-0 gap-0 overflow-hidden rounded-xl bg-[#0A1424] p-0 transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]">
+      <Link
+        href={`/anime/${relation.anime.slug}`}
+        className="block outline-none focus-visible:ring-2 focus-visible:ring-[#5B9CFF] focus-visible:ring-inset"
+      >
+        <div className="relative aspect-[2/3] overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04] group-has-[:focus-visible]:[&_.anime-image_img]:scale-[1.04]">
+          <AnimeImage
+            src={relation.anime.posterUrl}
+            alt={relation.anime.title}
+            sizes="152px"
+          />
+          <span className="absolute bottom-0 left-0 rounded-tr-lg bg-[#0A1424] px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[.08em] text-[#8AB8FA] transition-opacity duration-300 group-hover:opacity-0 group-has-[:focus-visible]:opacity-0">
+            {label}
+          </span>
+          <div className="absolute inset-0 flex flex-col justify-end bg-[#07101D]/92 p-3 opacity-0 transition-opacity duration-250 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100">
+            <span className="text-[9px] font-bold uppercase tracking-[.14em] text-[#69A7FF]">
+              {label}
+            </span>
+            <strong className="mt-1.5 line-clamp-2 text-xs font-semibold leading-4 text-[#F3F8FC]">
+              {relation.anime.title}
+            </strong>
+            {relation.anime.synopsis?.trim() ? (
+              <p className="mt-1.5 line-clamp-5 text-[11px] leading-4 text-[#B8C6D4]">
+                {relation.anime.synopsis}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <Card.Content className="gap-0.5 px-3 py-3">
+          {/* Reserve two lines so every card is the same height regardless of
+              how long the title is (aligns the row like the catalog grid). */}
+          <Card.Title className="line-clamp-2 min-h-8 text-xs font-semibold leading-4 text-[#F3F8FC]">
+            {relation.anime.title}
+          </Card.Title>
+          <Card.Description className="text-[11px] leading-4 text-[#93A4B8]">
+            {label}
+          </Card.Description>
+        </Card.Content>
+      </Link>
+    </Card>
   );
 }

@@ -4,29 +4,23 @@ import {
   Button,
   Card,
   Checkbox,
-  NumberField,
+  Pagination,
   ProgressBar,
   Surface,
 } from "@heroui/react";
-import {
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  Minus,
-  Plus,
-  Square,
-} from "lucide-react";
-import { useState } from "react";
+import { Check, Download, Minus, Plus, Square } from "lucide-react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import {
   apiFetch,
   type Episode,
   type EpisodePageResponse,
 } from "@/lib/api/client";
-import { formatEpisodeNumber, formatRelativeTime } from "@/lib/format";
+import { formatEpisodeNumber } from "@/lib/format";
 import { AnimeImage } from "../anime-image";
 import { useDownloads } from "../downloads/download-provider";
 import { EpisodeDownloadButton } from "../downloads/episode-download-button";
+
+const PAGE_SIZE = 50;
 
 export function EpisodeBrowser({
   slug,
@@ -49,19 +43,21 @@ export function EpisodeBrowser({
   const [selected, setSelected] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [from, setFrom] = useState(1);
-  const [to, setTo] = useState(Math.min(50, totalRecords));
-  const totalPages = Math.max(1, Math.ceil(totalRecords / 50));
+  const [to, setTo] = useState(Math.min(PAGE_SIZE, totalRecords));
+  const totalPages = Math.max(1, Math.ceil(totalRecords / PAGE_SIZE));
 
   async function changePage(nextPage: number) {
+    const target = Math.max(1, Math.min(nextPage, totalPages));
+    if (target === page || loading) return;
     setLoading(true);
     try {
       const response = await apiFetch<EpisodePageResponse>(
-        `/anime/${encodeURIComponent(slug)}/episodes?page=${nextPage}`,
+        `/anime/${encodeURIComponent(slug)}/episodes?page=${target}`,
         {},
         true,
       );
       setEpisodes(response.data);
-      setPage(nextPage);
+      setPage(target);
       document
         .querySelector("#episodios")
         ?.scrollIntoView({ behavior: "smooth" });
@@ -113,7 +109,7 @@ export function EpisodeBrowser({
           className="h-11 rounded-full bg-[#151E2E] px-5 text-[#F3F8FC] shadow-none hover:bg-[#1C2940]"
           onPress={() => openDownload({ slug, title, all: true })}
         >
-          <Download size={15} /> Serie completa
+          <Download size={15} /> Descargar todo
         </Button>
       </div>
 
@@ -130,17 +126,15 @@ export function EpisodeBrowser({
           <EpisodeNumberField
             label="Desde"
             value={from}
-            minValue={1}
-            maxValue={Math.max(1, to)}
-            onChange={setFrom}
+            setValue={setFrom}
+            max={totalRecords}
           />
           <span className="pb-3 text-[#718596]">—</span>
           <EpisodeNumberField
             label="Hasta"
             value={to}
-            minValue={Math.max(1, from)}
-            maxValue={totalRecords}
-            onChange={setTo}
+            setValue={setTo}
+            max={totalRecords}
           />
         </div>
         <Button
@@ -192,8 +186,19 @@ export function EpisodeBrowser({
         )}
       </div>
 
+      {totalPages > 1 && (
+        <EpisodePager
+          page={page}
+          totalPages={totalPages}
+          totalRecords={totalRecords}
+          loading={loading}
+          onPage={changePage}
+          className="mt-4"
+        />
+      )}
+
       <div
-        className={`mt-3 grid grid-cols-5 gap-x-4 gap-y-5 transition-opacity max-xl:grid-cols-4 max-lg:grid-cols-3 max-md:grid-cols-2 max-sm:grid-cols-1 ${loading ? "pointer-events-none opacity-45" : ""}`}
+        className={`mt-4 grid grid-cols-5 gap-x-4 gap-y-5 transition-opacity max-xl:grid-cols-4 max-lg:grid-cols-3 max-md:grid-cols-2 max-sm:grid-cols-1 ${loading ? "pointer-events-none opacity-45" : ""}`}
       >
         {episodes.map((episode) => {
           const checked = selected.includes(episode.number);
@@ -229,17 +234,6 @@ export function EpisodeBrowser({
                     />
                   </div>
                 </div>
-                <Card.Content className="overflow-hidden px-3.5 py-3.5">
-                  <strong className="block truncate text-sm font-semibold text-[#F3F8FC]">
-                    {episode.title || title}
-                  </strong>
-                  <time
-                    className="mt-1 block text-xs text-[#8FA3B4]"
-                    dateTime={episode.publishedAt ?? undefined}
-                  >
-                    {formatRelativeTime(episode.publishedAt)}
-                  </time>
-                </Card.Content>
                 {/* Corner selector lives inside the card and OVERSHOOTS the top/right
                     edges by 2px. The card's overflow-hidden clips the overshoot, so the
                     triangle's SOLID body (not its anti-aliased edge) covers the card's
@@ -276,27 +270,16 @@ export function EpisodeBrowser({
         })}
       </div>
 
-      <div className="mt-10 flex items-center justify-center gap-3 text-sm text-[#8FA3B4]">
-        <Button
-          variant="ghost"
-          className="rounded-lg text-[#C4D2DE] shadow-none"
-          isDisabled={page <= 1 || loading}
-          onPress={() => void changePage(page - 1)}
-        >
-          <ChevronLeft size={16} /> Anterior
-        </Button>
-        <span>
-          Página {page} de {totalPages}
-        </span>
-        <Button
-          variant="ghost"
-          className="rounded-lg text-[#C4D2DE] shadow-none"
-          isDisabled={page >= totalPages || loading}
-          onPress={() => void changePage(page + 1)}
-        >
-          Siguiente <ChevronRight size={16} />
-        </Button>
-      </div>
+      {totalPages > 1 && (
+        <EpisodePager
+          page={page}
+          totalPages={totalPages}
+          totalRecords={totalRecords}
+          loading={loading}
+          onPage={changePage}
+          className="mt-10"
+        />
+      )}
 
       {selected.length > 0 && (
         <div
@@ -328,45 +311,139 @@ export function EpisodeBrowser({
   );
 }
 
+// Compact page-number list with first/last anchors and ellipsis, so long series
+// (hundreds of episodes) stay navigable without a huge row of numbers.
+function pageNumbers(page: number, totalPages: number): (number | "gap")[] {
+  if (totalPages <= 7)
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  const pages: (number | "gap")[] = [1];
+  if (page > 3) pages.push("gap");
+  const start = Math.max(2, page - 1);
+  const end = Math.min(totalPages - 1, page + 1);
+  for (let i = start; i <= end; i += 1) pages.push(i);
+  if (page < totalPages - 2) pages.push("gap");
+  pages.push(totalPages);
+  return pages;
+}
+
+// HeroUI Pagination in its "With Summary" form: the summary spells out the
+// episode range on the current page so the numbers read clearly.
+function EpisodePager({
+  page,
+  totalPages,
+  totalRecords,
+  loading,
+  onPage,
+  className = "",
+}: {
+  page: number;
+  totalPages: number;
+  totalRecords: number;
+  loading: boolean;
+  onPage: (page: number) => void;
+  className?: string;
+}) {
+  const start = (page - 1) * PAGE_SIZE + 1;
+  const end = Math.min(page * PAGE_SIZE, totalRecords);
+  return (
+    <Pagination className={`w-full ${className}`}>
+      <Pagination.Summary className="text-[#8FA3B4]">
+        Episodios {start}–{end} de {totalRecords}
+      </Pagination.Summary>
+      <Pagination.Content>
+        <Pagination.Item>
+          <Pagination.Previous
+            isDisabled={page <= 1 || loading}
+            onPress={() => onPage(page - 1)}
+          >
+            <Pagination.PreviousIcon />
+            <span>Anterior</span>
+          </Pagination.Previous>
+        </Pagination.Item>
+        {pageNumbers(page, totalPages).map((entry, index) =>
+          entry === "gap" ? (
+            <Pagination.Item key={`gap-${index}`}>
+              <Pagination.Ellipsis />
+            </Pagination.Item>
+          ) : (
+            <Pagination.Item key={entry}>
+              <Pagination.Link
+                isActive={entry === page}
+                isDisabled={loading}
+                onPress={() => onPage(entry)}
+              >
+                {entry}
+              </Pagination.Link>
+            </Pagination.Item>
+          ),
+        )}
+        <Pagination.Item>
+          <Pagination.Next
+            isDisabled={page >= totalPages || loading}
+            onPress={() => onPage(page + 1)}
+          >
+            <span>Siguiente</span>
+            <Pagination.NextIcon />
+          </Pagination.Next>
+        </Pagination.Item>
+      </Pagination.Content>
+    </Pagination>
+  );
+}
+
+// Stepper composed from HeroUI Buttons + an input. The +/- use FUNCTIONAL state
+// updates (setValue(v => v ± 1)), so no matter how fast they're clicked every
+// press builds on the latest value — HeroUI's NumberField instead recomputes from
+// a controlled prop and loses rapid clicks. Order (from ≤ to) is enforced at
+// submit (openRange); each field clamps only to [1, max].
 function EpisodeNumberField({
   label,
   value,
-  minValue,
-  maxValue,
-  onChange,
+  setValue,
+  max,
 }: {
   label: string;
   value: number;
-  minValue: number;
-  maxValue: number;
-  onChange: (value: number) => void;
+  setValue: Dispatch<SetStateAction<number>>;
+  max: number;
 }) {
+  const clamp = (next: number) => Math.max(1, Math.min(max, next));
   return (
-    <NumberField
-      aria-label={`${label} episodio`}
-      value={value}
-      minValue={minValue}
-      maxValue={maxValue}
-      onChange={onChange}
-      variant="secondary"
-      className="w-28 max-sm:w-full"
-    >
+    <div className="w-28 max-sm:w-full">
       <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[.14em] text-[#8FA3B4]">
         {label}
       </span>
-      <NumberField.Group className="h-11 rounded-xl bg-[#111A2A] shadow-none">
-        <NumberField.DecrementButton
+      <div className="flex h-11 items-center overflow-hidden rounded-xl bg-[#111A2A]">
+        <Button
+          variant="tertiary"
           aria-label={`Reducir ${label.toLowerCase()}`}
+          isDisabled={value <= 1}
+          onPress={() => setValue((current) => clamp(current - 1))}
+          className="h-full min-h-0 w-9 rounded-none bg-transparent px-0 text-[#8FA3B4] shadow-none hover:bg-transparent hover:text-[#F3F8FC]"
         >
           <Minus size={13} />
-        </NumberField.DecrementButton>
-        <NumberField.Input className="min-w-0 text-center text-sm tabular-nums text-[#F3F8FC]" />
-        <NumberField.IncrementButton
+        </Button>
+        <input
+          type="text"
+          inputMode="numeric"
+          aria-label={`${label} episodio`}
+          value={value}
+          onChange={(event) => {
+            const digits = event.target.value.replace(/\D/g, "");
+            setValue(digits ? clamp(Number.parseInt(digits, 10)) : 1);
+          }}
+          className="min-w-0 flex-1 bg-transparent text-center text-sm tabular-nums text-[#F3F8FC] outline-none"
+        />
+        <Button
+          variant="tertiary"
           aria-label={`Aumentar ${label.toLowerCase()}`}
+          isDisabled={value >= max}
+          onPress={() => setValue((current) => clamp(current + 1))}
+          className="h-full min-h-0 w-9 rounded-none bg-transparent px-0 text-[#8FA3B4] shadow-none hover:bg-transparent hover:text-[#F3F8FC]"
         >
           <Plus size={13} />
-        </NumberField.IncrementButton>
-      </NumberField.Group>
-    </NumberField>
+        </Button>
+      </div>
+    </div>
   );
 }

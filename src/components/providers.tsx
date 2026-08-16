@@ -16,10 +16,13 @@ export function Providers({ children }: { children: ReactNode }) {
   );
   return (
     <QueryClientProvider client={queryClient}>
+      {/* Bottom-right by default; the z-index sits above the drawer backdrop
+          (z-60) / dialog (z-70) so that when the download drawer is open the toast
+          renders on top of the dimmed overlay instead of behind it. */}
       <Toast.Provider
         placement="bottom end"
         width="min(26rem, calc(100vw - 2rem))"
-        className="max-sm:!bottom-24"
+        className="!z-[100] max-sm:!bottom-24"
       />
       <DownloadProvider>{children}</DownloadProvider>
     </QueryClientProvider>

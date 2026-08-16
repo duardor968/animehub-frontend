@@ -27,12 +27,12 @@ export function PosterGrid({
             className="block outline-none focus-visible:ring-2 focus-visible:ring-[#5B9CFF] focus-visible:ring-inset"
             href={`/anime/${item.slug}`}
           >
-            <div className="relative aspect-[2/3] overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04] group-focus-within:[&_.anime-image_img]:scale-[1.04]">
+            <div className="relative aspect-[2/3] overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04] group-has-[:focus-visible]:[&_.anime-image_img]:scale-[1.04]">
               <AnimeImage src={item.posterUrl} alt={item.title} />
-              <span className="absolute bottom-0 left-0 rounded-tr-lg bg-[#0A1424] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.08em] text-[#8AB8FA] transition-opacity duration-300 group-hover:opacity-0 group-focus-within:opacity-0">
+              <span className="absolute bottom-0 left-0 rounded-tr-lg bg-[#0A1424] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.08em] text-[#8AB8FA] transition-opacity duration-300 group-hover:opacity-0 group-has-[:focus-visible]:opacity-0">
                 {item.category?.name ?? "Anime"}
               </span>
-              <div className="absolute inset-0 flex flex-col justify-end bg-[#07101D]/92 p-4 opacity-0 transition-opacity duration-250 group-hover:opacity-100 group-focus-within:opacity-100">
+              <div className="absolute inset-0 flex flex-col justify-end bg-[#07101D]/92 p-4 opacity-0 transition-opacity duration-250 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100">
                 <span className="text-[10px] font-bold uppercase tracking-[.14em] text-[#69A7FF]">
                   {item.category?.name ?? "Anime"}
                 </span>
