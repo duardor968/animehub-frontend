@@ -20,6 +20,11 @@ FROM node:24-alpine AS runtime
 
 ENV NODE_ENV=production
 ENV PORT=3000
+# Docker sets HOSTNAME to the container id, and Next's standalone server binds to
+# it (process.env.HOSTNAME || '0.0.0.0'). That leaves it off localhost, so the
+# `curl localhost:3000/health` healthcheck fails and Coolify marks it unhealthy.
+# Pin 0.0.0.0 so it listens on every interface.
+ENV HOSTNAME=0.0.0.0
 RUN corepack enable
 # curl for Coolify's container health check (Alpine ships without it).
 RUN apk add --no-cache curl
