@@ -2,9 +2,11 @@
 
 import { Card, Chip, Tabs } from "@heroui/react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { components } from "@/lib/api/generated";
 import { AnimeImage } from "./anime-image";
+import { deriveScheduleStatus } from "./schedule-status";
 
 type ScheduleEntry = components["schemas"]["ScheduleEntryDto"];
 
@@ -19,20 +21,6 @@ const days = [
 ];
 const daysShort = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 
-// The source /horario never exposes a real weekday, air time or status flag — it
-// only gives each series' latest episode and when it was published. animeav1
-// derives "Emitido - HH:MM" from exactly that timestamp, and so do we: an entry's
-// weekly slot is the weekday + time its latest episode landed on. It counts as
-// "aired" once this week's occurrence of that slot has already passed; before it,
-// it's simply upcoming (the time is shown, no success accent).
-function isAired(basisPublishedAt: string, now: Date): boolean {
-  const basis = new Date(basisPublishedAt);
-  const occurrence = new Date(now);
-  occurrence.setDate(now.getDate() + (basis.getDay() - now.getDay()));
-  occurrence.setHours(basis.getHours(), basis.getMinutes(), 0, 0);
-  return now.getTime() >= occurrence.getTime();
-}
-
 // Slot time-of-day (minutes since midnight) — the schedule is ordered by the hour
 // a series airs, independent of which calendar day the last episode landed on.
 function slotMinutes(basisPublishedAt: string): number {
@@ -45,17 +33,48 @@ const timeFormatter = new Intl.DateTimeFormat("es", {
   minute: "2-digit",
 });
 
+// Don't re-run the server component more than this often when the tab regains
+// focus, so quick tab-switching never hammers the API.
+const REVALIDATE_THROTTLE_MS = 30_000;
+
 export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
+  const router = useRouter();
+
   // A render-time clock drives both the default day and the per-entry status
   // derivation. It advances on an interval so a slot's chip flips from "Próximo"
-  // to "Emitido" on its own as the hour passes, without a reload — the status is
-  // pure client-side time math, so this needs no refetch.
+  // to "Emitido" (or to "Retrasado") on its own as the hour passes, without a
+  // reload — the status is pure client-side time math over data already loaded.
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(id);
   }, []);
   const todayIndex = now.getDay();
+
+  // Pick up a fresh snapshot (new episode, roster change) when the user returns to
+  // the tab, without a manual reload: the page is force-dynamic, so router.refresh()
+  // re-runs the server component and streams new entries in while preserving client
+  // state (selected day, scroll). Status transitions are already live via the clock,
+  // so this only matters for the underlying episode data.
+  const lastRevalidatedAt = useRef(0);
+  useEffect(() => {
+    // Baseline the throttle at mount (an effect may read the clock; render may not),
+    // so a focus event firing right after load doesn't trigger an immediate refetch.
+    lastRevalidatedAt.current = Date.now();
+    const revalidate = () => {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - lastRevalidatedAt.current < REVALIDATE_THROTTLE_MS)
+        return;
+      lastRevalidatedAt.current = Date.now();
+      router.refresh();
+    };
+    window.addEventListener("focus", revalidate);
+    document.addEventListener("visibilitychange", revalidate);
+    return () => {
+      window.removeEventListener("focus", revalidate);
+      document.removeEventListener("visibilitychange", revalidate);
+    };
+  }, [router]);
 
   const grouped = useMemo(() => {
     const groups = Array.from({ length: 7 }, () => [] as ScheduleEntry[]);
@@ -130,12 +149,15 @@ export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
           ) : (
             <div className="grid grid-cols-5 gap-x-4 gap-y-7 max-xl:grid-cols-4 max-lg:grid-cols-3 max-sm:grid-cols-2">
               {grouped[index].map((entry) => {
-                const aired = isAired(entry.basisPublishedAt, now);
-                // The slot's latest episode already aired; if this week's slot
-                // hasn't passed yet, what's upcoming is the next episode.
-                const shownEpisode = aired
-                  ? entry.latestEpisode.number
-                  : entry.latestEpisode.number + 1;
+                // Status text is meaningful for today (Emitido / Próximo); other
+                // days show just the slot time + last episode. "Retrasado" is
+                // persistent and shows on any day. The EP badge is always the last
+                // emitted number — no client-side guessing; the next number arrives
+                // with the refreshed snapshot.
+                const status = deriveScheduleStatus(
+                  entry.basisPublishedAt,
+                  now,
+                );
                 return (
                   <Link
                     href={`/anime/${entry.anime.slug}`}
@@ -163,7 +185,7 @@ export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
                             EP
                           </span>
                           <strong className="ml-1 tabular-nums text-[#F3F8FC]">
-                            {shownEpisode}
+                            {entry.latestEpisode.number}
                           </strong>
                         </div>
                       </div>
@@ -171,15 +193,19 @@ export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
                         <strong className="truncate text-sm font-semibold text-[#F3F8FC]">
                           {entry.anime.title}
                         </strong>
-                        {aired ? (
+                        {status === "delayed" ? (
+                          <Chip color="warning" variant="soft" size="sm">
+                            <Chip.Label>Retrasado</Chip.Label>
+                          </Chip>
+                        ) : status === "aired" ? (
                           <Chip color="success" variant="soft" size="sm">
                             <Chip.Label>Emitido</Chip.Label>
                           </Chip>
-                        ) : (
+                        ) : status === "upcoming" ? (
                           <span className="text-xs text-[#8FA3B4]">
                             Próximo
                           </span>
-                        )}
+                        ) : null}
                       </Card.Content>
                     </Card>
                   </Link>
