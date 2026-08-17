@@ -2,7 +2,7 @@
 
 import { Card, Chip, Tabs } from "@heroui/react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { components } from "@/lib/api/generated";
 import { AnimeImage } from "./anime-image";
 
@@ -46,9 +46,15 @@ const timeFormatter = new Intl.DateTimeFormat("es", {
 });
 
 export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
-  // A single render-time clock drives both the default day and the per-entry
-  // status derivation.
-  const [now] = useState(() => new Date());
+  // A render-time clock drives both the default day and the per-entry status
+  // derivation. It advances on an interval so a slot's chip flips from "Próximo"
+  // to "Emitido" on its own as the hour passes, without a reload — the status is
+  // pure client-side time math, so this needs no refetch.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
   const todayIndex = now.getDay();
 
   const grouped = useMemo(() => {
