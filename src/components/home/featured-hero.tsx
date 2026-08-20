@@ -48,10 +48,30 @@ export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
       embla.off("reInit", sync);
     };
   }, [embla, sync]);
+  useEffect(() => {
+    if (!embla) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const syncAutoplay = () => {
+      if (reducedMotion.matches) {
+        autoplay.stop();
+        setPlaying(false);
+        return;
+      }
+      if (document.visibilityState === "visible" && playing) autoplay.play();
+      else autoplay.stop();
+    };
+    syncAutoplay();
+    document.addEventListener("visibilitychange", syncAutoplay);
+    reducedMotion.addEventListener("change", syncAutoplay);
+    return () => {
+      document.removeEventListener("visibilitychange", syncAutoplay);
+      reducedMotion.removeEventListener("change", syncAutoplay);
+    };
+  }, [autoplay, embla, playing]);
 
   return (
     <section
-      className="group relative min-h-[560px] overflow-hidden bg-[#060B16] outline-none max-lg:min-h-[520px] max-sm:min-h-[640px]"
+      className="featured-hero group relative min-h-[560px] overflow-hidden bg-[#060B16] outline-none max-lg:min-h-[520px] max-sm:min-h-[640px]"
       aria-roledescription="carrusel"
       aria-label="Destacados"
       onKeyDown={(event) => {
@@ -67,7 +87,7 @@ export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
         <div className="flex touch-pan-y">
           {anime.map((item, index) => (
             <article
-              className="relative min-h-[560px] min-w-0 flex-[0_0_100%] max-lg:min-h-[520px] max-sm:min-h-[640px]"
+              className="featured-slide relative min-h-[560px] min-w-0 flex-[0_0_100%] max-lg:min-h-[520px] max-sm:min-h-[640px]"
               key={item.id}
               aria-label={`${index + 1} de ${anime.length}`}
             >
@@ -84,7 +104,7 @@ export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
                 className="absolute inset-0 bg-[linear-gradient(90deg,#050A11_0%,rgba(5,10,17,.94)_25%,rgba(5,10,17,.46)_56%,rgba(5,10,17,.12)_100%),linear-gradient(0deg,#07101A_0%,transparent_38%)] max-sm:bg-[linear-gradient(0deg,#050A11_8%,rgba(5,10,17,.82)_52%,rgba(5,10,17,.18)_100%)]"
                 aria-hidden="true"
               />
-              <div className="relative z-10 mx-auto flex min-h-[560px] w-full max-w-[1600px] items-center px-6 pb-24 pt-16 max-lg:min-h-[520px] max-sm:min-h-[640px] max-sm:items-end max-sm:px-4 max-sm:pb-28 max-sm:pt-20">
+              <div className="featured-hero-inner relative z-10 mx-auto flex min-h-[560px] w-full max-w-[1600px] items-center px-6 pb-24 pt-16 max-lg:min-h-[520px] max-sm:min-h-[640px] max-sm:items-end max-sm:px-4 max-sm:pb-28 max-sm:pt-20">
                 <div className="max-w-[610px] animate-[hero-in_.5s_ease-out_both]">
                   <span className="text-[11px] font-bold uppercase tracking-[.18em] text-[#69A7FF]">
                     Destacados
@@ -143,7 +163,7 @@ export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
         </div>
       </div>
       {anime.length > 1 && (
-        <div className="absolute bottom-6 left-1/2 z-20 flex w-full max-w-[1600px] -translate-x-1/2 items-center gap-3 px-6 max-sm:bottom-5 max-sm:px-4">
+        <div className="featured-controls absolute bottom-6 left-1/2 z-20 flex w-full max-w-[1600px] -translate-x-1/2 items-center gap-3 px-6 max-sm:bottom-5 max-sm:px-4">
           <Button
             isIconOnly
             variant="secondary"

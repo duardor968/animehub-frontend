@@ -22,7 +22,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <Toast.Provider
         placement="bottom end"
         width="min(26rem, calc(100vw - 2rem))"
-        className="!z-[100] max-sm:!bottom-24"
+        className="animehub-toast-region !z-[100] max-sm:!bottom-24"
       />
       <DownloadProvider>{children}</DownloadProvider>
     </QueryClientProvider>

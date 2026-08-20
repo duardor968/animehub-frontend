@@ -19,6 +19,10 @@ export async function listMyJdDevices() {
   return myJdClient.listDevices();
 }
 
+export function isMyJdConnected() {
+  return myJdClient !== null;
+}
+
 export async function sendToMyJd(
   deviceId: string,
   packageName: string,
@@ -36,9 +40,10 @@ export async function sendToMyJd(
 }
 
 export async function disconnectMyJd() {
-  await myJdClient?.disconnect();
+  const client = myJdClient;
   myJdClient = null;
   sessionStorage.removeItem("animehub.myjd.session");
+  await client?.disconnect();
 }
 
 const clickNLoadBase = "http://127.0.0.1:9666/flash";

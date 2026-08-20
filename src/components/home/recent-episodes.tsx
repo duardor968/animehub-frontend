@@ -12,7 +12,7 @@ export function RecentEpisodes({ episodes }: { episodes: RecentEpisode[] }) {
     <div className="grid grid-cols-4 gap-x-4 gap-y-6 max-lg:grid-cols-2">
       {episodes.map(({ anime, episode }) => (
         <Card
-          className="group relative min-w-0 gap-0 overflow-hidden rounded-xl bg-[#0A1424] p-0 transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]"
+          className="touch-card group relative min-w-0 gap-0 overflow-hidden rounded-xl bg-[#0A1424] p-0 transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]"
           key={episode.id}
         >
           <Link
@@ -20,14 +20,14 @@ export function RecentEpisodes({ episodes }: { episodes: RecentEpisode[] }) {
             className="block min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-[#5B9CFF] focus-visible:ring-inset"
             aria-label={`${anime.title}, episodio ${episode.number}`}
           >
-            <div className="relative aspect-[16/9] overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04]">
+            <div className="touch-static-media relative aspect-[16/9] overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04]">
               <AnimeImage
                 src={episode.imageUrl}
                 fallbackSrc={anime.backdropUrl ?? anime.posterUrl}
                 alt={`Fotograma del episodio ${episode.number} de ${anime.title}`}
                 sizes="(max-width: 700px) 92vw, (max-width: 1100px) 45vw, 23vw"
               />
-              <div className="absolute inset-0 bg-[#030812]/0 transition-colors duration-500 group-hover:bg-[#030812]/25" />
+              <div className="touch-hover-overlay absolute inset-0 bg-[#030812]/0 transition-colors duration-500 group-hover:bg-[#030812]/25" />
               <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#050A11]/92 to-transparent" />
               <div className="absolute bottom-0 left-0 flex h-7 items-center rounded-tr-lg bg-[#0A1424] px-3 text-[10px] font-bold">
                 <span className="tracking-[.14em] text-[#69A7FF]">EP</span>
@@ -52,7 +52,7 @@ export function RecentEpisodes({ episodes }: { episodes: RecentEpisode[] }) {
               </Card.Description>
             </Card.Content>
           </Link>
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-20 grid aspect-[16/9] place-items-center">
+          <div className="recent-download-slot pointer-events-none absolute inset-x-0 top-0 z-20 grid aspect-[16/9] place-items-center">
             <EpisodeDownloadButton
               slug={anime.slug}
               title={anime.title}

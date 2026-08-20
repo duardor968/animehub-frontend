@@ -94,9 +94,9 @@ export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
       variant="secondary"
       aria-label="Días de la semana"
       defaultSelectedKey={String(todayIndex)}
-      className="w-full gap-0"
+      className="schedule-tabs w-full gap-0"
     >
-      <Tabs.ListContainer className="mb-7 bg-transparent">
+      <Tabs.ListContainer className="schedule-tabs-list mb-7 bg-transparent">
         <Tabs.List
           aria-label="Días de la semana"
           className="min-w-max gap-1 border-white/8 bg-transparent"
@@ -164,8 +164,8 @@ export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
                     className="group block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#5B9CFF] focus-visible:ring-inset"
                     key={entry.anime.id}
                   >
-                    <Card className="relative min-w-0 gap-0 overflow-hidden rounded-xl bg-[#0A1424] p-0 transition-shadow duration-300 group-hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]">
-                      <div className="relative aspect-[2/3] overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04]">
+                    <Card className="touch-card relative min-w-0 gap-0 overflow-hidden rounded-xl bg-[#0A1424] p-0 transition-shadow duration-300 group-hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]">
+                      <div className="touch-static-media relative aspect-[2/3] overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04]">
                         <AnimeImage
                           src={entry.anime.posterUrl}
                           fallbackSrc={entry.anime.backdropUrl}

@@ -291,13 +291,19 @@ export function CatalogFilters({
         <Drawer.Trigger className="drawer-state-trigger" aria-hidden="true">
           Abrir filtros
         </Drawer.Trigger>
-        <Drawer.Backdrop variant="blur" className="z-[60]">
-          <Drawer.Content placement="right" className="z-[70]">
+        <Drawer.Backdrop
+          variant="blur"
+          className="mobile-drawer-backdrop z-[60]"
+        >
+          <Drawer.Content
+            placement="right"
+            className="mobile-drawer-content z-[70]"
+          >
             <Drawer.Dialog
               aria-label="Filtros del catálogo"
-              className="!w-full !max-w-md border-l border-white/10 bg-[#07101A] text-[#F3F8FC]"
+              className="mobile-drawer-dialog !w-full !max-w-md border-l border-white/10 bg-[#07101A] text-[#F3F8FC]"
             >
-              <Drawer.Header className="flex items-center justify-between border-b border-white/8 px-5 py-4">
+              <Drawer.Header className="mobile-drawer-header flex items-center justify-between border-b border-white/8 px-5 py-4">
                 <div>
                   <span className="text-[10px] font-bold uppercase tracking-[.18em] text-[#2F81F7]">
                     Catálogo
@@ -311,8 +317,10 @@ export function CatalogFilters({
                   <X size={18} />
                 </Drawer.CloseTrigger>
               </Drawer.Header>
-              <Drawer.Body className="px-5 py-4">{panel(true)}</Drawer.Body>
-              <Drawer.Footer className="border-t border-white/8 px-5 py-4">
+              <Drawer.Body className="mobile-drawer-body px-5 py-4">
+                {panel(true)}
+              </Drawer.Body>
+              <Drawer.Footer className="mobile-drawer-footer border-t border-white/8 px-5 py-4">
                 <Button
                   variant="secondary"
                   className="rounded-lg border border-white/10 bg-[#0B1621] text-[#F3F8FC] shadow-none"

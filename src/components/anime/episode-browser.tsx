@@ -208,9 +208,9 @@ export function EpisodeBrowser({
               key={episode.id}
             >
               <Card
-                className={`relative min-w-0 gap-0 overflow-hidden rounded-2xl p-0 transition-[background-color,box-shadow] duration-300 group-hover:shadow-[0_18px_42px_rgba(0,0,0,.3)] ${checked ? "bg-[#111E34] shadow-[0_16px_40px_rgba(23,79,161,.18)]" : "bg-[#0A1220]"}`}
+                className={`touch-card relative min-w-0 gap-0 overflow-hidden rounded-2xl p-0 transition-[background-color,box-shadow] duration-300 group-hover:shadow-[0_18px_42px_rgba(0,0,0,.3)] ${checked ? "bg-[#111E34] shadow-[0_16px_40px_rgba(23,79,161,.18)]" : "bg-[#0A1220]"}`}
               >
-                <div className="relative aspect-video overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04]">
+                <div className="touch-static-media relative aspect-video overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04]">
                   <AnimeImage
                     src={episode.imageUrl}
                     fallbackSrc={backdropUrl ?? posterUrl}
@@ -225,7 +225,7 @@ export function EpisodeBrowser({
                       {formatEpisodeNumber(episode.number)}
                     </strong>
                   </div>
-                  <div className="pointer-events-none absolute inset-0 grid place-items-center">
+                  <div className="episode-card-download-slot pointer-events-none absolute inset-0 grid place-items-center">
                     <EpisodeDownloadButton
                       slug={slug}
                       title={title}
@@ -283,7 +283,7 @@ export function EpisodeBrowser({
 
       {selected.length > 0 && (
         <div
-          className="fixed inset-x-1/2 bottom-5 z-40 flex w-[min(92vw,620px)] -translate-x-1/2 items-center gap-4 rounded-2xl bg-[#111A2A]/96 p-3 pl-5 shadow-[0_24px_80px_rgba(0,0,0,.62)] backdrop-blur-xl max-md:bottom-24 max-sm:gap-2 max-sm:p-2.5 max-sm:pl-3"
+          className="episode-selection-bar fixed inset-x-1/2 bottom-5 z-40 flex w-[min(92vw,620px)] -translate-x-1/2 items-center gap-4 rounded-2xl bg-[#111A2A]/96 p-3 pl-5 shadow-[0_24px_80px_rgba(0,0,0,.62)] backdrop-blur-xl max-md:bottom-24 max-sm:gap-2 max-sm:p-2.5 max-sm:pl-3"
           role="status"
         >
           <span className="max-sm:text-xs">
@@ -350,7 +350,7 @@ function EpisodePager({
       <Pagination.Summary className="text-[#8FA3B4]">
         Episodios {start}–{end} de {totalRecords}
       </Pagination.Summary>
-      <Pagination.Content>
+      <Pagination.Content className="episode-pager-content">
         <Pagination.Item>
           <Pagination.Previous
             isDisabled={page <= 1 || loading}

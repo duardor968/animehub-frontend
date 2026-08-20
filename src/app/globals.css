@@ -93,6 +93,12 @@
 }
 
 @layer components {
+  html[data-device="portable"] {
+    --portable-safe-bottom: env(safe-area-inset-bottom, 0px);
+    --portable-nav-bottom: calc(0.75rem + var(--portable-safe-bottom));
+    --portable-overlay-bottom: calc(5.5rem + var(--portable-safe-bottom));
+  }
+
   .drawer-state-trigger {
     display: none !important;
   }
@@ -135,6 +141,145 @@
   .status-error,
   .status-partial {
     color: var(--danger);
+  }
+
+  html[data-device="portable"] button,
+  html[data-device="portable"] a {
+    touch-action: manipulation;
+  }
+
+  html[data-device="portable"] .touch-static-media .anime-image img {
+    transform: none !important;
+  }
+
+  html[data-device="portable"] .touch-hover-overlay {
+    background: transparent !important;
+  }
+
+  html[data-device="portable"] .touch-hover-panel {
+    opacity: 0 !important;
+  }
+
+  html[data-device="portable"] .touch-category-label {
+    opacity: 1 !important;
+  }
+
+  html[data-device="portable"] .episode-download-action {
+    opacity: 1 !important;
+    transform: scale(1) !important;
+  }
+
+  html[data-device="portable"] .download-settings-button {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+
+  html[data-device="portable"] .recent-download-slot {
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding: 0.5rem;
+  }
+
+  html[data-device="portable"] .episode-card-download-slot {
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    padding: 0.5rem;
+  }
+
+  html[data-device="portable"] .download-drawer-backdrop,
+  html[data-device="portable"] .mobile-drawer-backdrop {
+    background: rgb(3 7 17 / 76%) !important;
+    backdrop-filter: none !important;
+  }
+
+  html[data-device="portable"] .download-drawer-dialog,
+  html[data-device="portable"] .mobile-drawer-dialog {
+    height: 100dvh;
+    max-height: 100dvh;
+    overscroll-behavior: contain;
+  }
+
+  html[data-device="portable"] .mobile-drawer-header {
+    padding-top: max(1rem, env(safe-area-inset-top, 0px));
+  }
+
+  html[data-device="portable"] .mobile-drawer-body {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  html[data-device="portable"] .mobile-drawer-footer,
+  html[data-device="portable"] .mobile-drawer-body {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  html[data-device="portable"] .search-suggestions [role="listbox"] {
+    max-height: min(70dvh, 26rem);
+  }
+
+  html[data-device="portable"] .schedule-tabs-list {
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+
+  html[data-device="portable"] .schedule-tabs-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  @media (max-width: 800px) {
+    html[data-device="portable"] .mobile-nav {
+      bottom: var(--portable-nav-bottom) !important;
+      background: rgb(17 26 42 / 98%);
+      backdrop-filter: none;
+    }
+
+    html[data-device="portable"] .animehub-toast-region,
+    html[data-device="portable"] .episode-selection-bar {
+      bottom: var(--portable-overlay-bottom) !important;
+    }
+
+    html[data-device="portable"] .animehub-toast-region {
+      inset-inline: 1rem !important;
+      width: auto !important;
+      max-width: none !important;
+    }
+
+    html[data-device="portable"] .episode-selection-bar {
+      width: calc(100vw - 2rem);
+      background: rgb(17 26 42 / 98%);
+      backdrop-filter: none;
+    }
+
+    html[data-device="portable"] .featured-hero,
+    html[data-device="portable"] .featured-slide,
+    html[data-device="portable"] .featured-hero-inner {
+      min-height: clamp(34rem, calc(100svh - 3.5rem), 40rem);
+    }
+
+    html[data-device="portable"] .featured-controls {
+      bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+      gap: 0.5rem;
+    }
+
+    html[data-device="portable"] .episode-pager-content {
+      max-width: 100%;
+      overflow-x: auto;
+      overscroll-behavior-inline: contain;
+      scrollbar-width: none;
+    }
+
+    html[data-device="portable"] .episode-pager-content::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  @media (min-width: 641px) and (max-width: 800px) {
+    html[data-device="portable"] main {
+      padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+    }
   }
 }
 

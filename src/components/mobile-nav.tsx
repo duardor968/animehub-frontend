@@ -15,7 +15,7 @@ export function MobileNav() {
   const pathname = usePathname();
   return (
     <nav
-      className="fixed inset-x-3 bottom-3 z-50 hidden h-16 grid-cols-4 rounded-[1.35rem] bg-[#111A2A]/96 p-1.5 shadow-[0_22px_64px_rgba(0,0,0,.55)] backdrop-blur-xl max-[800px]:grid"
+      className="mobile-nav fixed inset-x-3 bottom-3 z-50 hidden h-16 grid-cols-4 rounded-[1.35rem] bg-[#111A2A]/96 p-1.5 shadow-[0_22px_64px_rgba(0,0,0,.55)] backdrop-blur-xl max-[800px]:grid"
       aria-label="Principal móvil"
     >
       {links.map(({ href, label, icon: Icon }) => {

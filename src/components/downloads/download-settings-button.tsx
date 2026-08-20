@@ -10,7 +10,7 @@ export function DownloadSettingsButton() {
     <div className="flex shrink-0 items-center gap-2">
       <Button
         variant="secondary"
-        className="h-10 rounded-full bg-[#151E2E] px-5 text-sm font-semibold text-[#F3F8FC] shadow-none hover:bg-[#1C2940] max-sm:w-11 max-sm:px-0"
+        className="download-settings-button h-10 rounded-full bg-[#151E2E] px-5 text-sm font-semibold text-[#F3F8FC] shadow-none hover:bg-[#1C2940] max-sm:w-11 max-sm:px-0"
         onPress={openSettings}
         aria-label="Preferencias"
       >

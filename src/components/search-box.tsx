@@ -256,7 +256,7 @@ export function SearchBox({ compact = false }: { compact?: boolean }) {
 
           {isSuggestionsOpen ? (
             <div
-              className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden rounded-xl border border-white/10 bg-[#0B1621] shadow-[0_22px_70px_rgba(0,0,0,.5)]"
+              className="search-suggestions absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden rounded-xl border border-white/10 bg-[#0B1621] shadow-[0_22px_70px_rgba(0,0,0,.5)]"
               onMouseDown={(event) => event.preventDefault()}
             >
               <div

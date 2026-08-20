@@ -15,42 +15,46 @@ export function EpisodeDownloadButton({
   episodeNumber: number;
   className?: string;
 }) {
-  const { getEpisodeStatus, openDownload } = useDownloads();
+  const { deviceProfile, getEpisodeStatus, openDownload } = useDownloads();
   const status = getEpisodeStatus(slug, episodeNumber);
   const pending = ["resolving", "processing", "sending"].includes(status ?? "");
+  const button = (
+    <Button
+      isIconOnly
+      variant="ghost"
+      className={`episode-download-action h-11 w-11 min-w-11 rounded-full bg-[#2F81F7] text-white shadow-[0_12px_34px_rgba(47,129,247,.32)] hover:bg-[#4B93F7] active:scale-95 ${className}`}
+      style={pending ? { opacity: 1, transform: "scale(1)" } : undefined}
+      aria-label={`Descargar episodio ${episodeNumber} de ${title}`}
+      aria-busy={pending}
+      isPending={pending}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openDownload({ slug, title, episodeNumbers: [episodeNumber] });
+      }}
+    >
+      {pending ? (
+        <ProgressCircle
+          isIndeterminate
+          size="sm"
+          color="default"
+          aria-label="Preparando descarga"
+          className="size-5 text-white"
+        >
+          <ProgressCircle.Track className="size-5">
+            <ProgressCircle.TrackCircle className="stroke-white/25" />
+            <ProgressCircle.FillCircle className="stroke-white" />
+          </ProgressCircle.Track>
+        </ProgressCircle>
+      ) : (
+        <Download aria-hidden="true" size={18} />
+      )}
+    </Button>
+  );
+  if (deviceProfile === "portable") return button;
   return (
     <Tooltip delay={300}>
-      <Button
-        isIconOnly
-        variant="ghost"
-        className={`h-11 w-11 min-w-11 rounded-full bg-[#2F81F7] text-white shadow-[0_12px_34px_rgba(47,129,247,.32)] hover:bg-[#4B93F7] active:scale-95 ${className}`}
-        style={pending ? { opacity: 1, transform: "scale(1)" } : undefined}
-        aria-label={`Descargar episodio ${episodeNumber} de ${title}`}
-        aria-busy={pending}
-        isPending={pending}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          openDownload({ slug, title, episodeNumbers: [episodeNumber] });
-        }}
-      >
-        {pending ? (
-          <ProgressCircle
-            isIndeterminate
-            size="sm"
-            color="default"
-            aria-label="Preparando descarga"
-            className="size-5 text-white"
-          >
-            <ProgressCircle.Track className="size-5">
-              <ProgressCircle.TrackCircle className="stroke-white/25" />
-              <ProgressCircle.FillCircle className="stroke-white" />
-            </ProgressCircle.Track>
-          </ProgressCircle>
-        ) : (
-          <Download aria-hidden="true" size={18} />
-        )}
-      </Button>
+      {button}
       <Tooltip.Content className="bg-[#182235] px-2.5 py-1 text-xs text-[#F3F8FC]">
         Descargar episodio
       </Tooltip.Content>
