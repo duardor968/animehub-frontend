@@ -3,7 +3,13 @@
 import { Card, Chip, Tabs } from "@heroui/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { components } from "@/lib/api/generated";
 import { AnimeImage } from "./anime-image";
 import { deriveScheduleStatus } from "./schedule-status";
@@ -37,7 +43,48 @@ const timeFormatter = new Intl.DateTimeFormat("es", {
 // focus, so quick tab-switching never hammers the API.
 const REVALIDATE_THROTTLE_MS = 30_000;
 
+const subscribeHydration = () => () => {};
+const getHydratedSnapshot = () => true;
+const getServerSnapshot = () => false;
+
+function ScheduleBoardPlaceholder() {
+  return (
+    <div aria-hidden="true" className="w-full">
+      <div className="mb-7 flex min-h-11 gap-1 overflow-hidden border-b border-white/8">
+        {daysShort.map((day) => (
+          <span
+            className="flex min-h-11 min-w-16 items-center justify-center rounded-lg text-sm capitalize text-[#5C6E82]"
+            key={day}
+          >
+            {day}
+          </span>
+        ))}
+      </div>
+      <div className="mb-4 h-7 w-32 animate-pulse rounded-lg bg-white/6 motion-reduce:animate-none" />
+      <div className="grid grid-cols-5 gap-x-4 gap-y-7 max-xl:grid-cols-4 max-lg:grid-cols-3 max-sm:grid-cols-2">
+        {Array.from({ length: 5 }, (_, index) => (
+          <div
+            className="aspect-[2/3] animate-pulse rounded-xl bg-[#0A1424] motion-reduce:animate-none"
+            key={index}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
+  const hydrated = useSyncExternalStore(
+    subscribeHydration,
+    getHydratedSnapshot,
+    getServerSnapshot,
+  );
+
+  if (!hydrated) return <ScheduleBoardPlaceholder />;
+  return <HydratedScheduleBoard entries={entries} />;
+}
+
+function HydratedScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
   const router = useRouter();
 
   // A render-time clock drives both the default day and the per-entry status
