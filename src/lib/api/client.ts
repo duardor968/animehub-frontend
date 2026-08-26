@@ -38,6 +38,10 @@ export class ApiResponseError extends Error {
   }
 }
 
+export function isApiNotFoundError(error: unknown): error is ApiResponseError {
+  return error instanceof ApiResponseError && error.status === 404;
+}
+
 export function apiBase(client = false) {
   if (client) {
     return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";

@@ -202,11 +202,10 @@ function HydratedScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
             ) : (
               <div className="grid grid-cols-5 gap-x-4 gap-y-7 max-xl:grid-cols-4 max-lg:grid-cols-3 max-sm:grid-cols-2">
                 {grouped[index].map((entry) => {
-                  // Status text is meaningful for today (Emitido / Próximo); other
-                  // days show just the slot time + last episode. "Retrasado" is
-                  // persistent and shows on any day. The EP badge is always the last
-                  // emitted number — no client-side guessing; the next number arrives
-                  // with the refreshed snapshot.
+                  // The status mirrors AnimeAV1's evidence-based labels: a recent
+                  // observed episode is "Emitido" and a week-old observation is
+                  // "Retrasado". Otherwise we show only the inferred slot time. The
+                  // EP badge is always the last observed number — no guessing.
                   const status = deriveScheduleStatus(
                     entry.basisPublishedAt,
                     now,
@@ -254,10 +253,6 @@ function HydratedScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
                             <Chip color="success" variant="soft" size="sm">
                               <Chip.Label>Emitido</Chip.Label>
                             </Chip>
-                          ) : status === "upcoming" ? (
-                            <span className="text-xs text-[#8FA3B4]">
-                              Próximo
-                            </span>
                           ) : null}
                         </Card.Content>
                       </Card>

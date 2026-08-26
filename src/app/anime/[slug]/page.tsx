@@ -11,6 +11,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AnimeImage } from "@/components/anime-image";
 import { EpisodeBrowser } from "@/components/anime/episode-browser";
+import { loadAnime } from "@/lib/api/anime";
 import {
   apiFetch,
   type AnimeResponse,
@@ -20,21 +21,13 @@ import { formatStatus } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-async function load(slug: string) {
-  try {
-    return await apiFetch<AnimeResponse>(`/anime/${encodeURIComponent(slug)}`);
-  } catch {
-    return null;
-  }
-}
-
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const response = await load(slug);
+  const response = await loadAnime(slug);
   if (!response)
     return { title: "Anime no encontrado", robots: { index: false } };
   return {
@@ -57,7 +50,7 @@ export default async function AnimePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const response = await load(slug);
+  const response = await loadAnime(slug);
   if (!response) notFound();
   const anime = response.data;
   const episodes = await apiFetch<EpisodePageResponse>(

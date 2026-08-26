@@ -1,4 +1,5 @@
 import { Card } from "@heroui/react";
+import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import type { components } from "@/lib/api/generated";
 import { formatEpisodeNumber, formatRelativeTime } from "@/lib/format";
@@ -8,6 +9,38 @@ import { EpisodeDownloadButton } from "../downloads/episode-download-button";
 type RecentEpisode = components["schemas"]["RecentEpisodeDto"];
 
 export function RecentEpisodes({ episodes }: { episodes: RecentEpisode[] }) {
+  if (episodes.length === 0) {
+    return (
+      <section
+        aria-labelledby="recent-episodes-empty-title"
+        className="grid min-h-56 place-items-center border-y border-white/8 py-10 text-center"
+      >
+        <div className="max-w-md">
+          <span
+            aria-hidden="true"
+            className="mx-auto block h-px w-10 bg-[#2F81F7]"
+          />
+          <h3
+            className="mt-5 font-(family-name:--font-display) text-xl font-semibold tracking-tight text-[#F3F8FC]"
+            id="recent-episodes-empty-title"
+          >
+            Aún no hay episodios recientes
+          </h3>
+          <p className="mt-2 text-sm leading-6 text-[#8FA3B4]">
+            Consulta el horario para ver qué series publican hoy.
+          </p>
+          <Link
+            className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#152439] px-4 text-sm font-semibold text-[#DCEAFF] transition-colors hover:bg-[#1B304A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B9CFF]"
+            href="/horario"
+          >
+            Ver horario
+            <ArrowRight aria-hidden="true" size={15} />
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <div className="grid grid-cols-4 gap-x-4 gap-y-6 max-lg:grid-cols-2">
       {episodes.map(({ anime, episode }) => (

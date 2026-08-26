@@ -10,6 +10,8 @@ export function Pagination({
   totalPages: number;
   params: URLSearchParams;
 }) {
+  if (totalPages <= 1 || page < 1 || page > totalPages) return null;
+
   const href = (target: number) => {
     const next = new URLSearchParams(params);
     next.set("page", String(target));

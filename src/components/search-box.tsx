@@ -240,7 +240,10 @@ export function SearchBox({ compact = false }: { compact?: boolean }) {
                   <span>K</span>
                 </kbd>
               )}
-              <SearchField.ClearButton className="mr-1 text-[#8FA3B4] hover:text-[#F3F8FC]" />
+              <SearchField.ClearButton
+                aria-label="Limpiar búsqueda"
+                className="mr-1 text-[#8FA3B4] hover:text-[#F3F8FC]"
+              />
               <Button
                 aria-label="Buscar"
                 isIconOnly

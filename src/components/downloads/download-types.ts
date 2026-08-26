@@ -12,6 +12,7 @@ export interface DownloadPreferences {
 export type DownloadActivityStatus =
   | "resolving"
   | "processing"
+  | "ready"
   | "sending"
   | "handed-off"
   | "waiting-device"

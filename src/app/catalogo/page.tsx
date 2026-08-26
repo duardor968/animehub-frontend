@@ -1,5 +1,13 @@
 import type { Metadata } from "next";
 import { CatalogFilters } from "@/components/catalog/catalog-filters";
+import {
+  catalogApiYearBounds,
+  clearCatalogFilters,
+  countCatalogFilters,
+  getYearBounds,
+  normalizeCatalogParams,
+  resetCatalogPage,
+} from "@/components/catalog/catalog-filter-params";
 import { Pagination } from "@/components/catalog/pagination";
 import { PosterGrid } from "@/components/poster-grid";
 import { apiFetch, type CatalogResponse } from "@/lib/api/client";
@@ -28,8 +36,25 @@ export default async function CatalogPage({
     (Array.isArray(value) ? value : value ? [value] : []).forEach((entry) =>
       params.append(key, entry),
     );
-  if (!params.has("page")) params.set("page", "1");
-  const response = await apiFetch<CatalogResponse>(`/catalog?${params}`);
+  const requestParams = normalizeCatalogParams(params, catalogApiYearBounds, {
+    keepPage: true,
+  });
+  const apiParams = new URLSearchParams(requestParams);
+  apiParams.delete("q");
+  if (!apiParams.has("page")) apiParams.set("page", "1");
+  const response = await apiFetch<CatalogResponse>(`/catalog?${apiParams}`);
+  const bounds = getYearBounds(response.meta.years);
+  const normalizedParams = normalizeCatalogParams(requestParams, bounds, {
+    keepPage: true,
+  });
+  const hasActiveFilters = countCatalogFilters(normalizedParams) > 0;
+  const pageOutOfRange =
+    response.meta.totalPages > 0 &&
+    response.meta.page > response.meta.totalPages;
+  const clearParams = clearCatalogFilters(normalizedParams, bounds);
+  const firstPageParams = resetCatalogPage(normalizedParams, bounds);
+  const actionParams = pageOutOfRange ? firstPageParams : clearParams;
+  const actionHref = `/catalogo${actionParams.size ? `?${actionParams}` : ""}`;
   return (
     <main className="mx-auto w-full max-w-[1600px] px-6 py-12 max-sm:px-4 max-sm:pb-28 max-sm:pt-9">
       <div className="mb-10">
@@ -54,11 +79,33 @@ export default async function CatalogPage({
           <Pagination
             page={response.meta.page}
             totalPages={response.meta.totalPages}
-            params={params}
+            params={normalizedParams}
           />
         }
       >
-        <PosterGrid anime={response.data} />
+        <PosterGrid
+          anime={response.data}
+          emptyState={{
+            title: hasActiveFilters
+              ? pageOutOfRange
+                ? "Esta página no tiene resultados"
+                : "Ninguna obra coincide"
+              : "Esta página no tiene resultados",
+            description: pageOutOfRange
+              ? "Vuelve al inicio de estos resultados para seguir explorando."
+              : hasActiveFilters
+                ? "Prueba con una combinación más amplia de formato, estado, año o género."
+                : "Vuelve al inicio del catálogo para seguir explorando las obras disponibles.",
+            action: {
+              href: actionHref,
+              label: pageOutOfRange
+                ? "Volver a los resultados"
+                : hasActiveFilters
+                  ? "Limpiar filtros"
+                  : "Volver al catálogo",
+            },
+          }}
+        />
       </CatalogFilters>
     </main>
   );

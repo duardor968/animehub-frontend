@@ -82,7 +82,19 @@ export default async function HomePage() {
               </h2>
             </div>
           </div>
-          <PosterGrid anime={response.data.recentAnime} variant="home" />
+          <PosterGrid
+            anime={response.data.recentAnime}
+            variant="home"
+            emptyState={{
+              title: "Aún no hay novedades",
+              description:
+                "No encontramos anime reciente para mostrar. Puedes seguir explorando el catálogo.",
+              action: {
+                href: "/catalogo",
+                label: "Explorar el catálogo",
+              },
+            }}
+          />
         </section>
       </div>
     </main>

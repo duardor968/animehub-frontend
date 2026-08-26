@@ -24,7 +24,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ApiTimeoutError, apiFetch } from "@/lib/api/client";
+import { ApiResponseError, ApiTimeoutError, apiFetch } from "@/lib/api/client";
 import {
   connectMyJd,
   disconnectMyJd,
@@ -43,6 +43,11 @@ import {
   isRememberedDeviceAvailable,
   planDownloadDispatch,
 } from "./download-policy";
+import {
+  loadActiveDownloadJobs,
+  saveActiveDownloadJobs,
+  type PersistedDownloadJob,
+} from "./download-job-storage";
 import type {
   DownloadActivityStatus,
   DownloadPreferences,
@@ -61,7 +66,6 @@ interface SavedJob {
   jobId: string;
   accessToken: string;
   expiresAt: string;
-  title: string;
 }
 
 interface Activity {
@@ -77,6 +81,7 @@ interface Activity {
   receipt?: SavedJob;
   destination: DownloadPreferences["destination"];
   createdAt: number;
+  deliveryAttempted?: boolean;
 }
 
 interface MyJdDevice {
@@ -114,6 +119,68 @@ function requiresBackgroundJob(request: DownloadRequest, total: number) {
   );
 }
 
+const resumableStatuses = new Set<DownloadActivityStatus>([
+  "processing",
+  "ready",
+  "waiting-device",
+  "sending",
+]);
+
+function isResumableActivity(activity: Activity) {
+  return Boolean(activity.receipt && resumableStatuses.has(activity.status));
+}
+
+function getBrowserStorage(name: "localStorage" | "sessionStorage") {
+  if (typeof window === "undefined") return null;
+  try {
+    return window[name];
+  } catch {
+    return null;
+  }
+}
+
+function readBrowserStorage(
+  name: "localStorage" | "sessionStorage",
+  key: string,
+) {
+  try {
+    return getBrowserStorage(name)?.getItem(key) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function writeBrowserStorage(
+  name: "localStorage" | "sessionStorage",
+  key: string,
+  value: string | null,
+) {
+  try {
+    const storage = getBrowserStorage(name);
+    if (!storage) return;
+    if (value === null) storage.removeItem(key);
+    else storage.setItem(key, value);
+  } catch {
+    // Storage is best effort; the live provider remains usable without it.
+  }
+}
+
+function persistedJobFromActivity(
+  activity: Activity,
+): PersistedDownloadJob | null {
+  if (!isResumableActivity(activity) || !activity.receipt) return null;
+  return {
+    id: activity.id,
+    request: activity.request,
+    receipt: activity.receipt,
+    destination: activity.destination,
+    createdAt: activity.createdAt,
+    current: activity.current,
+    total: activity.total,
+    deliveryAttempted: activity.deliveryAttempted === true,
+  };
+}
+
 export function useDownloads() {
   const value = useContext(DownloadContext);
   if (!value) throw new Error("DownloadProvider is missing.");
@@ -126,7 +193,37 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<"settings" | "devices">("settings");
   const [activities, setActivities] = useState<Activity[]>([]);
   const activitiesRef = useRef<Activity[]>([]);
+  const [dismissedResumableIds, setDismissedResumableIds] = useState<
+    Set<string>
+  >(() => new Set());
+  const dismissedResumableIdsRef = useRef(new Set<string>());
+  const setActivityDismissed = useCallback(
+    (activityId: string, dismissed: boolean) => {
+      const next = new Set(dismissedResumableIdsRef.current);
+      if (dismissed) next.add(activityId);
+      else next.delete(activityId);
+      dismissedResumableIdsRef.current = next;
+      setDismissedResumableIds(next);
+    },
+    [],
+  );
   const toastIds = useRef(new Map<string, string>());
+  const deliveryActionRef = useRef<(activityId: string) => void>(() => {});
+  const publishActivityRef = useRef<(activity: Activity) => void>(() => {});
+  const pollJobRef = useRef<
+    (
+      id: string,
+      receipt: SavedJob,
+      destination: DownloadPreferences["destination"],
+      preferredDeviceId?: string,
+      deferDelivery?: boolean,
+      deliveryMayHaveSucceeded?: boolean,
+    ) => Promise<void>
+  >(async () => {});
+  const pollSessionsRef = useRef(new Map<string, symbol>());
+  const pollTimeoutsRef = useRef(new Map<string, number>());
+  const deliverySessionsRef = useRef(new Set<string>());
+  const mountedRef = useRef(false);
   const [devices, setDevices] = useState<MyJdDevice[]>([]);
   const [deviceActivityId, setDeviceActivityId] = useState<string | null>(null);
   const [deviceProfile, setDeviceProfile] = useState<DeviceProfile>("unknown");
@@ -145,6 +242,12 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const drawer = useOverlayState({
     onOpenChange: (isOpen) => {
       if (isOpen || deviceProfileRef.current !== "portable") return;
+      const waitingActivity = activitiesRef.current.find(
+        (activity) =>
+          activity.id === deviceActivityId &&
+          activity.status === "waiting-device",
+      );
+      if (waitingActivity) setActivityDismissed(waitingActivity.id, true);
       pendingRequestRef.current = null;
       setPendingRequest(null);
       setDeviceActivityId(null);
@@ -153,21 +256,68 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   });
 
   const replaceActivities = useCallback((next: Activity[]) => {
+    if (!mountedRef.current) return;
     activitiesRef.current = next;
     setActivities(next);
+    const storage = getBrowserStorage("sessionStorage");
+    if (storage) {
+      saveActiveDownloadJobs(
+        storage,
+        next
+          .map(persistedJobFromActivity)
+          .filter((job): job is PersistedDownloadJob => job !== null),
+      );
+    }
   }, []);
 
-  const removeActivity = useCallback((id: string) => {
-    const next = activitiesRef.current.filter((activity) => activity.id !== id);
-    activitiesRef.current = next;
-    setActivities(next);
-    toastIds.current.delete(id);
+  const stopPolling = useCallback((id: string) => {
+    pollSessionsRef.current.delete(id);
+    const timeout = pollTimeoutsRef.current.get(id);
+    if (timeout !== undefined) window.clearTimeout(timeout);
+    pollTimeoutsRef.current.delete(id);
   }, []);
+
+  useLayoutEffect(() => {
+    const pollSessions = pollSessionsRef.current;
+    const deliverySessions = deliverySessionsRef.current;
+    const activeToastIds = toastIds.current;
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      for (const id of [...pollSessions.keys()]) stopPolling(id);
+      deliverySessions.clear();
+      const visibleToasts = [...activeToastIds.values()];
+      activeToastIds.clear();
+      visibleToasts.forEach((toastId) => toast.close(toastId));
+    };
+  }, [stopPolling]);
+
+  const removeActivity = useCallback(
+    (id: string) => {
+      stopPolling(id);
+      setActivityDismissed(id, false);
+      replaceActivities(
+        activitiesRef.current.filter((activity) => activity.id !== id),
+      );
+      toastIds.current.delete(id);
+    },
+    [replaceActivities, setActivityDismissed, stopPolling],
+  );
 
   const publishActivity = useCallback(
     (activity: Activity) => {
+      if (!mountedRef.current) return;
+      const isQuietlyRunning = ["processing", "sending"].includes(
+        activity.status,
+      );
+      if (isQuietlyRunning && dismissedResumableIdsRef.current.has(activity.id))
+        return;
       const previous = toastIds.current.get(activity.id);
-      if (previous) toast.close(previous);
+      if (previous) {
+        toastIds.current.delete(activity.id);
+        toast.close(previous);
+      }
+      setActivityDismissed(activity.id, false);
       const active = ["resolving", "processing", "sending"].includes(
         activity.status,
       );
@@ -186,6 +336,18 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
               </ProgressBar.Track>
             </ProgressBar>
           )}
+          {activity.status === "ready" && (
+            <Button
+              variant="secondary"
+              className="min-h-10 self-start rounded-lg px-4 font-semibold"
+              onPress={() => deliveryActionRef.current(activity.id)}
+            >
+              <Send size={15} />
+              {activity.deliveryAttempted
+                ? "Reintentar entrega"
+                : "Entregar ahora"}
+            </Button>
+          )}
         </div>
       );
       let toastId = "";
@@ -194,6 +356,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         isLoading: active,
         timeout:
           active ||
+          activity.status === "ready" ||
           (activity.status === "error" &&
             deviceProfileRef.current !== "portable")
             ? 0
@@ -203,6 +366,10 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         onClose: () => {
           if (toastIds.current.get(activity.id) !== toastId) return;
           toastIds.current.delete(activity.id);
+          if (isResumableActivity(activity)) {
+            setActivityDismissed(activity.id, true);
+            return;
+          }
           if (!active) removeActivity(activity.id);
         },
       };
@@ -218,11 +385,12 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                 : toast.info(activity.label, options);
       toastIds.current.set(activity.id, toastId);
     },
-    [removeActivity],
+    [removeActivity, setActivityDismissed],
   );
 
   const addActivity = useCallback(
     (activity: Activity) => {
+      if (!mountedRef.current) return;
       replaceActivities([activity, ...activitiesRef.current]);
       // A background job has no button-local pending state and must remain
       // visible even when the requested range is small.
@@ -235,6 +403,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
 
   const updateActivity = useCallback(
     (id: string, changes: Partial<Activity>) => {
+      if (!mountedRef.current) return;
       const existing = activitiesRef.current.find(
         (activity) => activity.id === id,
       );
@@ -266,22 +435,39 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   );
 
   useLayoutEffect(() => {
+    let active = true;
     const profile = getDeviceProfile();
     deviceProfileRef.current = profile;
-    setDeviceProfile(profile);
     document.documentElement.dataset.device = profile;
 
-    const storedDeviceId = sessionStorage.getItem(selectedDeviceStorageKey);
+    const storedDeviceId = readBrowserStorage(
+      "sessionStorage",
+      selectedDeviceStorageKey,
+    );
     selectedDeviceIdRef.current = storedDeviceId;
-    setSelectedDeviceId(storedDeviceId);
-    setMyJdConnected(isMyJdConnected());
+    queueMicrotask(() => {
+      if (!active) return;
+      setDeviceProfile(profile);
+      setSelectedDeviceId(storedDeviceId);
+      setMyJdConnected(isMyJdConnected());
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
-      const stored = localStorage.getItem(storageKey);
+      const storage = getBrowserStorage("localStorage");
+      if (!storage) return;
+      let stored: string | null = null;
+      try {
+        stored = storage.getItem(storageKey);
+      } catch {
+        return;
+      }
       if (stored) {
         try {
           const legacy = JSON.parse(stored) as Partial<DownloadPreferences> & {
@@ -297,9 +483,9 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           };
           preferencesRef.current = next;
           setPreferences(next);
-          localStorage.setItem(storageKey, JSON.stringify(next));
+          writeBrowserStorage("localStorage", storageKey, JSON.stringify(next));
         } catch {
-          localStorage.removeItem(storageKey);
+          writeBrowserStorage("localStorage", storageKey, null);
         }
       }
     });
@@ -311,14 +497,13 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const savePreferences = useCallback((next: DownloadPreferences) => {
     preferencesRef.current = next;
     setPreferences(next);
-    localStorage.setItem(storageKey, JSON.stringify(next));
+    writeBrowserStorage("localStorage", storageKey, JSON.stringify(next));
   }, []);
 
   const rememberDevice = useCallback((deviceId: string | null) => {
     selectedDeviceIdRef.current = deviceId;
     setSelectedDeviceId(deviceId);
-    if (deviceId) sessionStorage.setItem(selectedDeviceStorageKey, deviceId);
-    else sessionStorage.removeItem(selectedDeviceStorageKey);
+    writeBrowserStorage("sessionStorage", selectedDeviceStorageKey, deviceId);
   }, []);
 
   const refreshDevices = useCallback(async (preserveError = false) => {
@@ -396,6 +581,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       );
       if (!urls.length) {
         updateActivity(id, {
+          receipt: undefined,
           status: "error",
           label: "Sin enlaces compatibles",
           detail: "No se encontraron espejos para la selección",
@@ -409,14 +595,18 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           await requestDevice(id);
           return;
         }
+        if (deliverySessionsRef.current.has(id)) return;
+        deliverySessionsRef.current.add(id);
         updateActivity(id, {
           status: "sending",
           label: "Enviando a MyJDownloader",
           detail: "Conectando con el dispositivo",
+          deliveryAttempted: true,
         });
         try {
           await sendToMyJd(preferredDeviceId, packageName, urls);
           updateActivity(id, {
+            receipt: undefined,
             status: "handed-off",
             label: "Solicitud aceptada por MyJDownloader",
             detail: `${urls.length} enlaces enviados al dispositivo`,
@@ -429,36 +619,44 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
               ? error.message
               : "El dispositivo ya no está disponible.",
           );
+        } finally {
+          deliverySessionsRef.current.delete(id);
         }
         return;
       }
+      if (deliverySessionsRef.current.has(id)) return;
+      deliverySessionsRef.current.add(id);
       updateActivity(id, {
         status: "sending",
         label: "Enviando a JDownloader",
         detail: "Entregando los enlaces a LinkGrabber",
         packageName,
         episodes,
+        deliveryAttempted: true,
       });
       try {
         await sendToClickNLoad(packageName, urls);
       } catch (error) {
         updateActivity(id, {
-          status: "error",
-          label: "JDownloader no respondió",
+          status: "ready",
+          label: "Entrega sin confirmar",
           detail:
             error instanceof Error
-              ? error.message
-              : "No se pudo contactar el servicio local de Click'n'Load.",
+              ? `${error.message} Reintentar puede duplicar enlaces.`
+              : "JDownloader no confirmó la entrega; reintentar puede duplicar enlaces.",
           episodes,
           packageName,
         });
         return;
+      } finally {
+        deliverySessionsRef.current.delete(id);
       }
       const failedCount = Math.max(
         failed,
         episodes.filter((episode) => episode.errorCode).length,
       );
       updateActivity(id, {
+        receipt: undefined,
         status: failedCount > 0 ? "partial" : "handed-off",
         label:
           failedCount > 0
@@ -476,72 +674,254 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   );
 
   const pollJob = useCallback(
-    async function poll(
+    async function startPolling(
       id: string,
       receipt: SavedJob,
       destination: DownloadPreferences["destination"],
       preferredDeviceId?: string,
+      deferDelivery = false,
+      deliveryMayHaveSucceeded = false,
     ) {
-      try {
-        const response = await apiFetch<{
-          data: {
-            status: string;
-            packageName: string;
-            completedItems: number;
-            failedItems: number;
-            totalItems: number;
-            episodes: ResolvedEpisode[];
-          };
-        }>(
-          `/download-jobs/${receipt.jobId}`,
-          { headers: { authorization: `Bearer ${receipt.accessToken}` } },
-          true,
-        );
-        const job = response.data;
-        const processed = job.completedItems + job.failedItems;
-        updateActivity(id, {
-          status: "processing",
-          label: "Resolviendo episodios",
-          detail: `${processed} de ${job.totalItems} procesados`,
-          current: processed,
-          total: job.totalItems,
-          episodes: job.episodes,
-          packageName: job.packageName,
-        });
-        if (
-          ["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"].includes(job.status)
-        ) {
-          if (job.status === "CANCELLED") {
+      stopPolling(id);
+      const session = Symbol(receipt.jobId);
+      pollSessionsRef.current.set(id, session);
+
+      const isCurrentSession = () =>
+        pollSessionsRef.current.get(id) === session;
+      const scheduleNextPoll = (delay: number) => {
+        if (!isCurrentSession()) return;
+        const timeout = window.setTimeout(() => {
+          pollTimeoutsRef.current.delete(id);
+          void poll();
+        }, delay);
+        pollTimeoutsRef.current.set(id, timeout);
+      };
+
+      async function poll() {
+        if (!isCurrentSession()) return;
+        if (Date.parse(receipt.expiresAt) <= Date.now()) {
+          stopPolling(id);
+          updateActivity(id, {
+            receipt: undefined,
+            status: "error",
+            label: "La descarga expiró",
+            detail: "Inicia la descarga de nuevo para obtener enlaces actuales",
+          });
+          return;
+        }
+        try {
+          const response = await apiFetch<{
+            data: {
+              status: string;
+              packageName: string;
+              completedItems: number;
+              failedItems: number;
+              totalItems: number;
+              episodes: ResolvedEpisode[];
+            };
+          }>(
+            `/download-jobs/${receipt.jobId}`,
+            { headers: { authorization: `Bearer ${receipt.accessToken}` } },
+            true,
+          );
+          if (!isCurrentSession()) return;
+          const job = response.data;
+          const processed = job.completedItems + job.failedItems;
+          updateActivity(id, {
+            status: "processing",
+            label: "Resolviendo episodios",
+            detail: `${processed} de ${job.totalItems} procesados`,
+            current: processed,
+            total: job.totalItems,
+            episodes: job.episodes,
+            packageName: job.packageName,
+          });
+          if (
+            ["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"].includes(job.status)
+          ) {
+            stopPolling(id);
+            if (job.status === "CANCELLED") {
+              updateActivity(id, {
+                receipt: undefined,
+                status: "cancelled",
+                label: "Trabajo cancelado",
+                detail: "La operación se detuvo",
+              });
+              return;
+            }
+            const availableLinks = job.episodes.reduce(
+              (total, episode) => total + episode.links.length,
+              0,
+            );
+            if (deferDelivery && availableLinks > 0) {
+              updateActivity(id, {
+                status: "ready",
+                label: deliveryMayHaveSucceeded
+                  ? "Entrega sin confirmar"
+                  : "Listo para entregar",
+                detail: deliveryMayHaveSucceeded
+                  ? "La pestaña se recargó durante el envío; reintentar puede duplicar enlaces"
+                  : destination === "MYJD"
+                    ? "Conecta o elige un dispositivo para enviar los enlaces"
+                    : "Confirma para enviar los enlaces a JDownloader",
+                current: processed,
+                total: job.totalItems,
+                episodes: job.episodes,
+                packageName: job.packageName,
+                deliveryAttempted: deliveryMayHaveSucceeded,
+              });
+              return;
+            }
+            await deliver(
+              id,
+              job.packageName,
+              job.episodes,
+              destination,
+              job.failedItems,
+              preferredDeviceId,
+            );
+            return;
+          }
+          scheduleNextPoll(1_250);
+        } catch (error) {
+          if (!isCurrentSession()) return;
+          const capabilityRejected =
+            error instanceof ApiResponseError &&
+            (error.status === 401 || error.status === 404);
+          if (
+            capabilityRejected ||
+            Date.parse(receipt.expiresAt) <= Date.now()
+          ) {
+            stopPolling(id);
             updateActivity(id, {
-              status: "cancelled",
-              label: "Trabajo cancelado",
-              detail: "La operación se detuvo",
+              receipt: undefined,
+              status: "error",
+              label: "La descarga ya no está disponible",
+              detail:
+                "La autorización expiró. Inicia la descarga de nuevo para continuar.",
             });
             return;
           }
-          await deliver(
-            id,
-            job.packageName,
-            job.episodes,
-            destination,
-            job.failedItems,
-            preferredDeviceId,
-          );
+          updateActivity(id, {
+            status: "processing",
+            label: "Reconectando con la descarga",
+            detail: "Conservamos el trabajo y volveremos a intentarlo",
+          });
+          scheduleNextPoll(3_000);
+        }
+      }
+
+      await poll();
+    },
+    [deliver, stopPolling, updateActivity],
+  );
+
+  useLayoutEffect(() => {
+    publishActivityRef.current = publishActivity;
+    pollJobRef.current = pollJob;
+  }, [pollJob, publishActivity]);
+
+  useEffect(() => {
+    let active = true;
+    const storage = getBrowserStorage("sessionStorage");
+    const restoredJobs = storage ? loadActiveDownloadJobs(storage) : [];
+    if (restoredJobs.length === 0) return;
+    const restoredActivities = restoredJobs.map((job): Activity => ({
+      id: job.id,
+      request: job.request,
+      status: "processing",
+      label: "Reanudando descarga",
+      detail: job.request.title,
+      current: job.current,
+      total: job.total,
+      packageName: job.request.title,
+      episodes: [],
+      receipt: job.receipt,
+      destination: job.destination,
+      createdAt: job.createdAt,
+      deliveryAttempted: job.deliveryAttempted,
+    }));
+    const restoredIds = new Set(
+      restoredActivities.map((activity) => activity.id),
+    );
+    queueMicrotask(() => {
+      if (!active) return;
+      replaceActivities([
+        ...restoredActivities,
+        ...activitiesRef.current.filter(
+          (activity) => !restoredIds.has(activity.id),
+        ),
+      ]);
+      for (const activity of restoredActivities) {
+        publishActivityRef.current(activity);
+        void pollJobRef.current(
+          activity.id,
+          activity.receipt as SavedJob,
+          activity.destination,
+          undefined,
+          true,
+          activity.deliveryAttempted === true,
+        );
+      }
+    });
+    return () => {
+      active = false;
+      for (const activity of restoredActivities) stopPolling(activity.id);
+    };
+  }, [replaceActivities, stopPolling]);
+
+  const deliverReadyActivity = useCallback(
+    (activityId: string) => {
+      const activity = activitiesRef.current.find(
+        (entry) => entry.id === activityId && entry.status === "ready",
+      );
+      if (!activity) return;
+      if (activity.destination === "MYJD") {
+        const deviceId = selectedDeviceIdRef.current;
+        if (!isMyJdConnected() || !deviceId) {
+          void requestDevice(activity.id);
           return;
         }
-        window.setTimeout(
-          () => void poll(id, receipt, destination, preferredDeviceId),
-          1_250,
+        void deliver(
+          activity.id,
+          activity.packageName,
+          activity.episodes,
+          activity.destination,
+          0,
+          deviceId,
         );
-      } catch (error) {
-        updateActivity(id, {
-          status: "error",
-          label: "No se pudo consultar el trabajo",
-          detail: error instanceof Error ? error.message : "Error inesperado",
-        });
+        return;
       }
+      void deliver(
+        activity.id,
+        activity.packageName,
+        activity.episodes,
+        activity.destination,
+      );
     },
-    [deliver, updateActivity],
+    [deliver, requestDevice],
+  );
+  useEffect(() => {
+    deliveryActionRef.current = deliverReadyActivity;
+    return () => {
+      deliveryActionRef.current = () => {};
+    };
+  }, [deliverReadyActivity]);
+
+  const reopenDismissedActivity = useCallback(
+    (activityId: string) => {
+      const activity = activitiesRef.current.find(
+        (entry) => entry.id === activityId && isResumableActivity(entry),
+      );
+      if (!activity) return;
+      setActivityDismissed(activity.id, false);
+      if (activity.status === "waiting-device") {
+        void requestDevice(activity.id);
+        return;
+      }
+      publishActivity(activity);
+    },
+    [publishActivity, requestDevice, setActivityDismissed],
   );
 
   const startOperation = useCallback(
@@ -594,7 +974,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
             },
             true,
           );
-          const receipt = { ...response.data, title: next.title };
+          const receipt = response.data;
           updateActivity(id, {
             receipt,
             status: "processing",
@@ -779,6 +1159,12 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     const activity = activitiesRef.current.find(
       (entry) => entry.id === deviceActivityId,
     );
+    if (
+      activity &&
+      activity.status !== "waiting-device" &&
+      activity.status !== "ready"
+    )
+      return;
     if (portable) {
       rememberDevice(deviceId);
       pendingRequestRef.current = null;
@@ -795,6 +1181,8 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       if (!activity) return;
     } else if (!activity) return;
 
+    if (deliverySessionsRef.current.has(activity.id)) return;
+    deliverySessionsRef.current.add(activity.id);
     const urls = activity.episodes.flatMap((episode) =>
       episode.links.map((link) => link.url),
     );
@@ -802,31 +1190,27 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       status: "sending",
       label: "Enviando a MyJDownloader",
       detail: "Conectando con el dispositivo",
+      deliveryAttempted: true,
     });
     drawer.close();
     try {
       await sendToMyJd(deviceId, activity.packageName, urls);
       updateActivity(activity.id, {
+        receipt: undefined,
         status: "handed-off",
         label: "Solicitud aceptada por MyJDownloader",
         detail: `${urls.length} enlaces enviados al dispositivo`,
       });
     } catch (error) {
-      if (portable) {
-        rememberDevice(null);
-        await requestDevice(
-          activity.id,
-          error instanceof Error
-            ? error.message
-            : "El dispositivo ya no está disponible.",
-        );
-        return;
-      }
-      updateActivity(activity.id, {
-        status: "error",
-        label: "No se pudo enviar",
-        detail: error instanceof Error ? error.message : "Error inesperado",
-      });
+      if (portable) rememberDevice(null);
+      await requestDevice(
+        activity.id,
+        error instanceof Error
+          ? error.message
+          : "El dispositivo ya no está disponible.",
+      );
+    } finally {
+      deliverySessionsRef.current.delete(activity.id);
     }
   }
 
@@ -851,6 +1235,14 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       )?.status,
     [activities],
   );
+  const dismissedResumable = activities.filter(
+    (activity) =>
+      dismissedResumableIds.has(activity.id) && isResumableActivity(activity),
+  );
+  const deviceDeliveryPending = activities.some(
+    (activity) =>
+      activity.id === deviceActivityId && activity.status === "sending",
+  );
 
   return (
     <DownloadContext.Provider
@@ -863,6 +1255,26 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       }}
     >
       {children}
+      {dismissedResumable.length > 0 && (
+        <Button
+          className="fixed bottom-6 right-6 z-50 min-h-11 rounded-xl bg-[#16243A] px-4 text-sm font-semibold text-[#E6F0FF] shadow-[0_16px_40px_rgb(0_0_0/0.34)] max-sm:bottom-24 max-sm:right-4"
+          onPress={() => reopenDismissedActivity(dismissedResumable[0].id)}
+          aria-label={
+            dismissedResumable.length === 1
+              ? "Abrir descarga pendiente"
+              : `Abrir ${dismissedResumable.length} descargas pendientes`
+          }
+        >
+          <Send size={16} aria-hidden="true" />
+          {dismissedResumable.length === 1
+            ? dismissedResumable[0].status === "processing"
+              ? "Descarga en curso"
+              : dismissedResumable[0].status === "sending"
+                ? "Entrega en curso"
+                : "Descarga pendiente"
+            : `${dismissedResumable.length} descargas pendientes`}
+        </Button>
+      )}
       <Drawer state={drawer}>
         <Drawer.Trigger className="drawer-state-trigger" aria-hidden="true">
           Abrir descargas
@@ -946,6 +1358,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                                 className="min-h-12 justify-between rounded-xl bg-[#0B1621] text-[#F3F8FC]"
                                 key={device.id}
                                 onPress={() => void sendDevice(device.id)}
+                                isDisabled={deviceDeliveryPending}
                               >
                                 <span className="min-w-0 truncate">
                                   {device.name}
@@ -1034,6 +1447,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                             className="justify-between rounded-xl bg-[#0B1621] text-[#F3F8FC]"
                             key={device.id}
                             onPress={() => void sendDevice(device.id)}
+                            isDisabled={deviceDeliveryPending}
                           >
                             {device.name}
                             <Send size={16} />
