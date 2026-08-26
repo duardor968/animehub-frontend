@@ -344,11 +344,21 @@ export function CatalogFilters({
             </Select.Trigger>
             <Select.Popover>
               <ListBox>
-                <ListBox.Item id="">Orden de la fuente</ListBox.Item>
-                <ListBox.Item id="title-asc">Título A–Z</ListBox.Item>
-                <ListBox.Item id="title-desc">Título Z–A</ListBox.Item>
-                <ListBox.Item id="score-desc">Mejor puntuación</ListBox.Item>
-                <ListBox.Item id="date-desc">Más recientes</ListBox.Item>
+                <ListBox.Item id="" textValue="Orden de la fuente">
+                  Orden de la fuente
+                </ListBox.Item>
+                <ListBox.Item id="title-asc" textValue="Título A–Z">
+                  Título A–Z
+                </ListBox.Item>
+                <ListBox.Item id="title-desc" textValue="Título Z–A">
+                  Título Z–A
+                </ListBox.Item>
+                <ListBox.Item id="score-desc" textValue="Mejor puntuación">
+                  Mejor puntuación
+                </ListBox.Item>
+                <ListBox.Item id="date-desc" textValue="Más recientes">
+                  Más recientes
+                </ListBox.Item>
               </ListBox>
             </Select.Popover>
           </Select>
