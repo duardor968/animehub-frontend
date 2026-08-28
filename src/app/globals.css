@@ -169,6 +169,13 @@
     transform: scale(1) !important;
   }
 
+  .episode-card-clip {
+    overflow: visible;
+    clip-path: inset(0 round 1rem);
+    -webkit-mask-image: linear-gradient(#000 0 0);
+    mask-image: linear-gradient(#000 0 0);
+  }
+
   html[data-device="portable"] .download-settings-button {
     min-height: 2.75rem;
     min-width: 2.75rem;

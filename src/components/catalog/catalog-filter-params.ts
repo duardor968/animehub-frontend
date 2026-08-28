@@ -9,10 +9,10 @@ const filterKeys = [
 
 const supportedStatus = new Set(["emision", "finalizado", "proximamente"]);
 const supportedOrder = new Set([
-  "title-asc",
-  "title-desc",
-  "score-desc",
-  "date-desc",
+  "score",
+  "popular",
+  "title",
+  "latest_released",
 ]);
 
 export const catalogApiYearBounds = { min: 1900, max: 2200 } as const;
@@ -62,9 +62,16 @@ function appendUniqueSorted(
   target: URLSearchParams,
   source: URLSearchParams,
   key: "category" | "genre",
+  allowed?: ReadonlySet<string>,
 ) {
   const values = [...new Set(source.getAll(key).map((value) => value.trim()))]
-    .filter(Boolean)
+    .filter(
+      (value) =>
+        Boolean(value) &&
+        value.length <= 80 &&
+        (!allowed || allowed.has(value)),
+    )
+    .slice(0, 20)
     .sort((a, b) => a.localeCompare(b, "es"));
   values.forEach((value) => target.append(key, value));
 }
@@ -72,7 +79,15 @@ function appendUniqueSorted(
 export function normalizeCatalogParams(
   source: URLSearchParams,
   bounds: YearBounds,
-  { keepPage = false }: { keepPage?: boolean } = {},
+  {
+    keepPage = false,
+    allowedCategories,
+    allowedGenres,
+  }: {
+    keepPage?: boolean;
+    allowedCategories?: ReadonlySet<string>;
+    allowedGenres?: ReadonlySet<string>;
+  } = {},
 ): URLSearchParams {
   const normalized = new URLSearchParams();
   const q = normalizeText(source.get("q"))?.slice(0, 100) ?? null;
@@ -83,8 +98,8 @@ export function normalizeCatalogParams(
   const maxYear = normalizeYear(source.get("maxYear"), bounds);
 
   if (q) normalized.set("q", q);
-  appendUniqueSorted(normalized, source, "category");
-  appendUniqueSorted(normalized, source, "genre");
+  appendUniqueSorted(normalized, source, "category", allowedCategories);
+  appendUniqueSorted(normalized, source, "genre", allowedGenres);
   if (status && supportedStatus.has(status)) normalized.set("status", status);
   if (minYear) normalized.set("minYear", minYear);
   if (maxYear) normalized.set("maxYear", maxYear);
@@ -138,6 +153,18 @@ export function toggleCatalogParam(
   return normalizeCatalogParams(next, bounds);
 }
 
+export function setCatalogMulti(
+  source: URLSearchParams,
+  key: "category" | "genre",
+  values: readonly string[],
+  bounds: YearBounds,
+): URLSearchParams {
+  const next = new URLSearchParams(source);
+  next.delete(key);
+  values.forEach((value) => next.append(key, value));
+  return normalizeCatalogParams(next, bounds);
+}
+
 export function setCatalogParam(
   source: URLSearchParams,
   key: "status" | "order" | "minYear" | "maxYear",
@@ -159,6 +186,32 @@ export function setCatalogYear(
 ): URLSearchParams {
   if (!Number.isFinite(value)) return setCatalogParam(source, key, "", bounds);
   return setCatalogParam(source, key, String(Math.trunc(value)), bounds);
+}
+
+export function setCatalogYearRange(
+  source: URLSearchParams,
+  value: readonly [number, number],
+  bounds: YearBounds,
+): URLSearchParams {
+  const [rawMin, rawMax] = value;
+  const clampedMin = Math.max(
+    bounds.min,
+    Math.min(bounds.max, Math.trunc(rawMin)),
+  );
+  const clampedMax = Math.max(
+    bounds.min,
+    Math.min(bounds.max, Math.trunc(rawMax)),
+  );
+  const min = Math.min(clampedMin, clampedMax);
+  const max = Math.max(clampedMin, clampedMax);
+  const next = new URLSearchParams(source);
+
+  next.delete("minYear");
+  next.delete("maxYear");
+  if (min > bounds.min) next.set("minYear", String(min));
+  if (max < bounds.max) next.set("maxYear", String(max));
+
+  return normalizeCatalogParams(next, bounds);
 }
 
 export function validateYearRange(params: URLSearchParams): string | null {

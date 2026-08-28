@@ -5,7 +5,9 @@ import {
   normalizeCatalogParams,
   normalizeForSearch,
   resetCatalogPage,
+  setCatalogMulti,
   setCatalogYear,
+  setCatalogYearRange,
   toCatalogApiParams,
   toggleCatalogParam,
   validateYearRange,
@@ -24,6 +26,19 @@ describe("catalog filter parameters", () => {
     ).toBe("q=One+Piece&genre=accion&genre=drama&status=emision&page=9");
   });
 
+  it("drops unknown taxonomy values when catalog metadata is available", () => {
+    const source = new URLSearchParams(
+      "genre=accion&genre=__invalid__&category=tv-anime&category=unknown",
+    );
+
+    expect(
+      normalizeCatalogParams(source, bounds, {
+        allowedCategories: new Set(["tv-anime"]),
+        allowedGenres: new Set(["accion"]),
+      }).toString(),
+    ).toBe("category=tv-anime&genre=accion");
+  });
+
   it("drops unsupported status and order values", () => {
     expect(
       normalizeCatalogParams(
@@ -32,6 +47,23 @@ describe("catalog filter parameters", () => {
         { keepPage: true },
       ).toString(),
     ).toBe("page=2");
+  });
+
+  it("accepts only source-backed sort values and canonicalizes its default", () => {
+    for (const order of ["score", "popular", "title", "latest_released"]) {
+      expect(
+        normalizeCatalogParams(new URLSearchParams({ order }), bounds).get(
+          "order",
+        ),
+      ).toBe(order);
+    }
+
+    expect(
+      normalizeCatalogParams(
+        new URLSearchParams({ order: "latest_added" }),
+        bounds,
+      ).has("order"),
+    ).toBe(false);
   });
 
   it("bounds page and search before they reach the API", () => {
@@ -46,11 +78,11 @@ describe("catalog filter parameters", () => {
 
   it("preserves the search and order when filters are cleared", () => {
     const source = new URLSearchParams(
-      "q=one&order=title-asc&genre=accion&status=emision&minYear=2020&page=4",
+      "q=one&order=title&genre=accion&status=emision&minYear=2020&page=4",
     );
 
     expect(clearCatalogFilters(source, bounds).toString()).toBe(
-      "q=one&order=title-asc",
+      "q=one&order=title",
     );
     expect(
       clearCatalogFilters(source, bounds, { resetOrder: true }).toString(),
@@ -59,11 +91,11 @@ describe("catalog filter parameters", () => {
 
   it("resets only the page for an out-of-range result set", () => {
     const source = new URLSearchParams(
-      "q=one&order=title-asc&genre=accion&status=emision&page=51",
+      "q=one&order=title&genre=accion&status=emision&page=51",
     );
 
     expect(resetCatalogPage(source, bounds).toString()).toBe(
-      "q=one&genre=accion&status=emision&order=title-asc",
+      "q=one&genre=accion&status=emision&order=title",
     );
   });
 
@@ -103,11 +135,40 @@ describe("catalog filter parameters", () => {
     expect(countCatalogFilters(params)).toBe(3);
   });
 
+  it("replaces a multi-select atomically without dropping search or order", () => {
+    const source = new URLSearchParams(
+      "q=one&order=title&genre=accion&genre=drama",
+    );
+
+    expect(
+      setCatalogMulti(
+        source,
+        "genre",
+        ["aventura", "accion"],
+        bounds,
+      ).toString(),
+    ).toBe("q=one&genre=accion&genre=aventura&order=title");
+  });
+
+  it("serializes a year range canonically and omits full-range endpoints", () => {
+    const source = new URLSearchParams("q=one&minYear=2000&maxYear=2020");
+
+    expect(
+      setCatalogYearRange(source, [bounds.min, bounds.max], bounds).toString(),
+    ).toBe("q=one");
+    expect(setCatalogYearRange(source, [2001, 2020], bounds).toString()).toBe(
+      "q=one&minYear=2001&maxYear=2020",
+    );
+    expect(setCatalogYearRange(source, [2020, 2001], bounds).toString()).toBe(
+      "q=one&minYear=2001&maxYear=2020",
+    );
+  });
+
   it("maps the UI search parameter to the catalog API", () => {
     expect(
       toCatalogApiParams(
-        new URLSearchParams("q=one&genre=accion&order=title-asc"),
+        new URLSearchParams("q=one&genre=accion&order=title"),
       ).toString(),
-    ).toBe("genre=accion&order=title-asc&search=one&page=1");
+    ).toBe("genre=accion&order=title&search=one&page=1");
   });
 });

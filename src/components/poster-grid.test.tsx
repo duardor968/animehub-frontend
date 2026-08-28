@@ -41,7 +41,7 @@ describe("PosterGrid", () => {
   });
 
   it("gives each card one concise accessible name", () => {
-    render(<PosterGrid anime={[anime]} />);
+    const { container } = render(<PosterGrid anime={[anime]} />);
 
     expect(screen.getByRole("link", { name: "Ver Mob Sekai" })).toBeTruthy();
     expect(
@@ -49,5 +49,31 @@ describe("PosterGrid", () => {
         name: /Una sinopsis que no debe formar parte/,
       }),
     ).toBeNull();
+    expect(container.firstElementChild).toHaveClass(
+      "max-w-[1152px]",
+      "px-2",
+      "grid-cols-5",
+      "max-xl:grid-cols-4",
+      "max-lg:grid-cols-3",
+      "max-sm:grid-cols-2",
+    );
+  });
+
+  it("eager-loads the desktop catalog row that can become LCP", () => {
+    const items = Array.from({ length: 6 }, (_, index) => ({
+      ...anime,
+      id: `anime-${index}`,
+      slug: `anime-${index}`,
+      title: `Anime ${index}`,
+    }));
+    const { container } = render(<PosterGrid anime={items} />);
+    const images = [...container.querySelectorAll("img")];
+
+    expect(
+      images
+        .slice(0, 5)
+        .every((image) => image.getAttribute("loading") === "eager"),
+    ).toBe(true);
+    expect(images[5]).toHaveAttribute("loading", "lazy");
   });
 });

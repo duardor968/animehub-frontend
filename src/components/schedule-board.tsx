@@ -201,7 +201,7 @@ function HydratedScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
               </div>
             ) : (
               <div className="grid grid-cols-5 gap-x-4 gap-y-7 max-xl:grid-cols-4 max-lg:grid-cols-3 max-sm:grid-cols-2">
-                {grouped[index].map((entry) => {
+                {grouped[index].map((entry, entryIndex) => {
                   // The status mirrors AnimeAV1's evidence-based labels: a recent
                   // observed episode is "Emitido" and a week-old observation is
                   // "Retrasado". Otherwise we show only the inferred slot time. The
@@ -222,6 +222,7 @@ function HydratedScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
                             src={entry.anime.posterUrl}
                             fallbackSrc={entry.anime.backdropUrl}
                             alt={`Póster de ${entry.anime.title}`}
+                            priority={entryIndex < 5}
                             sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 18vw"
                           />
                           <time
@@ -232,7 +233,7 @@ function HydratedScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
                               new Date(entry.basisPublishedAt),
                             )}
                           </time>
-                          <div className="absolute bottom-0 left-0 flex h-6 items-center rounded-tr-lg bg-[#0A1424]/95 px-2.5 text-[10px] font-bold backdrop-blur-sm">
+                          <div className="absolute bottom-0 left-0 flex h-6 items-center rounded-tr-lg bg-[#0A1424] px-2.5 text-[10px] font-bold">
                             <span className="tracking-[.12em] text-[#69A7FF]">
                               EP
                             </span>

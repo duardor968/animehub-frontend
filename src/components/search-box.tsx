@@ -44,12 +44,34 @@ function Highlighted({ label, query }: { label: string; query: string }) {
   );
 }
 
-export function SearchBox({ compact = false }: { compact?: boolean }) {
+export function SearchBox({
+  compact = false,
+  initialQuery = "",
+}: {
+  compact?: boolean;
+  initialQuery?: string;
+}) {
+  return (
+    <SearchBoxState
+      key={initialQuery}
+      compact={compact}
+      initialQuery={initialQuery}
+    />
+  );
+}
+
+function SearchBoxState({
+  compact = false,
+  initialQuery = "",
+}: {
+  compact?: boolean;
+  initialQuery?: string;
+}) {
   const router = useRouter();
   const listboxId = useId();
   const requestIdRef = useRef(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [suggestions, setSuggestions] = useState<SuggestionItem[]>([]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
@@ -242,7 +264,7 @@ export function SearchBox({ compact = false }: { compact?: boolean }) {
               )}
               <SearchField.ClearButton
                 aria-label="Limpiar búsqueda"
-                className="mr-1 text-[#8FA3B4] hover:text-[#F3F8FC]"
+                className="mr-[9.5px] text-[#8FA3B4] hover:text-[#F3F8FC]"
               />
               <Button
                 aria-label="Buscar"
@@ -279,6 +301,7 @@ export function SearchBox({ compact = false }: { compact?: boolean }) {
                         id={optionId}
                         key={option.id}
                         role="option"
+                        tabIndex={-1}
                         type="button"
                         onClick={() => openOption(option)}
                         onMouseEnter={() => setActiveOptionIndex(index)}
@@ -302,6 +325,7 @@ export function SearchBox({ compact = false }: { compact?: boolean }) {
                       id={optionId}
                       key={option.id}
                       role="option"
+                      tabIndex={-1}
                       type="button"
                       onClick={() => openOption(option)}
                       onMouseEnter={() => setActiveOptionIndex(index)}

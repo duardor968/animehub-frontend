@@ -96,7 +96,7 @@ export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
                   src={item.backdropUrl}
                   fallbackSrc={item.posterUrl}
                   alt=""
-                  priority={index === 0}
+                  priority
                   sizes="100vw"
                 />
               </div>

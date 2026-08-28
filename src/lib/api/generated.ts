@@ -229,6 +229,14 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    ProblemDetailsDto: {
+      type: string;
+      title: string;
+      status: number;
+      detail: string;
+      instance: string;
+      requestId?: string;
+    };
     CategoryDto: {
       id: string;
       name: string;
@@ -447,7 +455,16 @@ export interface operations {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          "application/json": {
+            /** @example animehub-api */
+            service: string;
+            /** @enum {string} */
+            status: "live";
+            /** @example 0.1.0 */
+            version: string;
+          };
+        };
       };
     };
   };
@@ -464,7 +481,34 @@ export interface operations {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          "application/json": {
+            checks: {
+              /** @enum {string} */
+              database: "up";
+            };
+            /** @enum {string} */
+            status: "ready";
+          };
+        };
+      };
+      /** @description El servidor no pudo completar la operación. */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description La dependencia necesaria no está disponible. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
       };
     };
   };
@@ -483,6 +527,33 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["HomeResponseDto"];
+        };
+      };
+      /** @description Se superó temporalmente el límite de solicitudes. */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El servidor no pudo completar la operación. */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description La dependencia necesaria no está disponible. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
         };
       };
     };
@@ -506,11 +577,49 @@ export interface operations {
           "application/json": components["schemas"]["AnimeResponseDto"];
         };
       };
+      /** @description El recurso solicitado no existe. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description Se superó temporalmente el límite de solicitudes. */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El servidor no pudo completar la operación. */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description La dependencia necesaria no está disponible. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
     };
   };
   AnimeController_getEpisodes: {
     parameters: {
-      query?: never;
+      query?: {
+        page?: number;
+      };
       header?: never;
       path: {
         slug: string;
@@ -527,11 +636,67 @@ export interface operations {
           "application/json": components["schemas"]["EpisodePageResponseDto"];
         };
       };
+      /** @description La solicitud no supera la validación. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El recurso solicitado no existe. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description Se superó temporalmente el límite de solicitudes. */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El servidor no pudo completar la operación. */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description La dependencia necesaria no está disponible. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
     };
   };
   CatalogController_getCatalog: {
     parameters: {
-      query?: never;
+      query?: {
+        maxYear?: number;
+        minYear?: number;
+        category?: string[];
+        genre?: string[];
+        status?: "emision" | "finalizado" | "proximamente";
+        letter?: string;
+        order?:
+          "score" | "popular" | "title" | "latest_added" | "latest_released";
+        search?: string;
+        page?: number;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -546,11 +711,49 @@ export interface operations {
           "application/json": components["schemas"]["CatalogResponseDto"];
         };
       };
+      /** @description La solicitud no supera la validación. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description Se superó temporalmente el límite de solicitudes. */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El servidor no pudo completar la operación. */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description La dependencia necesaria no está disponible. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
     };
   };
   CatalogController_getSuggestions: {
     parameters: {
-      query?: never;
+      query: {
+        q: string;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -563,6 +766,33 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["SuggestionResponseDto"];
+        };
+      };
+      /** @description La solicitud no supera la validación. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description Se superó temporalmente el límite de solicitudes. */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El servidor no pudo completar la operación. */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
         };
       };
     };
@@ -582,6 +812,33 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ScheduleResponseDto"];
+        };
+      };
+      /** @description Se superó temporalmente el límite de solicitudes. */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El servidor no pudo completar la operación. */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description La dependencia necesaria no está disponible. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
         };
       };
     };
@@ -609,6 +866,51 @@ export interface operations {
           "application/json": components["schemas"]["ResolveDownloadsResponseDto"];
         };
       };
+      /** @description La solicitud no supera la validación. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El recurso solicitado no existe. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description Se superó temporalmente el límite de solicitudes. */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El servidor no pudo completar la operación. */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description La dependencia necesaria no está disponible. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
     };
   };
   DownloadJobsController_create: {
@@ -634,6 +936,51 @@ export interface operations {
           "application/json": components["schemas"]["DownloadJobReceiptResponseDto"];
         };
       };
+      /** @description La solicitud no supera la validación. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El recurso solicitado no existe. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description Se superó temporalmente el límite de solicitudes. */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El servidor no pudo completar la operación. */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description La dependencia necesaria no está disponible. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
     };
   };
   DownloadJobsController_get: {
@@ -655,6 +1002,33 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["DownloadJobResponseDto"];
+        };
+      };
+      /** @description La capacidad falta, no coincide o ha expirado. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description Se superó temporalmente el límite de solicitudes. */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El servidor no pudo completar la operación. */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
         };
       };
     };
@@ -680,6 +1054,42 @@ export interface operations {
           "application/json": components["schemas"]["DownloadJobResponseDto"];
         };
       };
+      /** @description La solicitud no supera la validación. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description La capacidad falta, no coincide o ha expirado. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description Se superó temporalmente el límite de solicitudes. */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El servidor no pudo completar la operación. */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
     };
   };
   DownloadJobsController_cancel: {
@@ -701,6 +1111,33 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["DownloadJobResponseDto"];
+        };
+      };
+      /** @description La capacidad falta, no coincide o ha expirado. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description Se superó temporalmente el límite de solicitudes. */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El servidor no pudo completar la operación. */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
         };
       };
     };

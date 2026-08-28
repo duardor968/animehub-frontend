@@ -71,7 +71,7 @@ export default async function HomePage() {
           </div>
           <RecentEpisodes episodes={response.data.recentEpisodes} />
         </section>
-        <section>
+        <section className="mx-auto w-full max-w-[1152px]">
           <div className="mb-5 flex items-end justify-between">
             <div>
               <span className="text-[10px] font-bold uppercase tracking-[.18em] text-[#69A7FF]">

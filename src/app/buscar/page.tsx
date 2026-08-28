@@ -45,6 +45,12 @@ export default async function SearchPage({
   const bounds = getYearBounds(response?.meta.years ?? []);
   const normalizedParams = normalizeCatalogParams(requestParams, bounds, {
     keepPage: true,
+    allowedCategories: new Set(
+      response?.meta.categories.map((category) => category.slug) ?? [],
+    ),
+    allowedGenres: new Set(
+      response?.meta.genres.map((genre) => genre.slug) ?? [],
+    ),
   });
   const hasActiveFilters = countCatalogFilters(normalizedParams) > 0;
   const pageOutOfRange = Boolean(
@@ -57,7 +63,7 @@ export default async function SearchPage({
   const resetParams = pageOutOfRange ? firstPageParams : clearParams;
   const resetHref = `/buscar${resetParams.size ? `?${resetParams}` : ""}`;
   return (
-    <main className="mx-auto min-h-[70vh] w-full max-w-[1600px] px-6 py-12 max-sm:px-4 max-sm:pb-28 max-sm:pt-9">
+    <main className="mx-auto min-h-[70vh] w-full max-w-[1200px] px-6 py-12 max-sm:px-4 max-sm:pb-28 max-sm:pt-9">
       <div className="mb-8">
         <div>
           <span className="text-[10px] font-bold uppercase tracking-[.18em] text-[#2F81F7]">
@@ -71,7 +77,7 @@ export default async function SearchPage({
           </p>
         </div>
       </div>
-      <SearchBox />
+      <SearchBox initialQuery={q} />
       {response && (
         <section className="mt-10">
           <CatalogFilters

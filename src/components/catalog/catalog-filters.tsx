@@ -3,15 +3,16 @@
 import {
   Button,
   Checkbox,
+  CheckboxGroup,
   Disclosure,
   Drawer,
   Label,
   ListBox,
-  NumberField,
   Radio,
   RadioGroup,
   SearchField,
   Select,
+  Slider,
   Tag,
   TagGroup,
   useOverlayState,
@@ -38,10 +39,10 @@ import {
   getYearBounds,
   normalizeCatalogParams,
   normalizeForSearch,
+  setCatalogMulti,
   setCatalogParam,
-  setCatalogYear,
+  setCatalogYearRange,
   toCatalogApiParams,
-  toggleCatalogParam,
   validateYearRange,
   type YearBounds,
 } from "./catalog-filter-params";
@@ -82,10 +83,31 @@ export function CatalogFilters({
   const pathname = usePathname();
   const current = useSearchParams();
   const bounds = useMemo(() => getYearBounds(years), [years]);
+  const allowedCategories = useMemo(
+    () => new Set(categories.map((category) => category.slug)),
+    [categories],
+  );
+  const allowedGenres = useMemo(
+    () => new Set(genres.map((genre) => genre.slug)),
+    [genres],
+  );
   const currentKey = current.toString();
   const appliedParams = useMemo(
-    () => normalizeCatalogParams(new URLSearchParams(currentKey), bounds),
-    [bounds, currentKey],
+    () =>
+      normalizeCatalogParams(new URLSearchParams(currentKey), bounds, {
+        allowedCategories,
+        allowedGenres,
+      }),
+    [allowedCategories, allowedGenres, bounds, currentKey],
+  );
+  const canonicalCurrentWithPage = useMemo(
+    () =>
+      normalizeCatalogParams(new URLSearchParams(currentKey), bounds, {
+        keepPage: true,
+        allowedCategories,
+        allowedGenres,
+      }),
+    [allowedCategories, allowedGenres, bounds, currentKey],
   );
   const [draft, setDraft] = useState(() => new URLSearchParams(appliedParams));
   const [genreQuery, setGenreQuery] = useState("");
@@ -98,6 +120,7 @@ export function CatalogFilters({
     count: totalRecords,
     status: "ready",
   }));
+  const [previewAttempt, setPreviewAttempt] = useState(0);
   const [isNavigationPending, startNavigation] = useTransition();
   const draftKey = draft.toString();
   const yearError = validateYearRange(draft);
@@ -115,6 +138,12 @@ export function CatalogFilters({
       : null;
 
   useEffect(() => {
+    if (currentKey === canonicalCurrentWithPage.toString()) return;
+    const target = `${pathname}${canonicalCurrentWithPage.size ? `?${canonicalCurrentWithPage}` : ""}`;
+    router.replace(target, { scroll: false });
+  }, [canonicalCurrentWithPage, currentKey, pathname, router]);
+
+  useEffect(() => {
     if (!drawer.isOpen || yearError || draftMatchesApplied) return;
 
     const controller = new AbortController();
@@ -128,27 +157,36 @@ export function CatalogFilters({
           if (!response.ok) throw new Error("Catalog preview unavailable");
           return response.json() as Promise<{ totalRecords: number }>;
         })
-        .then(({ totalRecords: nextTotalRecords }) =>
+        .then(({ totalRecords: nextTotalRecords }) => {
+          if (controller.signal.aborted) return;
           setPreview({
             key: draftKey,
             count: nextTotalRecords,
             status: "ready",
-          }),
-        )
-        .catch(() =>
+          });
+        })
+        .catch(() => {
+          if (controller.signal.aborted) return;
           setPreview((currentPreview) =>
             currentPreview.key === draftKey
               ? { key: draftKey, count: null, status: "failed" }
               : currentPreview,
-          ),
-        );
+          );
+        });
     }, 350);
 
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [draft, draftKey, draftMatchesApplied, drawer.isOpen, yearError]);
+  }, [
+    draft,
+    draftKey,
+    draftMatchesApplied,
+    drawer.isOpen,
+    previewAttempt,
+    yearError,
+  ]);
 
   const selected = useMemo(
     () => getSelectedFilters(appliedParams, categories, genres, bounds),
@@ -193,16 +231,14 @@ export function CatalogFilters({
   const clearApplied = () =>
     navigate(clearCatalogFilters(appliedParams, bounds));
 
-  const updateDraft = (key: "category" | "genre", value: string) =>
-    setDraft((params) => toggleCatalogParam(params, key, value, bounds));
+  const updateDraft = (key: "category" | "genre", values: string[]) =>
+    setDraft((params) => setCatalogMulti(params, key, values, bounds));
 
-  const setDraftValue = (
-    key: "status" | "minYear" | "maxYear",
-    value: string,
-  ) => setDraft((params) => setCatalogParam(params, key, value, bounds));
+  const setDraftValue = (key: "status", value: string) =>
+    setDraft((params) => setCatalogParam(params, key, value, bounds));
 
-  const setDraftYear = (key: "minYear" | "maxYear", value: number) =>
-    setDraft((params) => setCatalogYear(params, key, value, bounds));
+  const setDraftYearRange = (value: [number, number]) =>
+    setDraft((params) => setCatalogYearRange(params, value, bounds));
 
   const applyFilters = () => {
     if (yearError || isNavigationPending) return;
@@ -214,9 +250,11 @@ export function CatalogFilters({
     ? "Revisa el intervalo"
     : isPreviewPending
       ? "Calculando…"
-      : previewCount === null
-        ? "Mostrar resultados"
-        : `Mostrar ${previewCount.toLocaleString("es")} ${previewCount === 1 ? "obra" : "obras"}`;
+      : preview.key === draftKey && preview.status === "failed"
+        ? "Aplicar filtros"
+        : previewCount === null
+          ? "Mostrar resultados"
+          : `Mostrar ${previewCount.toLocaleString("es")} ${previewCount === 1 ? "obra" : "obras"}`;
 
   return (
     <div className="min-w-0" aria-busy={isNavigationPending}>
@@ -277,14 +315,34 @@ export function CatalogFilters({
                       setGenreQuery={setGenreQuery}
                       update={updateDraft}
                       setOne={setDraftValue}
-                      setYear={setDraftYear}
+                      setYearRange={setDraftYearRange}
                       yearError={yearError}
                     />
                   </Drawer.Body>
                   <Drawer.Footer className="mobile-drawer-footer sticky bottom-0 z-10 grid shrink-0 grid-cols-[minmax(0,.8fr)_minmax(0,1.35fr)] gap-3 border-t border-white/8 bg-[#07101A] px-5 py-4 sm:px-6">
+                    {preview.key === draftKey &&
+                      preview.status === "failed" &&
+                      !draftMatchesApplied && (
+                        <div
+                          className="col-span-2 flex min-h-9 items-center justify-between gap-3 rounded-lg bg-[#271824] px-3 text-xs text-[#F5A3B2]"
+                          role="alert"
+                        >
+                          <span>No se pudo calcular el total.</span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="min-h-8 shrink-0 px-2 text-xs font-semibold text-[#FFB4C0]"
+                            onPress={() =>
+                              setPreviewAttempt((attempt) => attempt + 1)
+                            }
+                          >
+                            Reintentar
+                          </Button>
+                        </div>
+                      )}
                     <Button
                       variant="secondary"
-                      className="min-h-11 rounded-xl border border-white/10 bg-[#0B1621] px-3 text-sm font-semibold text-[#DDE7EE] shadow-none"
+                      className="h-11 items-center justify-center rounded-xl border border-white/10 bg-[#0B1621] px-3 text-sm font-semibold leading-none text-[#DDE7EE] shadow-none"
                       onPress={() =>
                         setDraft((params) =>
                           clearCatalogFilters(params, bounds),
@@ -297,7 +355,7 @@ export function CatalogFilters({
                       Limpiar filtros
                     </Button>
                     <Button
-                      className="min-h-11 rounded-xl bg-[#2F81F7] px-3 text-sm font-semibold text-white shadow-none"
+                      className="h-11 items-center justify-center rounded-xl bg-[#2F81F7] px-3 text-sm font-semibold leading-none text-white shadow-none"
                       onPress={applyFilters}
                       isDisabled={Boolean(yearError) || isNavigationPending}
                     >
@@ -337,27 +395,26 @@ export function CatalogFilters({
             variant="secondary"
             isDisabled={isNavigationPending}
           >
-            <Label className="sr-only">Ordenar</Label>
-            <Select.Trigger className="h-11 rounded-xl border border-white/8 bg-[#101A2A] text-sm text-[#F3F8FC] shadow-none">
+            <Select.Trigger className="h-11 items-center rounded-xl border border-white/8 bg-[#101A2A] text-sm text-[#F3F8FC] shadow-none">
               <Select.Value />
               <Select.Indicator />
             </Select.Trigger>
             <Select.Popover>
               <ListBox>
-                <ListBox.Item id="" textValue="Orden de la fuente">
-                  Orden de la fuente
+                <ListBox.Item id="" textValue="Últimos agregados">
+                  Últimos agregados
                 </ListBox.Item>
-                <ListBox.Item id="title-asc" textValue="Título A–Z">
-                  Título A–Z
-                </ListBox.Item>
-                <ListBox.Item id="title-desc" textValue="Título Z–A">
-                  Título Z–A
-                </ListBox.Item>
-                <ListBox.Item id="score-desc" textValue="Mejor puntuación">
+                <ListBox.Item id="score" textValue="Mejor puntuación">
                   Mejor puntuación
                 </ListBox.Item>
-                <ListBox.Item id="date-desc" textValue="Más recientes">
-                  Más recientes
+                <ListBox.Item id="popular" textValue="Más populares">
+                  Más populares
+                </ListBox.Item>
+                <ListBox.Item id="title" textValue="Título A–Z">
+                  Título A–Z
+                </ListBox.Item>
+                <ListBox.Item id="latest_released" textValue="Últimos emitidos">
+                  Últimos emitidos
                 </ListBox.Item>
               </ListBox>
             </Select.Popover>
@@ -380,7 +437,7 @@ export function CatalogFilters({
                     className="min-h-9 rounded-xl border border-white/8 bg-[#102130] px-3 text-xs font-medium text-[#DDE7EE]"
                   >
                     {entry.label}
-                    <Tag.RemoveButton aria-label={`Quitar ${entry.label}`}>
+                    <Tag.RemoveButton aria-label="Quitar">
                       <X size={13} aria-hidden="true" />
                     </Tag.RemoveButton>
                   </Tag>
@@ -424,7 +481,7 @@ function FilterPanel({
   setGenreQuery,
   update,
   setOne,
-  setYear,
+  setYearRange,
   yearError,
 }: {
   params: URLSearchParams;
@@ -433,21 +490,25 @@ function FilterPanel({
   bounds: YearBounds;
   genreQuery: string;
   setGenreQuery: (value: string) => void;
-  update: (key: "category" | "genre", value: string) => void;
-  setOne: (key: "status" | "minYear" | "maxYear", value: string) => void;
-  setYear: (key: "minYear" | "maxYear", value: number) => void;
+  update: (key: "category" | "genre", values: string[]) => void;
+  setOne: (key: "status", value: string) => void;
+  setYearRange: (value: [number, number]) => void;
   yearError: string | null;
 }) {
   const normalizedGenreQuery = normalizeForSearch(genreQuery);
   const filteredGenres = genres.filter((genre) =>
     normalizeForSearch(genre.name).includes(normalizedGenreQuery),
   );
-  const minYear = params.has("minYear")
+  const rawMinYear = params.has("minYear")
     ? Number(params.get("minYear"))
-    : undefined;
-  const maxYear = params.has("maxYear")
+    : bounds.min;
+  const rawMaxYear = params.has("maxYear")
     ? Number(params.get("maxYear"))
-    : undefined;
+    : bounds.max;
+  const yearRange: [number, number] = [
+    Math.min(rawMinYear, rawMaxYear),
+    Math.max(rawMinYear, rawMaxYear),
+  ];
 
   return (
     <div className="divide-y divide-white/8">
@@ -456,35 +517,40 @@ function FilterPanel({
         count={params.getAll("category").length}
         className="first:pt-5"
       >
-        <div className="grid grid-cols-2 gap-2 max-[360px]:grid-cols-1">
+        <CheckboxGroup
+          value={params.getAll("category")}
+          onChange={(values) => update("category", values)}
+          variant="secondary"
+          className="!grid grid-cols-2 !gap-1 max-[360px]:grid-cols-1 [&_[data-slot=checkbox]]:!mt-0"
+        >
+          <Label className="sr-only">Formato</Label>
           {categories.map((item) => (
-            <FilterCheckbox
-              key={item.id}
-              label={item.name}
-              isSelected={params.getAll("category").includes(item.slug)}
-              onChange={() => update("category", item.slug)}
-            />
+            <FilterCheckbox key={item.id} label={item.name} value={item.slug} />
           ))}
-        </div>
+        </CheckboxGroup>
       </FilterDisclosure>
 
       <FilterDisclosure title="Estado" count={params.has("status") ? 1 : 0}>
         <RadioGroup
-          aria-label="Estado"
           value={params.get("status") ?? ""}
           onChange={(value) => setOne("status", value)}
-          className="grid grid-cols-2 gap-2 max-[360px]:grid-cols-1"
+          orientation="horizontal"
+          variant="secondary"
+          className="!grid grid-cols-2 !gap-1 max-[360px]:grid-cols-1 [&_[data-slot=radio]]:!mt-0"
         >
+          <Label className="sr-only">Estado</Label>
           {statusOptions.map(([value, label]) => (
             <Radio
               key={value || "any"}
               value={value}
-              className="min-h-11 rounded-xl border border-white/10 px-3 text-sm text-[#C4D2DE] transition-colors selected:border-[#2F81F7] selected:bg-[#10213A]"
+              className="group/radio !mt-0 min-h-11 w-full justify-center rounded-lg px-2.5 transition-colors hover:bg-white/[.035] data-[selected]:bg-[#10213A]"
             >
-              <Radio.Control>
-                <Radio.Indicator />
-              </Radio.Control>
-              <Radio.Content>{label}</Radio.Content>
+              <Radio.Content className="flex h-11 w-full items-center gap-2.5 text-left text-sm leading-5 text-[#C4D2DE] data-[focus-visible=true]:ring-2 data-[focus-visible=true]:ring-[#5FA8FF] data-[focus-visible=true]:ring-offset-1 data-[focus-visible=true]:ring-offset-[#07101A]">
+                <Radio.Control className="shrink-0">
+                  <Radio.Indicator />
+                </Radio.Control>
+                <Label className="min-w-0 flex-1">{label}</Label>
+              </Radio.Content>
             </Radio>
           ))}
         </RadioGroup>
@@ -494,23 +560,45 @@ function FilterPanel({
         title="Año"
         count={Number(params.has("minYear") || params.has("maxYear"))}
       >
-        <div className="grid grid-cols-2 gap-3">
-          <YearField
-            label="Desde"
-            value={minYear}
-            placeholder={String(bounds.min)}
-            bounds={bounds}
-            isInvalid={Boolean(yearError)}
-            onChange={(value) => setYear("minYear", value)}
-          />
-          <YearField
-            label="Hasta"
-            value={maxYear}
-            placeholder={String(bounds.max)}
-            bounds={bounds}
-            isInvalid={Boolean(yearError)}
-            onChange={(value) => setYear("maxYear", value)}
-          />
+        <div className="rounded-xl bg-[#0B1621] px-3.5 py-3">
+          <Slider
+            value={yearRange}
+            minValue={bounds.min}
+            maxValue={bounds.max}
+            step={1}
+            onChange={(value) => {
+              if (!Array.isArray(value) || value.length !== 2) return;
+              setYearRange([value[0], value[1]]);
+            }}
+            className="gap-y-3"
+          >
+            <Label className="text-xs font-medium text-[#8FA3B4]">
+              Rango de años
+            </Label>
+            <Slider.Output className="text-sm font-semibold tabular-nums text-[#F3F8FC]">
+              {`${yearRange[0]} – ${yearRange[1]}`}
+            </Slider.Output>
+            <Slider.Track className="!h-6 !rounded-full !border-x-[10px] !border-x-transparent !bg-[#101A2A]">
+              <Slider.Fill className="rounded-full bg-[#2F81F7]" />
+              <Slider.Thumb
+                index={0}
+                aria-label="Año inicial"
+                className="!size-7 !w-7 !rounded-full !bg-transparent after:!size-4 after:!rounded-full after:!bg-[#F3F8FC]"
+              />
+              <Slider.Thumb
+                index={1}
+                aria-label="Año final"
+                className="!size-7 !w-7 !rounded-full !bg-transparent after:!size-4 after:!rounded-full after:!bg-[#F3F8FC]"
+              />
+            </Slider.Track>
+          </Slider>
+          <div
+            aria-hidden="true"
+            className="mt-1 flex justify-between px-0.5 text-[10px] tabular-nums text-[#5F7487]"
+          >
+            <span>{bounds.min}</span>
+            <span>{bounds.max}</span>
+          </div>
         </div>
         {yearError && (
           <p className="mt-2 text-xs font-medium text-[#FB7185]" role="alert">
@@ -521,11 +609,8 @@ function FilterPanel({
           <Button
             size="sm"
             variant="ghost"
-            className="mt-2 min-h-9 justify-start px-0 text-xs font-semibold text-[#66A3FF]"
-            onPress={() => {
-              setOne("minYear", "");
-              setOne("maxYear", "");
-            }}
+            className="mt-2 h-9 items-center justify-start px-1 text-xs font-semibold leading-none text-[#66A3FF]"
+            onPress={() => setYearRange([bounds.min, bounds.max])}
           >
             Cualquier año
           </Button>
@@ -548,16 +633,17 @@ function FilterPanel({
             <SearchField.ClearButton aria-label="Borrar búsqueda de género" />
           </SearchField.Group>
         </SearchField>
-        <div className="mt-3 grid grid-cols-2 gap-2 max-[360px]:grid-cols-1">
+        <CheckboxGroup
+          value={params.getAll("genre")}
+          onChange={(values) => update("genre", values)}
+          variant="secondary"
+          className="mt-3 !grid grid-cols-2 !gap-1 max-[360px]:grid-cols-1 [&_[data-slot=checkbox]]:!mt-0"
+        >
+          <Label className="sr-only">Géneros</Label>
           {filteredGenres.map((item) => (
-            <FilterCheckbox
-              key={item.id}
-              label={item.name}
-              isSelected={params.getAll("genre").includes(item.slug)}
-              onChange={() => update("genre", item.slug)}
-            />
+            <FilterCheckbox key={item.id} label={item.name} value={item.slug} />
           ))}
-        </div>
+        </CheckboxGroup>
         {filteredGenres.length === 0 && (
           <div className="py-8 text-center">
             <ListFilter
@@ -575,26 +661,17 @@ function FilterPanel({
   );
 }
 
-function FilterCheckbox({
-  label,
-  isSelected,
-  onChange,
-}: {
-  label: string;
-  isSelected: boolean;
-  onChange: () => void;
-}) {
+function FilterCheckbox({ label, value }: { label: string; value: string }) {
   return (
     <Checkbox
-      isSelected={isSelected}
-      onChange={onChange}
-      className="min-h-11 rounded-xl border border-white/10 px-3 text-sm text-[#C4D2DE] transition-colors selected:border-[#2F81F7] selected:bg-[#10213A]"
+      value={value}
+      className="group/filter !mt-0 min-h-11 w-full justify-center rounded-lg px-2.5 transition-colors hover:bg-white/[.035] data-[selected=true]:bg-[#10213A]"
     >
-      <Checkbox.Content className="w-full min-w-0">
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        <Checkbox.Control className="order-last ml-auto shrink-0">
+      <Checkbox.Content className="flex h-11 w-full min-w-0 items-center gap-2.5 text-left text-sm leading-5 text-[#C4D2DE] data-[focus-visible=true]:ring-2 data-[focus-visible=true]:ring-[#5FA8FF] data-[focus-visible=true]:ring-offset-1 data-[focus-visible=true]:ring-offset-[#07101A]">
+        <Checkbox.Control className="shrink-0">
           <Checkbox.Indicator />
         </Checkbox.Control>
+        <Label className="min-w-0 flex-1 truncate">{label}</Label>
       </Checkbox.Content>
     </Checkbox>
   );
@@ -630,45 +707,6 @@ function FilterDisclosure({
         <Disclosure.Body className="pt-3">{children}</Disclosure.Body>
       </Disclosure.Content>
     </Disclosure>
-  );
-}
-
-function YearField({
-  label,
-  value,
-  placeholder,
-  bounds,
-  isInvalid,
-  onChange,
-}: {
-  label: string;
-  value: number | undefined;
-  placeholder: string;
-  bounds: YearBounds;
-  isInvalid: boolean;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <NumberField
-      aria-label={`Año ${label.toLocaleLowerCase("es")}`}
-      value={value ?? Number.NaN}
-      minValue={bounds.min}
-      maxValue={bounds.max}
-      onChange={onChange}
-      formatOptions={{ useGrouping: false }}
-      isInvalid={isInvalid}
-      className="min-w-0"
-    >
-      <Label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[.14em] text-[#8FA3B4]">
-        {label}
-      </Label>
-      <NumberField.Group className="h-11 rounded-xl border border-white/10 bg-[#101A2A] shadow-none invalid:border-[#FB7185]">
-        <NumberField.Input
-          placeholder={placeholder}
-          className="col-[1/-1] w-full min-w-0 px-3 text-left text-sm tabular-nums text-[#F3F8FC] placeholder:text-[#5F7487]"
-        />
-      </NumberField.Group>
-    </NumberField>
   );
 }
 

@@ -204,11 +204,11 @@ export function EpisodeBrowser({
           const checked = selected.includes(episode.number);
           return (
             <div
-              className="group relative min-w-0 overflow-visible"
+              className={`group relative min-w-0 overflow-visible rounded-2xl transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)] ${checked ? "shadow-[0_16px_40px_rgba(23,79,161,.18)]" : ""}`}
               key={episode.id}
             >
               <Card
-                className={`touch-card relative min-w-0 gap-0 overflow-hidden rounded-2xl p-0 transition-[background-color,box-shadow] duration-300 group-hover:shadow-[0_18px_42px_rgba(0,0,0,.3)] ${checked ? "bg-[#111E34] shadow-[0_16px_40px_rgba(23,79,161,.18)]" : "bg-[#0A1220]"}`}
+                className={`episode-card-clip touch-card relative min-w-0 gap-0 rounded-2xl p-0 transition-colors duration-300 ${checked ? "bg-[#111E34]" : "bg-[#0A1220]"}`}
               >
                 <div className="touch-static-media relative aspect-video overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04]">
                   <AnimeImage
@@ -234,12 +234,9 @@ export function EpisodeBrowser({
                     />
                   </div>
                 </div>
-                {/* Corner selector lives inside the card and OVERSHOOTS the top/right
-                    edges by 2px. The card's overflow-hidden clips the overshoot, so the
-                    triangle's SOLID body (not its anti-aliased edge) covers the card's
-                    top row — under fractional DPR (e.g. 125%) that top edge is soft, so
-                    without the overshoot the image bled through ~1px. Overshooting hides
-                    it: the card can never show through the solid triangle. */}
+                {/* The selector overshoots by 2px and shares the card's final compositing
+                    mask. Children are painted first and clipped once, avoiding a seam
+                    between separately antialiased edges at fractional display scales. */}
                 <Checkbox
                   isSelected={checked}
                   onChange={() => toggleEpisode(episode.number)}
@@ -259,12 +256,6 @@ export function EpisodeBrowser({
                   </Checkbox.Content>
                 </Checkbox>
               </Card>
-              {checked && (
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 z-40 rounded-2xl ring-2 ring-inset ring-[#2F81F7]"
-                />
-              )}
             </div>
           );
         })}

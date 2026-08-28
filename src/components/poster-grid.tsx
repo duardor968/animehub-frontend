@@ -70,13 +70,7 @@ export function PosterGrid({
   }
 
   return (
-    <div
-      className={
-        variant === "home"
-          ? "grid grid-cols-5 gap-x-4 gap-y-7 max-lg:grid-cols-4 max-md:grid-cols-3 max-sm:grid-cols-2"
-          : "grid grid-cols-4 gap-x-4 gap-y-7 max-xl:grid-cols-3 max-md:grid-cols-2"
-      }
-    >
+    <div className="mx-auto grid w-full max-w-[1152px] grid-cols-5 gap-x-4 gap-y-7 px-2 max-xl:grid-cols-4 max-lg:grid-cols-3 max-sm:grid-cols-2">
       {anime.map((item, index) => (
         <Card
           className="touch-card group min-w-0 gap-0 overflow-hidden rounded-xl bg-[#0A1424] p-0 transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]"
@@ -91,7 +85,7 @@ export function PosterGrid({
               <AnimeImage
                 src={item.posterUrl}
                 alt=""
-                priority={variant !== "home" && index === 0}
+                priority={variant !== "home" && index < 5}
               />
               <span className="touch-category-label absolute bottom-0 left-0 rounded-tr-lg bg-[#0A1424] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.08em] text-[#8AB8FA] transition-opacity duration-300 group-hover:opacity-0 group-has-[:focus-visible]:opacity-0">
                 {item.category?.name ?? "Anime"}
