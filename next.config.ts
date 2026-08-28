@@ -40,7 +40,7 @@ const nextConfig: NextConfig = {
               "default-src 'self'",
               "img-src 'self' data: https://cdn.animeav1.com",
               "style-src 'self' 'unsafe-inline'",
-              `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com/beacon.min.js${developmentScripts}`,
+              `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com${developmentScripts}`,
               `connect-src 'self' ${apiOrigin} https://api.jdownloader.org http://127.0.0.1:9666`,
               "form-action 'self' http://127.0.0.1:9666",
               "frame-src 'self' http://127.0.0.1:9666",
