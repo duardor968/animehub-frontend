@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { components } from "@/lib/api/generated";
 import { formatEpisodeNumber, formatRelativeTime } from "@/lib/format";
 import { AnimeImage } from "../anime-image";
+import { MediaCard } from "../media-card";
 import { EpisodeDownloadButton } from "../downloads/episode-download-button";
 
 type RecentEpisode = components["schemas"]["RecentEpisodeDto"];
@@ -44,8 +45,8 @@ export function RecentEpisodes({ episodes }: { episodes: RecentEpisode[] }) {
   return (
     <div className="grid grid-cols-4 gap-x-4 gap-y-6 max-lg:grid-cols-2">
       {episodes.map(({ anime, episode }) => (
-        <Card
-          className="touch-card group relative min-w-0 gap-0 overflow-hidden rounded-xl bg-[#0A1424] p-0 transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]"
+        <MediaCard
+          className="touch-card group relative min-w-0 gap-0 rounded-xl bg-[#0A1424] p-0 transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]"
           key={episode.id}
         >
           <Link
@@ -93,7 +94,7 @@ export function RecentEpisodes({ episodes }: { episodes: RecentEpisode[] }) {
               className="pointer-events-auto scale-90 opacity-0 transition-[opacity,transform,background-color] duration-200 group-hover:scale-100 group-hover:opacity-100 focus-visible:scale-100 focus-visible:opacity-100 [@media(hover:none)]:scale-100 [@media(hover:none)]:opacity-100"
             />
           </div>
-        </Card>
+        </MediaCard>
       ))}
     </div>
   );

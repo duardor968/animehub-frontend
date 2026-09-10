@@ -54,7 +54,7 @@ describe("EpisodeBrowser", () => {
     const selector = screen.getByRole("checkbox", {
       name: "Seleccionar episodio 2",
     });
-    const card = container.querySelector(".episode-card-clip");
+    const card = container.querySelector(".media-card-clip");
 
     expect(card).toBeTruthy();
     expect(card).not.toHaveClass("overflow-hidden");

@@ -169,9 +169,12 @@
     transform: scale(1) !important;
   }
 
-  .episode-card-clip {
+  .media-card-clip {
+    position: relative;
+    min-width: 0;
+    border-radius: inherit;
     overflow: visible;
-    clip-path: inset(0 round 1rem);
+    clip-path: border-box;
     -webkit-mask-image: linear-gradient(#000 0 0);
     mask-image: linear-gradient(#000 0 0);
   }

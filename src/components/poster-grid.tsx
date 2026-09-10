@@ -3,6 +3,7 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import type { AnimeSummary } from "@/lib/api/client";
 import { AnimeImage } from "./anime-image";
+import { MediaCard } from "./media-card";
 
 export type PosterGridEmptyState = {
   title: string;
@@ -72,8 +73,8 @@ export function PosterGrid({
   return (
     <div className="mx-auto grid w-full max-w-[1152px] grid-cols-5 gap-x-4 gap-y-7 px-2 max-xl:grid-cols-4 max-lg:grid-cols-3 max-sm:grid-cols-2">
       {anime.map((item, index) => (
-        <Card
-          className="touch-card group min-w-0 gap-0 overflow-hidden rounded-xl bg-[#0A1424] p-0 transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]"
+        <MediaCard
+          className="touch-card group min-w-0 gap-0 rounded-xl bg-[#0A1424] p-0 transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]"
           key={item.id}
         >
           <Link
@@ -117,7 +118,7 @@ export function PosterGrid({
               </Card.Description>
             </Card.Content>
           </Link>
-        </Card>
+        </MediaCard>
       ))}
     </div>
   );

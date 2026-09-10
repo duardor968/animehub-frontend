@@ -10,6 +10,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AnimeImage } from "@/components/anime-image";
+import { MediaCard } from "@/components/media-card";
 import { EpisodeBrowser } from "@/components/anime/episode-browser";
 import { loadAnime } from "@/lib/api/anime";
 import {
@@ -273,21 +274,21 @@ function RelatedCard({
 }) {
   const label = RELATION_LABELS[relation.kind] ?? relation.kind;
   return (
-    <Card className="touch-card group w-[152px] min-w-0 shrink-0 gap-0 overflow-hidden rounded-xl bg-[#0A1424] p-0 transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]">
+    <MediaCard className="touch-card group w-[152px] min-w-0 shrink-0 gap-0 rounded-xl bg-[#0A1424] p-0 transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]">
       <Link
         href={`/anime/${relation.anime.slug}`}
+        aria-label={`Ver ${relation.anime.title}`}
         className="block outline-none focus-visible:ring-2 focus-visible:ring-[#5B9CFF] focus-visible:ring-inset"
       >
         <div className="touch-static-media relative aspect-[2/3] overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04] group-has-[:focus-visible]:[&_.anime-image_img]:scale-[1.04]">
-          <AnimeImage
-            src={relation.anime.posterUrl}
-            alt={relation.anime.title}
-            sizes="152px"
-          />
+          <AnimeImage src={relation.anime.posterUrl} alt="" sizes="152px" />
           <span className="touch-category-label absolute bottom-0 left-0 rounded-tr-lg bg-[#0A1424] px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[.08em] text-[#8AB8FA] transition-opacity duration-300 group-hover:opacity-0 group-has-[:focus-visible]:opacity-0">
             {label}
           </span>
-          <div className="touch-hover-panel absolute inset-0 flex flex-col justify-end bg-[#07101D]/92 p-3 opacity-0 transition-opacity duration-250 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100">
+          <div
+            aria-hidden="true"
+            className="touch-hover-panel absolute inset-0 flex flex-col justify-end bg-[#07101D]/92 p-3 opacity-0 transition-opacity duration-250 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100"
+          >
             <span className="text-[9px] font-bold uppercase tracking-[.14em] text-[#69A7FF]">
               {label}
             </span>
@@ -312,6 +313,6 @@ function RelatedCard({
           </Card.Description>
         </Card.Content>
       </Link>
-    </Card>
+    </MediaCard>
   );
 }

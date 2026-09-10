@@ -2,7 +2,6 @@
 
 import {
   Button,
-  Card,
   Checkbox,
   Pagination,
   ProgressBar,
@@ -17,6 +16,7 @@ import {
 } from "@/lib/api/client";
 import { formatEpisodeNumber } from "@/lib/format";
 import { AnimeImage } from "../anime-image";
+import { MediaCard } from "../media-card";
 import { useDownloads } from "../downloads/download-provider";
 import { EpisodeDownloadButton } from "../downloads/episode-download-button";
 
@@ -207,8 +207,8 @@ export function EpisodeBrowser({
               className={`group relative min-w-0 overflow-visible rounded-2xl transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)] ${checked ? "shadow-[0_16px_40px_rgba(23,79,161,.18)]" : ""}`}
               key={episode.id}
             >
-              <Card
-                className={`episode-card-clip touch-card relative min-w-0 gap-0 rounded-2xl p-0 transition-colors duration-300 ${checked ? "bg-[#111E34]" : "bg-[#0A1220]"}`}
+              <MediaCard
+                className={`touch-card relative min-w-0 gap-0 rounded-2xl p-0 transition-colors duration-300 ${checked ? "bg-[#111E34]" : "bg-[#0A1220]"}`}
               >
                 <div className="touch-static-media relative aspect-video overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04]">
                   <AnimeImage
@@ -255,7 +255,7 @@ export function EpisodeBrowser({
                     </span>
                   </Checkbox.Content>
                 </Checkbox>
-              </Card>
+              </MediaCard>
             </div>
           );
         })}
