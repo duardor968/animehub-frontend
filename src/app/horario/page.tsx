@@ -27,7 +27,13 @@ export default async function SchedulePage() {
         </h1>
         <LocalTime />
       </div>
-      <ScheduleBoard entries={response.data} />
+      {response.meta.stale && (
+        <p role="status" className="mb-6 text-sm text-warning">
+          No se ha podido actualizar el horario. Se muestra la última
+          información disponible.
+        </p>
+      )}
+      <ScheduleBoard entries={response.data} stale={response.meta.stale} />
     </main>
   );
 }

@@ -1,29 +1,39 @@
-// The source /horario exposes no explicit air status — only each show's latest
-// episode and its createdAt timestamp (normalized as basisPublishedAt). AnimeAV1
-// derives its "Emitido / Retrasado" labels from the age of that observation, and
-// so do we. This module is kept pure and unit-tested because inferring the status
-// from the scheduled clock alone can claim an episode aired before we observed it.
+import type { components } from "@/lib/api/generated";
 
-export type ScheduleStatus = "aired" | "delayed" | "idle";
+type ScheduleEntry = components["schemas"]["ScheduleEntryDto"];
+export type ScheduleStatus =
+  "aired" | "delayed" | "upcoming" | "finished" | "idle";
 
-const HOUR_MS = 60 * 60_000;
-export const SCHEDULE_RECENT_WINDOW_MS = 24 * HOUR_MS;
-export const SCHEDULE_DELAY_THRESHOLD_MS = 168 * HOUR_MS;
+function sameLocalDay(a: Date, b: Date) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
 
-// Derive a show's schedule status from its latest episode's publish time.
-//   aired   — the source observed a new episode less than 24 hours ago.
-//   delayed — the latest observed episode is older than a full weekly window.
-//   idle    — neither claim is supported; the board shows only the inferred time.
-export function deriveScheduleStatus(
-  basisPublishedAt: string,
+// Number and status describe the same episode. Calendar arithmetic respects DST;
+// publication evidence, not the expected clock, determines aired/finalized.
+export function deriveScheduleEntry(
+  entry: ScheduleEntry,
   now: Date,
-): ScheduleStatus {
-  const basis = new Date(basisPublishedAt);
-  const ageMs = now.getTime() - basis.getTime();
-
-  if (!Number.isFinite(ageMs) || ageMs < 0) return "idle";
-  if (ageMs < SCHEDULE_RECENT_WINDOW_MS) return "aired";
-  if (ageMs > SCHEDULE_DELAY_THRESHOLD_MS) return "delayed";
-
-  return "idle";
+  stale = false,
+): { number: number; status: ScheduleStatus } | null {
+  const published = new Date(entry.basisPublishedAt);
+  if (!Number.isFinite(published.getTime()) || published > now) return null;
+  const number = entry.latestEpisode.number;
+  const today = sameLocalDay(published, now);
+  if (entry.isFinalEpisode)
+    return today ? { number, status: "finished" } : null;
+  // A cached penultimate episode of a finished series is not a weekly slot.
+  if (entry.anime.status === "FINISHED") return null;
+  if (today) return { number, status: "aired" };
+  if (stale) return { number, status: "idle" };
+  const expected = new Date(published);
+  expected.setDate(expected.getDate() + 7);
+  const delayed = now > expected;
+  if (published.getDay() === now.getDay() && Number.isInteger(number)) {
+    return { number: number + 1, status: delayed ? "delayed" : "upcoming" };
+  }
+  return { number, status: delayed ? "delayed" : "idle" };
 }

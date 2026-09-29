@@ -369,6 +369,8 @@ export interface components {
       anime: components["schemas"]["AnimeSummaryDto"];
       latestEpisode: components["schemas"]["EpisodeDto"];
       basisPublishedAt: string;
+      /** @description The published episode completes a finished series. */
+      isFinalEpisode: boolean;
     };
     ScheduleResponseDto: {
       data: components["schemas"]["ScheduleEntryDto"][];

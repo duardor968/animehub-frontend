@@ -13,7 +13,7 @@ import {
 import type { components } from "@/lib/api/generated";
 import { AnimeImage } from "./anime-image";
 import { MediaCard } from "./media-card";
-import { deriveScheduleStatus } from "./schedule-status";
+import { deriveScheduleEntry } from "./schedule-status";
 
 type ScheduleEntry = components["schemas"]["ScheduleEntryDto"];
 
@@ -77,7 +77,13 @@ function ScheduleBoardPlaceholder() {
   );
 }
 
-export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
+export function ScheduleBoard({
+  entries,
+  stale = false,
+}: {
+  entries: ScheduleEntry[];
+  stale?: boolean;
+}) {
   const hydrated = useSyncExternalStore(
     subscribeHydration,
     getHydratedSnapshot,
@@ -85,16 +91,19 @@ export function ScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
   );
 
   if (!hydrated) return <ScheduleBoardPlaceholder />;
-  return <HydratedScheduleBoard entries={entries} />;
+  return <HydratedScheduleBoard entries={entries} stale={stale} />;
 }
 
-function HydratedScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
+function HydratedScheduleBoard({
+  entries,
+  stale,
+}: {
+  entries: ScheduleEntry[];
+  stale: boolean;
+}) {
   const router = useRouter();
 
-  // A render-time clock drives both the default day and the per-entry status
-  // derivation. It advances on an interval so a slot's chip flips from "Próximo"
-  // to "Emitido" (or to "Retrasado") on its own as the hour passes, without a
-  // reload — the status is pure client-side time math over data already loaded.
+  // Advance local-day visibility even when the page remains open at midnight.
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30_000);
@@ -102,11 +111,7 @@ function HydratedScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
   }, []);
   const todayIndex = now.getDay();
 
-  // Pick up a fresh snapshot (new episode, roster change) when the user returns to
-  // the tab, without a manual reload: the page is force-dynamic, so router.refresh()
-  // re-runs the server component and streams new entries in while preserving client
-  // state (selected day, scroll). Status transitions are already live via the clock,
-  // so this only matters for the underlying episode data.
+  // Publication needs new data, including while the user leaves this tab open.
   const lastRevalidatedAt = useRef(0);
   useEffect(() => {
     // Baseline the throttle at mount (an effect may read the clock; render may not),
@@ -114,6 +119,7 @@ function HydratedScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
     lastRevalidatedAt.current = Date.now();
     const revalidate = () => {
       if (document.visibilityState !== "visible") return;
+      setNow(new Date());
       if (Date.now() - lastRevalidatedAt.current < REVALIDATE_THROTTLE_MS)
         return;
       lastRevalidatedAt.current = Date.now();
@@ -121,16 +127,32 @@ function HydratedScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
     };
     window.addEventListener("focus", revalidate);
     document.addEventListener("visibilitychange", revalidate);
+    const id = window.setInterval(revalidate, 60_000);
     return () => {
+      window.clearInterval(id);
       window.removeEventListener("focus", revalidate);
       document.removeEventListener("visibilitychange", revalidate);
     };
   }, [router]);
 
   const grouped = useMemo(() => {
-    const groups = Array.from({ length: 7 }, () => [] as ScheduleEntry[]);
-    for (const entry of entries)
-      groups[new Date(entry.basisPublishedAt).getDay()].push(entry);
+    const groups = Array.from(
+      { length: 7 },
+      () =>
+        [] as Array<
+          ScheduleEntry & {
+            display: NonNullable<ReturnType<typeof deriveScheduleEntry>>;
+          }
+        >,
+    );
+    for (const entry of entries) {
+      const display = deriveScheduleEntry(entry, now, stale);
+      if (display)
+        groups[new Date(entry.basisPublishedAt).getDay()].push({
+          ...entry,
+          display,
+        });
+    }
     groups.forEach((group) =>
       group.sort(
         (a, b) =>
@@ -138,7 +160,7 @@ function HydratedScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
       ),
     );
     return groups;
-  }, [entries]);
+  }, [entries, now, stale]);
 
   return (
     <Tabs
@@ -159,7 +181,7 @@ function HydratedScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
               <Tabs.Tab
                 id={String(index)}
                 key={day}
-                aria-label={`${day}, ${count} lanzamientos`}
+                aria-label={`${day}, ${count} ${count === 1 ? "lanzamiento" : "lanzamientos"}`}
                 className="flex min-h-11 items-center gap-2 px-3 text-sm text-[#8FA3B4] shadow-none transition-colors data-[hovered=true]:text-[#C4D2DE] data-[selected=true]:font-semibold data-[selected=true]:text-[#F3F8FC]"
               >
                 <span className="capitalize">{daysShort[index]}</span>
@@ -197,20 +219,13 @@ function HydratedScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
             {grouped[index].length === 0 ? (
               <div className="rounded-xl border border-dashed border-white/10 bg-[#080F1B] py-16 text-center">
                 <p className="text-sm text-[#8FA3B4]">
-                  Sin publicaciones observadas para este día.
+                  No hay emisiones programadas para este día.
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-5 gap-x-4 gap-y-7 max-xl:grid-cols-4 max-lg:grid-cols-3 max-sm:grid-cols-2">
                 {grouped[index].map((entry, entryIndex) => {
-                  // The status mirrors AnimeAV1's evidence-based labels: a recent
-                  // observed episode is "Emitido" and a week-old observation is
-                  // "Retrasado". Otherwise we show only the inferred slot time. The
-                  // EP badge is always the last observed number — no guessing.
-                  const status = deriveScheduleStatus(
-                    entry.basisPublishedAt,
-                    now,
-                  );
+                  const { status, number } = entry.display;
                   return (
                     <Link
                       href={`/anime/${entry.anime.slug}`}
@@ -239,7 +254,7 @@ function HydratedScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
                               EP
                             </span>
                             <strong className="ml-1 tabular-nums text-[#F3F8FC]">
-                              {entry.latestEpisode.number}
+                              {number}
                             </strong>
                           </div>
                         </div>
@@ -254,6 +269,14 @@ function HydratedScheduleBoard({ entries }: { entries: ScheduleEntry[] }) {
                           ) : status === "aired" ? (
                             <Chip color="success" variant="soft" size="sm">
                               <Chip.Label>Emitido</Chip.Label>
+                            </Chip>
+                          ) : status === "finished" ? (
+                            <Chip color="success" variant="soft" size="sm">
+                              <Chip.Label>Finalizado</Chip.Label>
+                            </Chip>
+                          ) : status === "upcoming" ? (
+                            <Chip color="accent" variant="soft" size="sm">
+                              <Chip.Label>Próximo</Chip.Label>
                             </Chip>
                           ) : null}
                         </Card.Content>
