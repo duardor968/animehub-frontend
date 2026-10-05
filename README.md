@@ -69,7 +69,7 @@ Para adoptar un cambio de la API:
 3. Ejecuta `pnpm contract:generate`, adapta el cliente si hace falta y pasa las verificaciones.
 4. Incluye contrato, procedencia y tipos generados en el mismo cambio.
 
-La copia inicial apunta al commit `683dc97` del monorepo de origen. La siguiente actualización de contrato deberá registrar su procedencia en el [repositorio independiente de la API](https://github.com/duardor968/animehub-api).
+Consulta [`contracts/source.json`](contracts/source.json) para conocer la revisión exacta del [repositorio de la API](https://github.com/duardor968/animehub-api) que consume esta Web. Ese archivo es la referencia para la procedencia y el hash del contrato.
 
 ## Trabajar en la interfaz
 
@@ -115,7 +115,7 @@ docker build -t animehub-web \
 
 El endpoint `/health` confirma que Next.js responde. No comprueba la API ni PostgreSQL. La Web puede desplegarse por separado, siempre que conserve la compatibilidad con la versión de API que consume.
 
-La migración debe mantener `https://animehub.duardo.dev/`, sus metadatos y el archivo de verificación de Google. Este repositorio nace de la separación de `apps/web` del [monorepo AnimeHub Web](https://github.com/duardor968/animehub-web), conservando su historial. El monorepo anterior queda como referencia hasta terminar la migración.
+La migración debe mantener `https://animehub.duardo.dev/`, sus metadatos y el archivo de verificación de Google. Este repositorio nace de la separación de `apps/web` del [monorepo AnimeHub Web](https://github.com/duardor968/animehub-web), conservando su historial. El monorepo anterior está archivado y se conserva como referencia histórica.
 
 ## Licencia
 
