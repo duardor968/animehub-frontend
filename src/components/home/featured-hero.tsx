@@ -12,7 +12,13 @@ import {
   Play,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { FeaturedAnime } from "@/lib/api/client";
 import { formatStatus } from "@/lib/format";
 import { AnimeImage } from "../anime-image";
@@ -35,19 +41,47 @@ export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
   );
   const [selected, setSelected] = useState(0);
   const [playing, setPlaying] = useState(true);
-  const sync = useCallback(
-    () => embla && setSelected(embla.selectedScrollSnap()),
-    [embla],
-  );
+  const itemsRef = useRef(anime);
+  const selectedIdRef = useRef(anime[0]?.id);
+  const sync = useCallback(() => {
+    if (!embla) return;
+    const index = embla.selectedScrollSnap();
+    selectedIdRef.current = itemsRef.current[index]?.id;
+    setSelected(index);
+  }, [embla]);
+  const preserveSelection = useCallback(() => {
+    if (!embla) return;
+    const index = itemsRef.current.findIndex(
+      (item) => item.id === selectedIdRef.current,
+    );
+    embla.scrollTo(Math.max(0, index), true);
+    sync();
+    if (
+      !playing ||
+      document.visibilityState !== "visible" ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
+      autoplay.stop();
+  }, [autoplay, embla, playing, sync]);
+  useLayoutEffect(() => {
+    const orderChanged =
+      itemsRef.current.map((item) => item.id).join("\0") !==
+      anime.map((item) => item.id).join("\0");
+    itemsRef.current = anime;
+    if (embla && orderChanged) {
+      embla.reInit();
+      preserveSelection();
+    }
+  }, [anime, embla, preserveSelection]);
   useEffect(() => {
     if (!embla) return;
     embla.on("select", sync);
-    embla.on("reInit", sync);
+    embla.on("reInit", preserveSelection);
     return () => {
       embla.off("select", sync);
-      embla.off("reInit", sync);
+      embla.off("reInit", preserveSelection);
     };
-  }, [embla, sync]);
+  }, [embla, preserveSelection, sync]);
   useEffect(() => {
     if (!embla) return;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
