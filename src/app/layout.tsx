@@ -25,6 +25,9 @@ export const metadata: Metadata = {
   title: { default: "AnimeHub", template: "%s · AnimeHub" },
   description: "Catálogo de anime y envíos directos a JDownloader.",
   alternates: { canonical: "/" },
+  verification: {
+    google: "U9F_PrksjHryRoa2g3LzrUKi_-uogOfpzb3uKUdd-po",
+  },
   openGraph: {
     title: "AnimeHub",
     description: "Catálogo de anime y envíos directos a JDownloader.",
