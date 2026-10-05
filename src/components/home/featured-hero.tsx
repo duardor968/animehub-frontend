@@ -58,6 +58,7 @@ export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
     sync();
     if (
       !playing ||
+      embla.containerNode().contains(document.activeElement) ||
       document.visibilityState !== "visible" ||
       window.matchMedia("(prefers-reduced-motion: reduce)").matches
     )

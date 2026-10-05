@@ -9,7 +9,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeResponse } from "@/lib/api/client";
 import { fetchHome } from "@/lib/api/home";
-import { HomeView, mergeHomeSnapshot } from "./home-view";
+import { HomePlaceholder, HomeView, mergeHomeSnapshot } from "./home-view";
 
 vi.mock("@/lib/api/home", () => ({ fetchHome: vi.fn() }));
 vi.mock("./featured-hero", () => ({
@@ -164,4 +164,10 @@ describe("automatic home recovery", () => {
     unmount();
     expect(receivedSignal?.aborted).toBe(true);
   });
+});
+
+it("uses the same portable hero height rule for the initial placeholder", () => {
+  const { container } = render(<HomePlaceholder />);
+  expect(container.querySelector(".featured-hero")).not.toBeNull();
+  expect(container.querySelector(".image-skeleton")).not.toBeNull();
 });

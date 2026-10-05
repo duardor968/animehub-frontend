@@ -214,7 +214,7 @@ function MissingSection({ loading }: { loading: boolean }) {
 export function HomePlaceholder() {
   return (
     <main aria-label="Cargando portada" aria-busy="true">
-      <div className="relative min-h-[560px] overflow-hidden max-lg:min-h-[520px] max-sm:min-h-[640px]">
+      <div className="featured-hero relative min-h-[560px] overflow-hidden max-lg:min-h-[520px] max-sm:min-h-[640px]">
         <span className="image-skeleton" aria-hidden="true" />
       </div>
       <div className="mx-auto w-full max-w-[1600px] px-6 py-12 max-sm:px-4">

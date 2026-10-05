@@ -9,6 +9,8 @@ const { carousel, state, autoplay } = vi.hoisted(() => {
   const state = { index: 0, handlers: new Map<string, Set<() => void>>() };
   const carousel = {
     selectedScrollSnap: () => state.index,
+    containerNode: () =>
+      document.querySelector(".featured-hero .touch-pan-y") as HTMLElement,
     on: (event: string, handler: () => void) => {
       if (!state.handlers.has(event)) state.handlers.set(event, new Set());
       state.handlers.get(event)!.add(handler);
@@ -94,6 +96,20 @@ describe("featured refresh state", () => {
     expect(
       screen.getByRole("button", { name: "Reanudar carrusel" }),
     ).toBeVisible();
+  });
+
+  it("does not restart autoplay under keyboard focus when the feed reorders", () => {
+    const { rerender } = render(
+      <FeaturedHero anime={[anime("A"), anime("B")]} />,
+    );
+    const details = screen.getAllByRole("button", { name: "Ver ficha" })[0];
+    details.focus();
+    expect(details).toHaveFocus();
+    autoplay.stop.mockClear();
+    rerender(<FeaturedHero anime={[anime("B"), anime("A")]} />);
+    expect(details).toHaveFocus();
+    expect(autoplay.stop).toHaveBeenCalled();
+    expect(state.index).toBe(1);
   });
 
   it("selects a valid remaining anime if the selected one disappears", () => {
