@@ -9,7 +9,14 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "audit:ci": "node scripts/audit-dependencies.mjs",
+    "test:audit": "node --test scripts/audit-dependencies.test.mjs",
+    "contract:verify": "node scripts/verify-contract.mjs",
+    "contract:generate": "pnpm contract:verify && openapi-typescript contracts/openapi.json -o src/lib/api/generated.ts && prettier --write src/lib/api/generated.ts",
+    "contract:check": "pnpm contract:generate && git diff --exit-code -- src/lib/api/generated.ts"
   },
   "dependencies": {
     "@heroui/react": "3.2.6",
@@ -38,6 +45,14 @@
     "jsdom": "30.0.1",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
-    "vitest": "4.1.11"
+    "vitest": "4.1.11",
+    "prettier": "3.9.6",
+    "openapi-typescript": "7.13.0"
+  },
+  "license": "AGPL-3.0-or-later",
+  "packageManager": "pnpm@11.20.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=11.20.0"
   }
 }

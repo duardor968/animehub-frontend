@@ -1,0 +1,1742 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/v1/health/live": {
+      "get": {
+        "operationId": "HealthController_live",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["service", "status", "version"],
+                  "properties": {
+                    "service": {
+                      "type": "string",
+                      "example": "animehub-api"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": ["live"]
+                    },
+                    "version": {
+                      "type": "string",
+                      "example": "0.1.0"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Comprueba que el proceso del API está activo",
+        "tags": ["health"]
+      }
+    },
+    "/api/v1/health/ready": {
+      "get": {
+        "operationId": "HealthController_ready",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["checks", "status"],
+                  "properties": {
+                    "checks": {
+                      "type": "object",
+                      "required": ["database"],
+                      "properties": {
+                        "database": {
+                          "type": "string",
+                          "enum": ["up"]
+                        }
+                      }
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": ["ready"]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "El servidor no pudo completar la operación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "La dependencia necesaria no está disponible.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Comprueba que PostgreSQL está disponible",
+        "tags": ["health"]
+      }
+    },
+    "/api/v1/home": {
+      "get": {
+        "operationId": "HomeController_getHome",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeResponseDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Se superó temporalmente el límite de solicitudes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "El servidor no pudo completar la operación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "La dependencia necesaria no está disponible.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Devuelve portada, estrenos y añadidos recientes",
+        "tags": ["home"]
+      }
+    },
+    "/api/v1/anime/{slug}": {
+      "get": {
+        "operationId": "AnimeController_getAnime",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnimeResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Se superó temporalmente el límite de solicitudes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "El servidor no pudo completar la operación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "La dependencia necesaria no está disponible.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Devuelve la ficha normalizada de un anime",
+        "tags": ["anime"]
+      }
+    },
+    "/api/v1/anime/{slug}/episodes": {
+      "get": {
+        "operationId": "AnimeController_getEpisodes",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpisodePageResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "La solicitud no supera la validación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Se superó temporalmente el límite de solicitudes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "El servidor no pudo completar la operación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "La dependencia necesaria no está disponible.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Devuelve episodios en páginas de cincuenta",
+        "tags": ["anime"]
+      }
+    },
+    "/api/v1/catalog": {
+      "get": {
+        "operationId": "CatalogController_getCatalog",
+        "parameters": [
+          {
+            "name": "maxYear",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1900,
+              "maximum": 2200
+            }
+          },
+          {
+            "name": "minYear",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1900,
+              "maximum": 2200
+            }
+          },
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "maxItems": 20,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "maxLength": 80
+              }
+            }
+          },
+          {
+            "name": "genre",
+            "required": false,
+            "in": "query",
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "maxItems": 20,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "maxLength": 80
+              }
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": ["emision", "finalizado", "proximamente"],
+              "type": "string"
+            }
+          },
+          {
+            "name": "letter",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "name": "order",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "score",
+                "popular",
+                "title",
+                "latest_added",
+                "latest_released"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "La solicitud no supera la validación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Se superó temporalmente el límite de solicitudes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "El servidor no pudo completar la operación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "La dependencia necesaria no está disponible.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Busca y filtra el catálogo paginado",
+        "tags": ["catalog"]
+      }
+    },
+    "/api/v1/catalog/suggestions": {
+      "get": {
+        "operationId": "CatalogController_getSuggestions",
+        "parameters": [
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "minLength": 2,
+              "maxLength": 100,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestionResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "La solicitud no supera la validación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Se superó temporalmente el límite de solicitudes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "El servidor no pudo completar la operación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Devuelve hasta ocho sugerencias de búsqueda",
+        "tags": ["catalog"]
+      }
+    },
+    "/api/v1/schedule": {
+      "get": {
+        "operationId": "ScheduleController_getSchedule",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleResponseDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Se superó temporalmente el límite de solicitudes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "El servidor no pudo completar la operación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "La dependencia necesaria no está disponible.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Devuelve el horario semanal estimado",
+        "tags": ["schedule"]
+      }
+    },
+    "/api/v1/anime/{slug}/downloads/resolve": {
+      "post": {
+        "operationId": "DownloadController_resolve",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveDownloadsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolveDownloadsResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "La solicitud no supera la validación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Se superó temporalmente el límite de solicitudes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "El servidor no pudo completar la operación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "La dependencia necesaria no está disponible.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Resuelve hasta cincuenta episodios por operación",
+        "tags": ["downloads"]
+      }
+    },
+    "/api/v1/anime/{slug}/download-jobs": {
+      "post": {
+        "operationId": "DownloadJobsController_create",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDownloadJobDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadJobReceiptResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "La solicitud no supera la validación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Se superó temporalmente el límite de solicitudes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "El servidor no pudo completar la operación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "La dependencia necesaria no está disponible.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Crea un trabajo durable para una serie o rango",
+        "tags": ["download jobs"]
+      }
+    },
+    "/api/v1/download-jobs/{id}": {
+      "get": {
+        "operationId": "DownloadJobsController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadJobResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La capacidad falta, no coincide o ha expirado.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Se superó temporalmente el límite de solicitudes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "El servidor no pudo completar la operación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "jobCapability": []
+          }
+        ],
+        "summary": "Consulta progreso y resultados mediante capacidad",
+        "tags": ["download jobs"]
+      }
+    },
+    "/api/v1/download-jobs/{id}/retry": {
+      "post": {
+        "operationId": "DownloadJobsController_retry",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadJobResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "La solicitud no supera la validación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La capacidad falta, no coincide o ha expirado.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Se superó temporalmente el límite de solicitudes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "El servidor no pudo completar la operación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "jobCapability": []
+          }
+        ],
+        "summary": "Reintenta únicamente episodios fallidos",
+        "tags": ["download jobs"]
+      }
+    },
+    "/api/v1/download-jobs/{id}/cancel": {
+      "post": {
+        "operationId": "DownloadJobsController_cancel",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadJobResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La capacidad falta, no coincide o ha expirado.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Se superó temporalmente el límite de solicitudes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "El servidor no pudo completar la operación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "jobCapability": []
+          }
+        ],
+        "summary": "Cancela los ítems pendientes del trabajo",
+        "tags": ["download jobs"]
+      }
+    }
+  },
+  "info": {
+    "title": "AnimeHub API",
+    "description": "Contrato público REST compartido por AnimeHub Web y Desktop.",
+    "version": "1.0.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [
+    {
+      "url": "https://animehub-api.duardo.dev",
+      "description": "Producción"
+    },
+    {
+      "url": "http://localhost:8000",
+      "description": "Desarrollo local"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "jobCapability": {
+        "scheme": "bearer",
+        "bearerFormat": "opaque capability",
+        "type": "http",
+        "description": "Capacidad opaca y temporal devuelta al crear un trabajo de descarga; no es un JWT."
+      }
+    },
+    "schemas": {
+      "ProblemDetailsDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "number"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": ["type", "title", "status", "detail", "instance"]
+      },
+      "CategoryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": ["id", "name", "slug"]
+      },
+      "FeaturedAnimeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "synopsis": {
+            "type": "string",
+            "nullable": true
+          },
+          "posterUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "backdropUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "category": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryDto"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["UNKNOWN", "AIRING", "FINISHED", "UPCOMING"]
+          },
+          "startDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "mature": {
+            "type": "boolean"
+          },
+          "genres": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CategoryDto"
+            }
+          },
+          "episodeCount": {
+            "type": "number",
+            "nullable": true
+          },
+          "trailerUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": ["id", "slug", "title", "status", "mature", "genres"]
+      },
+      "AnimeSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "synopsis": {
+            "type": "string",
+            "nullable": true
+          },
+          "posterUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "backdropUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "category": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryDto"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["UNKNOWN", "AIRING", "FINISHED", "UPCOMING"]
+          },
+          "startDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "mature": {
+            "type": "boolean"
+          }
+        },
+        "required": ["id", "slug", "title", "status", "mature"]
+      },
+      "EpisodeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "number": {
+            "type": "number"
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "imageUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "publishedAt": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": ["id", "number"]
+      },
+      "RecentEpisodeDto": {
+        "type": "object",
+        "properties": {
+          "anime": {
+            "$ref": "#/components/schemas/AnimeSummaryDto"
+          },
+          "episode": {
+            "$ref": "#/components/schemas/EpisodeDto"
+          }
+        },
+        "required": ["anime", "episode"]
+      },
+      "HomeDataDto": {
+        "type": "object",
+        "properties": {
+          "featured": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeaturedAnimeDto"
+            }
+          },
+          "recentEpisodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecentEpisodeDto"
+            }
+          },
+          "recentAnime": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnimeSummaryDto"
+            }
+          }
+        },
+        "required": ["featured", "recentEpisodes", "recentAnime"]
+      },
+      "FreshnessDto": {
+        "type": "object",
+        "properties": {
+          "fetchedAt": {
+            "type": "string"
+          },
+          "nextRefreshAt": {
+            "type": "string"
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        },
+        "required": ["fetchedAt", "nextRefreshAt", "stale"]
+      },
+      "HomeResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HomeDataDto"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/FreshnessDto"
+          }
+        },
+        "required": ["data", "meta"]
+      },
+      "RelationDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "PREQUEL",
+              "SEQUEL",
+              "MAIN_STORY",
+              "SIDE_STORY",
+              "SUMMARY",
+              "ALTERNATIVE",
+              "OTHER"
+            ]
+          },
+          "anime": {
+            "$ref": "#/components/schemas/AnimeSummaryDto"
+          },
+          "position": {
+            "type": "number"
+          }
+        },
+        "required": ["kind", "anime", "position"]
+      },
+      "AnimeDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "synopsis": {
+            "type": "string",
+            "nullable": true
+          },
+          "posterUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "backdropUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "category": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryDto"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["UNKNOWN", "AIRING", "FINISHED", "UPCOMING"]
+          },
+          "startDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "mature": {
+            "type": "boolean"
+          },
+          "alternativeTitle": {
+            "type": "string",
+            "nullable": true
+          },
+          "trailerUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "endDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "nextEpisodeAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "episodeCount": {
+            "type": "number",
+            "nullable": true
+          },
+          "score": {
+            "type": "number",
+            "nullable": true
+          },
+          "votes": {
+            "type": "number",
+            "nullable": true
+          },
+          "sourceUrl": {
+            "type": "string"
+          },
+          "genres": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CategoryDto"
+            }
+          },
+          "relations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RelationDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "title",
+          "status",
+          "mature",
+          "sourceUrl",
+          "genres",
+          "relations"
+        ]
+      },
+      "AnimeResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AnimeDetailDto"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/FreshnessDto"
+          }
+        },
+        "required": ["data", "meta"]
+      },
+      "EpisodePageMetaDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number"
+          },
+          "perPage": {
+            "type": "number"
+          },
+          "totalPages": {
+            "type": "number"
+          },
+          "totalRecords": {
+            "type": "number"
+          }
+        },
+        "required": ["page", "perPage", "totalPages", "totalRecords"]
+      },
+      "EpisodePageResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EpisodeDto"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/EpisodePageMetaDto"
+          }
+        },
+        "required": ["data", "meta"]
+      },
+      "CatalogMetaDto": {
+        "type": "object",
+        "properties": {
+          "fetchedAt": {
+            "type": "string"
+          },
+          "nextRefreshAt": {
+            "type": "string"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "page": {
+            "type": "number"
+          },
+          "perPage": {
+            "type": "number"
+          },
+          "totalPages": {
+            "type": "number"
+          },
+          "totalRecords": {
+            "type": "number"
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CategoryDto"
+            }
+          },
+          "genres": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CategoryDto"
+            }
+          },
+          "years": {
+            "minItems": 2,
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "fetchedAt",
+          "nextRefreshAt",
+          "stale",
+          "page",
+          "perPage",
+          "totalPages",
+          "totalRecords",
+          "categories",
+          "genres",
+          "years"
+        ]
+      },
+      "CatalogResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnimeSummaryDto"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/CatalogMetaDto"
+          }
+        },
+        "required": ["data", "meta"]
+      },
+      "SuggestionResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnimeSummaryDto"
+            }
+          }
+        },
+        "required": ["data"]
+      },
+      "ScheduleEntryDto": {
+        "type": "object",
+        "properties": {
+          "anime": {
+            "$ref": "#/components/schemas/AnimeSummaryDto"
+          },
+          "latestEpisode": {
+            "$ref": "#/components/schemas/EpisodeDto"
+          },
+          "basisPublishedAt": {
+            "type": "string"
+          },
+          "isFinalEpisode": {
+            "type": "boolean",
+            "description": "The published episode completes a finished series."
+          }
+        },
+        "required": [
+          "anime",
+          "latestEpisode",
+          "basisPublishedAt",
+          "isFinalEpisode"
+        ]
+      },
+      "ScheduleResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleEntryDto"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/FreshnessDto"
+          }
+        },
+        "required": ["data", "meta"]
+      },
+      "ResolveDownloadsDto": {
+        "type": "object",
+        "properties": {
+          "episodeNumbers": {
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "audio": {
+            "type": "string",
+            "enum": ["SUB", "DUB"]
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["MEGA", "PIXELDRAIN", "MP4UPLOAD", "ONE_FICHIER"]
+            }
+          },
+          "refresh": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": ["episodeNumbers", "audio", "providers"]
+      },
+      "ResolvedLinkDto": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": ["MEGA", "PIXELDRAIN", "MP4UPLOAD", "ONE_FICHIER"]
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": ["provider", "url"]
+      },
+      "ResolvedEpisodeDto": {
+        "type": "object",
+        "properties": {
+          "episodeNumber": {
+            "type": "number"
+          },
+          "audio": {
+            "type": "string",
+            "enum": ["SUB", "DUB"]
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResolvedLinkDto"
+            }
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": ["episodeNumber", "audio", "links"]
+      },
+      "ResolveDownloadsDataDto": {
+        "type": "object",
+        "properties": {
+          "packageName": {
+            "type": "string"
+          },
+          "episodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResolvedEpisodeDto"
+            }
+          }
+        },
+        "required": ["packageName", "episodes"]
+      },
+      "ResolveDownloadsResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ResolveDownloadsDataDto"
+          }
+        },
+        "required": ["data"]
+      },
+      "CreateDownloadJobDto": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": ["ALL", "RANGE"]
+          },
+          "audio": {
+            "type": "string",
+            "enum": ["SUB", "DUB"]
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["MEGA", "PIXELDRAIN", "MP4UPLOAD", "ONE_FICHIER"]
+            }
+          },
+          "from": {
+            "type": "number"
+          },
+          "to": {
+            "type": "number"
+          }
+        },
+        "required": ["scope", "audio", "providers"]
+      },
+      "DownloadJobReceiptDto": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "accessToken": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          }
+        },
+        "required": ["jobId", "accessToken", "expiresAt"]
+      },
+      "DownloadJobReceiptResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DownloadJobReceiptDto"
+          }
+        },
+        "required": ["data"]
+      },
+      "DownloadJobDataDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "QUEUED",
+              "RUNNING",
+              "COMPLETED",
+              "PARTIAL",
+              "FAILED",
+              "CANCELLED"
+            ]
+          },
+          "packageName": {
+            "type": "string"
+          },
+          "totalItems": {
+            "type": "number"
+          },
+          "completedItems": {
+            "type": "number"
+          },
+          "failedItems": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "episodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResolvedEpisodeDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "packageName",
+          "totalItems",
+          "completedItems",
+          "failedItems",
+          "expiresAt",
+          "episodes"
+        ]
+      },
+      "DownloadJobResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DownloadJobDataDto"
+          }
+        },
+        "required": ["data"]
+      }
+    }
+  }
+}
