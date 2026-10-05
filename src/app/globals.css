@@ -263,12 +263,6 @@
       backdrop-filter: none;
     }
 
-    html[data-device="portable"] .featured-hero,
-    html[data-device="portable"] .featured-slide,
-    html[data-device="portable"] .featured-hero-inner {
-      min-height: clamp(34rem, calc(100svh - 3.5rem), 40rem);
-    }
-
     html[data-device="portable"] .featured-controls {
       bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
       gap: 0.5rem;
@@ -283,12 +277,6 @@
 
     html[data-device="portable"] .episode-pager-content::-webkit-scrollbar {
       display: none;
-    }
-  }
-
-  @media (min-width: 641px) and (max-width: 800px) {
-    html[data-device="portable"] main {
-      padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
     }
   }
 }
@@ -333,5 +321,23 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Portable layout overrides must share the utilities layer: a components-layer
+   rule otherwise loses to min-h-* / py-* classes even with higher specificity. */
+@layer utilities {
+  @media (max-width: 800px) {
+    html[data-device="portable"] .featured-hero,
+    html[data-device="portable"] .featured-slide,
+    html[data-device="portable"] .featured-hero-inner {
+      min-height: clamp(34rem, calc(100svh - 3.5rem), 40rem);
+    }
+  }
+
+  @media (min-width: 641px) and (max-width: 800px) {
+    html[data-device="portable"] main {
+      padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+    }
   }
 }

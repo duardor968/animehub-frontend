@@ -112,6 +112,18 @@ describe("featured refresh state", () => {
     expect(state.index).toBe(1);
   });
 
+  it("keeps keyboard-focused content paused when the page becomes visible", () => {
+    render(<FeaturedHero anime={[anime("A"), anime("B")]} />);
+    const details = screen.getAllByRole("button", { name: "Ver ficha" })[0];
+    details.focus();
+    autoplay.play.mockClear();
+    autoplay.stop.mockClear();
+    fireEvent(document, new Event("visibilitychange"));
+    expect(details).toHaveFocus();
+    expect(autoplay.play).not.toHaveBeenCalled();
+    expect(autoplay.stop).toHaveBeenCalled();
+  });
+
   it("selects a valid remaining anime if the selected one disappears", () => {
     const { rerender } = render(
       <FeaturedHero anime={[anime("A"), anime("B")]} />,

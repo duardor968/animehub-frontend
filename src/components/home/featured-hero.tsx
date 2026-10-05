@@ -92,7 +92,12 @@ export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
         setPlaying(false);
         return;
       }
-      if (document.visibilityState === "visible" && playing) autoplay.play();
+      if (
+        document.visibilityState === "visible" &&
+        playing &&
+        !embla.containerNode().contains(document.activeElement)
+      )
+        autoplay.play();
       else autoplay.stop();
     };
     syncAutoplay();
