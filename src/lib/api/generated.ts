@@ -187,7 +187,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Consulta progreso y resultados mediante capacidad */
+    /**
+     * Consulta progreso y resultados mediante capacidad
+     * @description Tiene un límite propio de 300 solicitudes por minuto y dirección, aparte del general. Al superarlo responde 429 con Retry-After (segundos): espera ese tiempo y sigue sondeando; el trabajo continúa.
+     */
     get: operations["DownloadJobsController_get"];
     put?: never;
     post?: never;
@@ -206,7 +209,10 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Reintenta únicamente episodios fallidos */
+    /**
+     * Reintenta únicamente episodios fallidos
+     * @description Solo para trabajos terminados en PARTIAL o FAILED. Responde 400 si el trabajo sigue en curso, fue cancelado o no tiene episodios fallidos.
+     */
     post: operations["DownloadJobsController_retry"];
     delete?: never;
     options?: never;
@@ -223,7 +229,10 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Cancela los ítems pendientes del trabajo */
+    /**
+     * Cancela los ítems pendientes del trabajo
+     * @description Un trabajo QUEUED o RUNNING pasa a CANCELLED junto con los episodios aún sin resolver; los ya resueltos se conservan. Si el trabajo ya había terminado (COMPLETED, PARTIAL o FAILED), no se modifica y se devuelve su estado final: comprueba status para saber si la cancelación llegó a tiempo. Repetirla sobre un trabajo cancelado no cambia nada.
+     */
     post: operations["DownloadJobsController_cancel"];
     delete?: never;
     options?: never;
@@ -621,6 +630,8 @@ export interface operations {
       /** @description Se superó temporalmente el límite de solicitudes. */
       429: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {
@@ -678,6 +689,8 @@ export interface operations {
       /** @description Se superó temporalmente el límite de solicitudes. */
       429: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {
@@ -746,6 +759,8 @@ export interface operations {
       /** @description Se superó temporalmente el límite de solicitudes. */
       429: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {
@@ -812,6 +827,8 @@ export interface operations {
       /** @description Se superó temporalmente el límite de solicitudes. */
       429: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {
@@ -869,6 +886,8 @@ export interface operations {
       /** @description Se superó temporalmente el límite de solicitudes. */
       429: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {
@@ -906,6 +925,8 @@ export interface operations {
       /** @description Se superó temporalmente el límite de solicitudes. */
       429: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {
@@ -976,6 +997,8 @@ export interface operations {
       /** @description Se superó temporalmente el límite de solicitudes. */
       429: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {
@@ -1005,7 +1028,10 @@ export interface operations {
   DownloadJobsController_create: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        /** @description Clave única por intento del usuario (p. ej. un UUID v4), repetida en cada reintento de esa misma solicitud. Si la clave ya creó un trabajo de este anime con el mismo cuerpo y el trabajo no ha expirado, se devuelve ese trabajo con un accessToken nuevo en lugar de crear otro; los tokens anteriores siguen valiendo. Con otro cuerpo responde 422; tras 10 repeticiones, 409. */
+        "idempotency-key"?: string;
+      };
       path: {
         slug: string;
       };
@@ -1046,9 +1072,29 @@ export interface operations {
           "application/problem+json": components["schemas"]["ProblemDetailsDto"];
         };
       };
+      /** @description El estado actual impide completar la operación. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description La solicitud contradice otra anterior con la misma clave de idempotencia. */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
       /** @description Se superó temporalmente el límite de solicitudes. */
       429: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {
@@ -1108,6 +1154,8 @@ export interface operations {
       /** @description Se superó temporalmente el límite de solicitudes. */
       429: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {
@@ -1167,6 +1215,8 @@ export interface operations {
       /** @description Se superó temporalmente el límite de solicitudes. */
       429: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {
@@ -1217,6 +1267,8 @@ export interface operations {
       /** @description Se superó temporalmente el límite de solicitudes. */
       429: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {
@@ -1256,6 +1308,8 @@ export interface operations {
       /** @description Se superó temporalmente el límite de solicitudes. */
       429: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {

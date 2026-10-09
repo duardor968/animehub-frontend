@@ -110,6 +110,15 @@
           },
           "429": {
             "description": "Se superó temporalmente el límite de solicitudes.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que conviene esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -179,6 +188,15 @@
           },
           "429": {
             "description": "Se superó temporalmente el límite de solicitudes.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que conviene esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -269,6 +287,15 @@
           },
           "429": {
             "description": "Se superó temporalmente el límite de solicitudes.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que conviene esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -437,6 +464,15 @@
           },
           "429": {
             "description": "Se superó temporalmente el límite de solicitudes.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que conviene esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -508,6 +544,15 @@
           },
           "429": {
             "description": "Se superó temporalmente el límite de solicitudes.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que conviene esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -548,6 +593,15 @@
           },
           "429": {
             "description": "Se superó temporalmente el límite de solicitudes.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que conviene esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -637,6 +691,15 @@
           },
           "429": {
             "description": "Se superó temporalmente el límite de solicitudes.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que conviene esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -681,6 +744,18 @@
             "in": "path",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "idempotency-key",
+            "required": false,
+            "in": "header",
+            "description": "Clave única por intento del usuario (p. ej. un UUID v4), repetida en cada reintento de esa misma solicitud. Si la clave ya creó un trabajo de este anime con el mismo cuerpo y el trabajo no ha expirado, se devuelve ese trabajo con un accessToken nuevo en lugar de crear otro; los tokens anteriores siguen valiendo. Con otro cuerpo responde 422; tras 10 repeticiones, 409.",
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_.:-]+$"
             }
           }
         ],
@@ -743,8 +818,37 @@
               }
             }
           },
+          "409": {
+            "description": "El estado actual impide completar la operación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La solicitud contradice otra anterior con la misma clave de idempotencia.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Se superó temporalmente el límite de solicitudes.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que conviene esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -780,6 +884,7 @@
     },
     "/api/v1/download-jobs/{id}": {
       "get": {
+        "description": "Tiene un límite propio de 300 solicitudes por minuto y dirección, aparte del general. Al superarlo responde 429 con Retry-After (segundos): espera ese tiempo y sigue sondeando; el trabajo continúa.",
         "operationId": "DownloadJobsController_get",
         "parameters": [
           {
@@ -822,6 +927,15 @@
           },
           "429": {
             "description": "Se superó temporalmente el límite de solicitudes.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que conviene esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -852,6 +966,7 @@
     },
     "/api/v1/download-jobs/{id}/retry": {
       "post": {
+        "description": "Solo para trabajos terminados en PARTIAL o FAILED. Responde 400 si el trabajo sigue en curso, fue cancelado o no tiene episodios fallidos.",
         "operationId": "DownloadJobsController_retry",
         "parameters": [
           {
@@ -904,6 +1019,15 @@
           },
           "429": {
             "description": "Se superó temporalmente el límite de solicitudes.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que conviene esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -934,6 +1058,7 @@
     },
     "/api/v1/download-jobs/{id}/cancel": {
       "post": {
+        "description": "Un trabajo QUEUED o RUNNING pasa a CANCELLED junto con los episodios aún sin resolver; los ya resueltos se conservan. Si el trabajo ya había terminado (COMPLETED, PARTIAL o FAILED), no se modifica y se devuelve su estado final: comprueba status para saber si la cancelación llegó a tiempo. Repetirla sobre un trabajo cancelado no cambia nada.",
         "operationId": "DownloadJobsController_cancel",
         "parameters": [
           {
@@ -976,6 +1101,15 @@
           },
           "429": {
             "description": "Se superó temporalmente el límite de solicitudes.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que conviene esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1030,6 +1164,15 @@
           },
           "429": {
             "description": "Se superó temporalmente el límite de solicitudes.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que conviene esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
             "content": {
               "application/problem+json": {
                 "schema": {
