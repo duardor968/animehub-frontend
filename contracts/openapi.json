@@ -304,6 +304,7 @@
     },
     "/api/v1/catalog": {
       "get": {
+        "description": "La fuente sirve páginas de 20 y como máximo 1000 resultados (50 páginas) por consulta. Cuando una consulta coincide con más títulos, la fuente trunca el conjunto: meta.totalRecords se queda en 1000, las páginas posteriores a la 50 llegan vacías y meta.capped es true. Para alcanzar el resto hay que acotar la consulta (inicial, años, género, formato o estado).",
         "operationId": "CatalogController_getCatalog",
         "parameters": [
           {
@@ -671,6 +672,7 @@
     },
     "/api/v1/anime/{slug}/download-jobs": {
       "post": {
+        "description": "scope ALL resuelve todos los episodios; RANGE, los episodios con número entre from y to (ambos obligatorios, from ≤ to); EPISODES, exactamente los números de episodeNumbers (los que el anime no tiene se omiten y se devuelven en missingEpisodeNumbers). Responde 400 si ningún episodio coincide.",
         "operationId": "DownloadJobsController_create",
         "parameters": [
           {
@@ -687,7 +689,25 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateDownloadJobDto"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/AllDownloadJobRequestDto"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RangeDownloadJobRequestDto"
+                  },
+                  {
+                    "$ref": "#/components/schemas/EpisodesDownloadJobRequestDto"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "scope",
+                  "mapping": {
+                    "ALL": "#/components/schemas/AllDownloadJobRequestDto",
+                    "RANGE": "#/components/schemas/RangeDownloadJobRequestDto",
+                    "EPISODES": "#/components/schemas/EpisodesDownloadJobRequestDto"
+                  }
+                }
               }
             }
           }
@@ -754,7 +774,7 @@
             }
           }
         },
-        "summary": "Crea un trabajo durable para una serie o rango",
+        "summary": "Crea un trabajo durable para una serie, un rango o una selección",
         "tags": ["download jobs"]
       }
     },
@@ -983,6 +1003,55 @@
         "summary": "Cancela los ítems pendientes del trabajo",
         "tags": ["download jobs"]
       }
+    },
+    "/api/v1/sitemap/anime": {
+      "get": {
+        "description": "Todos los anime que conoce la API y siguen disponibles en la fuente, ordenados por slug (máximo 50.000). Respuesta cacheable: Cache-Control \"public, max-age=3600\".",
+        "operationId": "SitemapController_getAnime",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "headers": {
+              "Cache-Control": {
+                "description": "public, max-age=3600",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SitemapAnimeResponseDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Se superó temporalmente el límite de solicitudes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "El servidor no pudo completar la operación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Lista los anime disponibles para el sitemap",
+        "tags": ["sitemap"]
+      }
     }
   },
   "info": {
@@ -1096,6 +1165,7 @@
             "type": "boolean"
           },
           "genres": {
+            "description": "Sorted by name (Spanish collation).",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/CategoryDto"
@@ -1255,11 +1325,15 @@
               "PREQUEL",
               "SEQUEL",
               "MAIN_STORY",
+              "FULL_STORY",
               "SIDE_STORY",
+              "SPIN_OFF",
               "SUMMARY",
               "ALTERNATIVE",
+              "ALTERNATIVE_SETTING",
               "OTHER"
-            ]
+            ],
+            "description": "Source relation label: PREQUEL Precuela, SEQUEL Secuela, MAIN_STORY Historia principal, FULL_STORY Historia completa, SIDE_STORY Historia paralela, SPIN_OFF Spin-off, SUMMARY Resumen, ALTERNATIVE Versión alternativa, ALTERNATIVE_SETTING Ambientación alternativa, OTHER Otro (the source itself gives no specific relation)."
           },
           "anime": {
             "$ref": "#/components/schemas/AnimeSummaryDto"
@@ -1346,6 +1420,7 @@
             "type": "string"
           },
           "genres": {
+            "description": "Sorted by name (Spanish collation).",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/CategoryDto"
@@ -1395,9 +1470,26 @@
           },
           "totalRecords": {
             "type": "number"
+          },
+          "firstNumber": {
+            "type": "number",
+            "nullable": true,
+            "description": "Lowest episode number across ALL episodes of the anime (not only this page); null when it has none. Movies are often a single episode 0."
+          },
+          "lastNumber": {
+            "type": "number",
+            "nullable": true,
+            "description": "Highest episode number across ALL episodes of the anime (not only this page); null when it has none."
           }
         },
-        "required": ["page", "perPage", "totalPages", "totalRecords"]
+        "required": [
+          "page",
+          "perPage",
+          "totalPages",
+          "totalRecords",
+          "firstNumber",
+          "lastNumber"
+        ]
       },
       "EpisodePageResponseDto": {
         "type": "object",
@@ -1433,10 +1525,16 @@
             "type": "number"
           },
           "totalPages": {
-            "type": "number"
+            "type": "number",
+            "description": "Pages reported by the source; never more than 50."
           },
           "totalRecords": {
-            "type": "number"
+            "type": "number",
+            "description": "Records reported by the source; clamped at 1000 (see capped)."
+          },
+          "capped": {
+            "type": "boolean",
+            "description": "true when the source truncated the result set at its maximum of 1000 records / 50 pages: more titles match than totalRecords and pages beyond 50 are empty, so narrow the query (e.g. letter, year or genre filters) to reach them. totalRecords is then a lower bound (\"1000+\")."
           },
           "categories": {
             "type": "array",
@@ -1467,6 +1565,7 @@
           "perPage",
           "totalPages",
           "totalRecords",
+          "capped",
           "categories",
           "genres",
           "years"
@@ -1509,13 +1608,16 @@
             "$ref": "#/components/schemas/EpisodeDto"
           },
           "basisPublishedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time",
+            "description": "Equals latestEpisode.publishedAt. Its weekday and time in the viewer's time zone define the weekly slot; the next episode is expected 7 days later. Entries whose basisPublishedAt is more than 21 days old (hiatus or irregular releases) are omitted."
           },
           "isFinalEpisode": {
             "type": "boolean",
-            "description": "The published episode completes a finished series."
+            "description": "latestEpisode completes a finished series: there is no next episode. Such entries are kept for 48 hours after basisPublishedAt."
           }
         },
+        "description": "One weekly slot. latestEpisode is the newest episode of the series already published at the source (never a future one); the next expected episode is latestEpisode.number + 1, due 7 days after basisPublishedAt, unless isFinalEpisode.",
         "required": [
           "anime",
           "latestEpisode",
@@ -1627,32 +1729,94 @@
         },
         "required": ["data"]
       },
-      "CreateDownloadJobDto": {
+      "AllDownloadJobRequestDto": {
         "type": "object",
         "properties": {
-          "scope": {
-            "type": "string",
-            "enum": ["ALL", "RANGE"]
-          },
           "audio": {
             "type": "string",
             "enum": ["SUB", "DUB"]
           },
           "providers": {
             "type": "array",
+            "minItems": 1,
             "items": {
               "type": "string",
               "enum": ["MEGA", "PIXELDRAIN", "MP4UPLOAD", "ONE_FICHIER"]
             }
           },
-          "from": {
-            "type": "number"
-          },
-          "to": {
-            "type": "number"
+          "scope": {
+            "type": "string",
+            "enum": ["ALL"],
+            "description": "Every episode of the anime."
           }
         },
-        "required": ["scope", "audio", "providers"]
+        "required": ["audio", "providers", "scope"]
+      },
+      "RangeDownloadJobRequestDto": {
+        "type": "object",
+        "properties": {
+          "audio": {
+            "type": "string",
+            "enum": ["SUB", "DUB"]
+          },
+          "providers": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": ["MEGA", "PIXELDRAIN", "MP4UPLOAD", "ONE_FICHIER"]
+            }
+          },
+          "scope": {
+            "type": "string",
+            "enum": ["RANGE"],
+            "description": "Every existing episode whose number is within [from, to] (inclusive)."
+          },
+          "from": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Required; from <= to."
+          },
+          "to": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Required; to >= from."
+          }
+        },
+        "required": ["audio", "providers", "scope", "from", "to"]
+      },
+      "EpisodesDownloadJobRequestDto": {
+        "type": "object",
+        "properties": {
+          "audio": {
+            "type": "string",
+            "enum": ["SUB", "DUB"]
+          },
+          "providers": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": ["MEGA", "PIXELDRAIN", "MP4UPLOAD", "ONE_FICHIER"]
+            }
+          },
+          "scope": {
+            "type": "string",
+            "enum": ["EPISODES"],
+            "description": "Exactly the listed episodes."
+          },
+          "episodeNumbers": {
+            "minItems": 1,
+            "maxItems": 5000,
+            "uniqueItems": true,
+            "description": "Episode numbers to resolve (finite, >= 0, decimals allowed, no duplicates). Numbers the anime does not have are skipped and listed in the receipt as missingEpisodeNumbers; if none exists the request fails with 400.",
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": ["audio", "providers", "scope", "episodeNumbers"]
       },
       "DownloadJobReceiptDto": {
         "type": "object",
@@ -1665,9 +1829,21 @@
           },
           "expiresAt": {
             "type": "string"
+          },
+          "missingEpisodeNumbers": {
+            "description": "EPISODES scope only: requested numbers the anime does not have, which the job skips (ascending). Always empty for ALL and RANGE.",
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
           }
         },
-        "required": ["jobId", "accessToken", "expiresAt"]
+        "required": [
+          "jobId",
+          "accessToken",
+          "expiresAt",
+          "missingEpisodeNumbers"
+        ]
       },
       "DownloadJobReceiptResponseDto": {
         "type": "object",
@@ -1733,6 +1909,32 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/DownloadJobDataDto"
+          }
+        },
+        "required": ["data"]
+      },
+      "SitemapAnimeDto": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last known change of the anime page content: the newer of its last detected detail change (title, synopsis, episode list, relations) and its latest episode publication."
+          }
+        },
+        "required": ["slug", "updatedAt"]
+      },
+      "SitemapAnimeResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SitemapAnimeDto"
+            }
           }
         },
         "required": ["data"]
