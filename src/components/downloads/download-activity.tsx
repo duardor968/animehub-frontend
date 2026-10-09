@@ -258,7 +258,7 @@ export function presentActivity(
         return {
           ...base,
           title: "Enlaces listos para copiar",
-          detail: `${describeLinks(episodes)}. El navegador no permitió copiarlos automáticamente.`,
+          detail: `${describeLinks(episodes)}. El navegador no permitió ${linkCount(episodes) === 1 ? "copiarlo" : "copiarlos"} automáticamente.`,
           variant: "accent",
           timeout: 0,
           actions: [
@@ -298,8 +298,8 @@ export function presentActivity(
         ...base,
         title: "Enlaces listos",
         detail: activity.deliveryFailed
-          ? `${describeLinks(episodes)}. El último envío falló; vuelve a intentarlo o cópialos.`
-          : `${describeLinks(episodes)}. Confirma para enviarlos.`,
+          ? `${describeLinks(episodes)}. El último envío falló; vuelve a intentarlo o ${linkCount(episodes) === 1 ? "cópialo" : "cópialos"}.`
+          : `${describeLinks(episodes)}. Confirma para ${linkCount(episodes) === 1 ? "enviarlo" : "enviarlos"}.`,
         variant: "accent",
         timeout: 0,
         actions: [
