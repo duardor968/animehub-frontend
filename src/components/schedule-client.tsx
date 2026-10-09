@@ -1,58 +1,55 @@
 "use client";
 
-import { toast } from "@heroui/react";
-import { useEffect, useSyncExternalStore } from "react";
-
-const timeFormatter = new Intl.DateTimeFormat("es", {
-  hour: "2-digit",
-  minute: "2-digit",
-});
+import { useSyncExternalStore } from "react";
+import { formatScheduleTime } from "./schedule-status";
 
 function subscribeMinute(onChange: () => void) {
-  const id = window.setInterval(onChange, 30_000);
-  return () => window.clearInterval(id);
+  let interval: number | undefined;
+  // Tick on the minute boundary so the clock never lags behind the system's.
+  const timeout = window.setTimeout(
+    () => {
+      onChange();
+      interval = window.setInterval(onChange, 60_000);
+    },
+    60_000 - (Date.now() % 60_000) + 50,
+  );
+  return () => {
+    window.clearTimeout(timeout);
+    window.clearInterval(interval);
+  };
 }
 
-// Shows the viewer's own local time so any offset from the source's stated hours
-// is obvious at a glance. useSyncExternalStore keeps it client-only (server
-// snapshot is null → no hydration mismatch) without setState-in-effect.
-export function LocalTime() {
+const subscribeHydration = () => () => {};
+
+// The viewer's own clock, so any offset from the stated hours is obvious at a
+// glance. The server renders the same instant in the zone it grouped the week
+// by; after hydration it follows the browser.
+export function LocalTime({
+  serverNow,
+  serverTimeZone,
+  zoneIsViewers,
+}: {
+  serverNow: string;
+  serverTimeZone: string;
+  /** The server zone came from the viewer's cookie (not the UTC fallback). */
+  zoneIsViewers: boolean;
+}) {
   const time = useSyncExternalStore(
     subscribeMinute,
-    () => timeFormatter.format(new Date()),
-    () => null,
+    () => formatScheduleTime(new Date()),
+    () => formatScheduleTime(new Date(serverNow), serverTimeZone),
+  );
+  const hydrated = useSyncExternalStore(
+    subscribeHydration,
+    () => true,
+    () => false,
   );
   return (
-    <span className="inline-flex items-center gap-2 text-sm text-muted">
-      <span className="text-[10px] font-bold uppercase tracking-[.16em] text-faint">
-        Hora local
+    <p className="inline-flex items-center gap-2 text-sm text-muted">
+      <span className="text-[11px] font-bold uppercase tracking-[.16em] text-faint">
+        {hydrated || zoneIsViewers ? "Hora local" : "Hora UTC"}
       </span>
-      <strong className="tabular-nums text-foreground">
-        {time ?? "--:--"}
-      </strong>
-    </span>
+      <strong className="tabular-nums text-foreground">{time}</strong>
+    </p>
   );
-}
-
-const NOTICE_KEY = "animehub.schedule-notice-seen";
-
-// One-time persistent warning that the schedule is referential. Replaces the
-// always-on banner: shown once per browser, then remembered.
-export function ScheduleNotice() {
-  useEffect(() => {
-    let seen = false;
-    try {
-      seen = localStorage.getItem(NOTICE_KEY) === "1";
-      if (!seen) localStorage.setItem(NOTICE_KEY, "1");
-    } catch {
-      // Private mode / storage blocked: fall through and show it this session.
-    }
-    if (seen) return;
-    toast.warning("Horarios referenciales", {
-      description:
-        "Los horarios que se muestran aquí son referenciales y pueden variar.",
-      timeout: 0,
-    });
-  }, []);
-  return null;
 }
