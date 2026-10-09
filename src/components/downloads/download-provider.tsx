@@ -137,12 +137,13 @@ function postJob(
   slug: string,
   body: string,
   key: string,
-  signal?: AbortSignal,
+  { signal, timeoutMs }: { signal?: AbortSignal; timeoutMs?: number } = {},
 ) {
   return apiFetch<{ data: JobReceipt }>(
     `/anime/${encodeURIComponent(slug)}/download-jobs`,
     { method: "POST", signal, headers: { "idempotency-key": key }, body },
     true,
+    { timeoutMs },
   );
 }
 
@@ -154,12 +155,7 @@ function postJob(
  */
 async function cancelAbandonedJob(slug: string, body: string, key: string) {
   try {
-    const { data } = await apiFetch<{ data: JobReceipt }>(
-      `/anime/${encodeURIComponent(slug)}/download-jobs`,
-      { method: "POST", headers: { "idempotency-key": key }, body },
-      true,
-      { timeoutMs: 30_000 },
-    );
+    const { data } = await postJob(slug, body, key, { timeoutMs: 30_000 });
     await apiFetch(
       `/download-jobs/${data.jobId}/cancel`,
       {
@@ -1072,12 +1068,9 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           jobRequest = JSON.stringify(jobBody(next, snapshot));
           let response: { data: JobReceipt };
           try {
-            response = await postJob(
-              next.slug,
-              jobRequest,
-              idempotencyKey,
+            response = await postJob(next.slug, jobRequest, idempotencyKey, {
               signal,
-            );
+            });
           } catch (error) {
             // 409/422: the key is spent (too many repeats) or belongs to a
             // different body (preferences changed). This is a new attempt.
@@ -1087,12 +1080,9 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
             )
               throw error;
             idempotencyKey = crypto.randomUUID();
-            response = await postJob(
-              next.slug,
-              jobRequest,
-              idempotencyKey,
+            response = await postJob(next.slug, jobRequest, idempotencyKey, {
               signal,
-            );
+            });
           }
           abortersRef.current.delete(id);
           const { missingEpisodeNumbers, ...receipt } = response.data;
