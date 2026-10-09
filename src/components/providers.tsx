@@ -23,11 +23,12 @@ export function Providers({ children }: { children: ReactNode }) {
     <I18nProvider locale={APP_LOCALE}>
       {/* The z-index sits above the drawer backdrop (z-60) / dialog (z-70) so a
           toast stays readable over the dimmed overlay. The bottom offset clears
-          the mobile navigation below the lg breakpoint. */}
+          the mobile navigation (below lg) and the download dock (episode
+          selection bar) while it is shown. */}
       <Toast.Provider
         placement="bottom end"
         width="min(26rem, calc(100vw - 2rem))"
-        className="animehub-toast-region !z-[100] bottom-[calc(var(--bottom-nav-clearance)+1rem)]"
+        className="animehub-toast-region !z-[100] bottom-[calc(var(--bottom-nav-clearance)+1rem+var(--download-dock-height,0px))]"
       >
         {({ toast }) => <AppToast toast={toast} />}
       </Toast.Provider>
