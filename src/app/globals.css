@@ -280,15 +280,6 @@
     animation: none;
   }
 
-  .status-success {
-    color: var(--success);
-  }
-
-  .status-error,
-  .status-partial {
-    color: var(--danger);
-  }
-
   html[data-device="portable"] button,
   html[data-device="portable"] a {
     touch-action: manipulation;
@@ -323,28 +314,6 @@
   html[data-device="portable"] .download-drawer-backdrop {
     background: rgb(3 7 17 / 76%) !important;
     backdrop-filter: none !important;
-  }
-
-  html[data-device="portable"] .download-drawer-dialog,
-  html[data-device="portable"] .mobile-drawer-dialog {
-    height: 100dvh;
-    max-height: 100dvh;
-    overscroll-behavior: contain;
-  }
-
-  html[data-device="portable"] .mobile-drawer-header {
-    padding-top: max(1rem, env(safe-area-inset-top, 0px));
-  }
-
-  html[data-device="portable"] .mobile-drawer-body {
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-
-  html[data-device="portable"] .mobile-drawer-footer,
-  html[data-device="portable"] .mobile-drawer-body {
-    padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
   }
 }
 
