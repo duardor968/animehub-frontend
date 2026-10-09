@@ -424,6 +424,20 @@
     }
   }
 
+  @media (40rem <= width < 48rem) {
+    .featured-scrim {
+      background:
+        linear-gradient(
+          90deg,
+          var(--background) 0%,
+          color-mix(in srgb, var(--background) 92%, transparent) 45%,
+          color-mix(in srgb, var(--background) 82%, transparent) 75%,
+          color-mix(in srgb, var(--background) 55%, transparent) 100%
+        ),
+        linear-gradient(0deg, var(--background) 0%, transparent 45%);
+    }
+  }
+
   @media (width < 40rem) {
     .featured-scrim {
       background: linear-gradient(
