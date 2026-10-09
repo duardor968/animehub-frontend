@@ -6,8 +6,13 @@ import { siteUrl } from "@/lib/site";
 type SitemapAnimeResponse = components["schemas"]["SitemapAnimeResponseDto"];
 
 // Built per request: a build without the API (CI, Docker) must not bake a
-// sitemap that lists only the static pages.
+// sitemap that lists only the static pages. The API list itself is reused for
+// an hour (Next's data cache, like the API's Cache-Control), so crawlers don't
+// trigger a full scan per request; a failed fetch is never cached.
 export const dynamic = "force-dynamic";
+
+/** Seconds the API's anime list is reused (its `max-age`). */
+export const SITEMAP_REVALIDATE_SECONDS = 3_600;
 
 /** Protocol limit for a single sitemap file. */
 export const MAX_SITEMAP_URLS = 50_000;
@@ -22,7 +27,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   try {
     const response = await apiFetch<SitemapAnimeResponse>(
       "/sitemap/anime",
-      {},
+      { next: { revalidate: SITEMAP_REVALIDATE_SECONDS } },
       false,
       { timeoutMs: 10_000, retryDelays: [0, 500] },
     );

@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { MAIN_CONTENT_ID } from "@/lib/navigation";
 
+// Next already adds <meta name="robots" content="noindex"> to 404 responses:
+// a second robots tag here would contradict or duplicate it.
 export const metadata: Metadata = {
   title: "Anime no encontrado",
-  robots: { index: false, follow: true },
 };
 
 /** Unknown slug (the API answers 404): anime-specific copy and next steps. */

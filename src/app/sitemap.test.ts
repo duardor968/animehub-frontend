@@ -18,9 +18,10 @@ describe("sitemap", () => {
     });
     const entries = await sitemap();
 
+    // Cacheable for an hour, like the API's Cache-Control.
     expect(apiFetch).toHaveBeenCalledWith(
       "/sitemap/anime",
-      {},
+      { next: { revalidate: 3_600 } },
       false,
       expect.objectContaining({ timeoutMs: 10_000 }),
     );
