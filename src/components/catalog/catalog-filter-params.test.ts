@@ -243,8 +243,9 @@ describe("catalog filter parameters", () => {
   });
 
   it("reports a capped result set only when the API says so", () => {
-    expect(isCatalogCapped({ totalRecords: 1000 })).toBe(false);
-    expect(isCatalogCapped({ totalRecords: 1000, capped: true })).toBe(true);
+    expect(isCatalogCapped({})).toBe(false);
+    expect(isCatalogCapped({ capped: false })).toBe(false);
+    expect(isCatalogCapped({ capped: true })).toBe(true);
     expect(formatCatalogCount(1000, true)).toBe("Más de 1.000 obras");
     expect(formatCatalogCount(1, false)).toBe("1 obra");
     expect(formatCatalogCount(23, false)).toBe("23 obras");
