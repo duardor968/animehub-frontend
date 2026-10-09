@@ -14,11 +14,23 @@ let rejectionGuardInstalled = false;
 function installRejectionGuard() {
   if (rejectionGuardInstalled || typeof window === "undefined") return;
   rejectionGuardInstalled = true;
-  window.addEventListener("unhandledrejection", (event) => {
-    const reason: unknown = event.reason;
-    if (typeof reason === "object" && reason && handledMyJdErrors.has(reason))
-      event.preventDefault();
-  });
+  // Capture phase runs before other window listeners (e.g. dev overlays), so
+  // a rejection we already handled is never reported as an app error.
+  window.addEventListener(
+    "unhandledrejection",
+    (event) => {
+      const reason: unknown = event.reason;
+      if (
+        typeof reason === "object" &&
+        reason &&
+        handledMyJdErrors.has(reason)
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    },
+    { capture: true },
+  );
 }
 
 async function guardMyJd<T>(operation: () => Promise<T>): Promise<T> {
