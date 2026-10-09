@@ -12,9 +12,10 @@ import {
   type Key,
 } from "react";
 import type { components } from "@/lib/api/generated";
-import { plural } from "@/lib/format";
+import { formatEpisodeNumber, plural } from "@/lib/format";
 import { AnimeImage } from "./anime-image";
 import { MediaCard } from "./media-card";
+import { zonePending } from "./schedule-client";
 import {
   deriveScheduleEntry,
   formatScheduleTime,
@@ -90,11 +91,14 @@ export function ScheduleBoard({
   stale = false,
   serverNow,
   serverTimeZone,
+  zoneConfirmed = true,
 }: {
   entries: ScheduleEntry[];
   stale?: boolean;
   serverNow: string;
   serverTimeZone: string;
+  /** serverTimeZone is the viewer's (cookie), not a first-visit guess. */
+  zoneConfirmed?: boolean;
 }) {
   const router = useRouter();
   const hydrated = useSyncExternalStore(
@@ -219,103 +223,123 @@ export function ScheduleBoard({
     };
   }, [openingDay]);
 
+  const pending = zonePending(hydrated, zoneConfirmed, serverTimeZone);
   return (
-    <Tabs
-      variant="secondary"
-      aria-label="Días de la semana"
-      selectedKey={selectedKey}
-      onSelectionChange={(key: Key) => setChosenDay(String(key))}
-      className="w-full gap-0"
-    >
-      {/* Own scroller instead of Tabs.ListContainer: HeroUI's overflow
+    <div data-zone-pending={pending}>
+      {pending && <ZoneMatchStyle zone={pending} />}
+      <Tabs
+        variant="secondary"
+        aria-label="Días de la semana"
+        selectedKey={selectedKey}
+        onSelectionChange={(key: Key) => setChosenDay(String(key))}
+        className="w-full gap-0"
+      >
+        {/* Own scroller instead of Tabs.ListContainer: HeroUI's overflow
           arrows are 16px with fixed English labels; a swipeable strip that
           scrolls today into view needs neither. The class keeps the
           secondary-variant underline styles. */}
-      <div
-        ref={scrollerRef}
-        className="tabs__list-container mb-7 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
-        <Tabs.List
-          aria-label="Días de la semana"
-          className="w-max !min-w-0 gap-1 bg-transparent"
+        <div
+          ref={scrollerRef}
+          className="tabs__list-container mb-7 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
-          {weekOrder.map((index) => {
-            const day = days[index];
-            const count = grouped[index].length;
-            const isToday = index === todayIndex;
-            return (
-              // The underline is CSS: HeroUI's animated indicator is re-mounted
-              // with the items after hydration and can stick mid-transition.
-              <Tabs.Tab
-                id={String(index)}
-                key={day}
-                aria-label={`${day}, ${plural(count, "lanzamiento", "lanzamientos")}${isToday ? ", hoy" : ""}`}
-                className="flex min-h-11 !w-auto items-center gap-2 px-3 text-sm text-muted shadow-none transition-colors after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[selected=true]:after:bg-brand data-[hovered=true]:text-subtle data-[selected=true]:font-semibold data-[selected=true]:text-foreground data-[focus-visible=true]:ring-2 data-[focus-visible=true]:ring-inset data-[focus-visible=true]:ring-focus"
-              >
-                <span className="capitalize">{daysShort[index]}</span>
-                <span className="text-xs tabular-nums text-faint">{count}</span>
-                {isToday && (
-                  <span
-                    aria-hidden="true"
-                    className="size-1.5 rounded-full bg-success"
-                  />
-                )}
-              </Tabs.Tab>
-            );
-          })}
-        </Tabs.List>
-      </div>
-
-      {weekOrder.map((index) => {
-        const day = days[index];
-        const isSelected = selectedKey === String(index);
-        return (
-          // Every day is in the HTML (search engines, no-JS); only the selected
-          // one is shown and reachable.
-          <Tabs.Panel
-            id={String(index)}
-            key={day}
-            shouldForceMount
-            className="p-0 outline-none data-[inert=true]:hidden"
+          <Tabs.List
+            aria-label="Días de la semana"
+            className="w-max !min-w-0 gap-1 bg-transparent"
           >
-            <div className="mb-4 flex items-baseline gap-2.5">
-              <h2 className="font-display text-xl font-semibold capitalize text-foreground">
-                {day}
-                {index === todayIndex && (
-                  <span className="sr-only"> (hoy)</span>
-                )}
-              </h2>
-              <span className="text-xs text-muted">
-                {plural(grouped[index].length, "lanzamiento", "lanzamientos")}
-              </span>
-            </div>
-
-            {grouped[index].length === 0 ? (
-              <div className="rounded-xl border border-dashed border-white/10 bg-surface py-16 text-center">
-                <p className="text-sm text-muted">
-                  No hay emisiones programadas para este día.
-                </p>
-              </div>
-            ) : (
-              <ul className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
-                {grouped[index].map((entry, entryIndex) => (
-                  <li key={entry.anime.id} className="min-w-0">
-                    <ScheduleCard
-                      entry={entry}
-                      time={formatScheduleTime(
-                        new Date(entry.basisPublishedAt),
-                        timeZone,
-                      )}
-                      priority={isSelected && entryIndex < 2}
+            {weekOrder.map((index) => {
+              const day = days[index];
+              const count = grouped[index].length;
+              const isToday = index === todayIndex;
+              return (
+                // The underline is CSS: HeroUI's animated indicator is re-mounted
+                // with the items after hydration and can stick mid-transition.
+                <Tabs.Tab
+                  id={String(index)}
+                  key={day}
+                  aria-label={`${day}, ${plural(count, "lanzamiento", "lanzamientos")}${isToday ? ", hoy" : ""}`}
+                  className="flex min-h-11 !w-auto items-center gap-2 px-3 text-sm text-muted shadow-none transition-colors after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[selected=true]:after:bg-brand data-[hovered=true]:text-subtle data-[selected=true]:font-semibold data-[selected=true]:text-foreground data-[focus-visible=true]:ring-2 data-[focus-visible=true]:ring-inset data-[focus-visible=true]:ring-focus"
+                >
+                  <span className="capitalize">{daysShort[index]}</span>
+                  <span className="text-xs tabular-nums text-faint">
+                    {count}
+                  </span>
+                  {isToday && (
+                    <span
+                      aria-hidden="true"
+                      className="size-1.5 rounded-full bg-success"
                     />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Tabs.Panel>
-        );
-      })}
-    </Tabs>
+                  )}
+                </Tabs.Tab>
+              );
+            })}
+          </Tabs.List>
+        </div>
+
+        {weekOrder.map((index) => {
+          const day = days[index];
+          const isSelected = selectedKey === String(index);
+          return (
+            // Every day is in the HTML (search engines, no-JS); only the selected
+            // one is shown and reachable.
+            <Tabs.Panel
+              id={String(index)}
+              key={day}
+              shouldForceMount
+              className="p-0 outline-none data-[inert=true]:hidden"
+            >
+              <div className="mb-4 flex items-baseline gap-2.5">
+                <h2 className="font-display text-xl font-semibold capitalize text-foreground">
+                  {day}
+                  {index === todayIndex && (
+                    <span className="sr-only"> (hoy)</span>
+                  )}
+                </h2>
+                <span className="text-xs text-muted">
+                  {plural(grouped[index].length, "lanzamiento", "lanzamientos")}
+                </span>
+              </div>
+
+              {grouped[index].length === 0 ? (
+                <div className="rounded-xl border border-dashed border-white/10 bg-surface py-16 text-center">
+                  <p className="text-sm text-muted">
+                    No hay emisiones programadas para este día.
+                  </p>
+                </div>
+              ) : (
+                <ul className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
+                  {grouped[index].map((entry, entryIndex) => (
+                    <li key={entry.anime.id} className="min-w-0">
+                      <ScheduleCard
+                        entry={entry}
+                        time={formatScheduleTime(
+                          new Date(entry.basisPublishedAt),
+                          timeZone,
+                        )}
+                        priority={isSelected && entryIndex < 2}
+                        eager={isSelected && entryIndex < 7}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Tabs.Panel>
+          );
+        })}
+      </Tabs>
+    </div>
+  );
+}
+
+/** Shows the server-rendered week right away when the head script found the
+ *  viewer in the zone it was grouped by (html[data-tz]). The zone is a
+ *  validated IANA name (letters, digits, _ + - /), safe in the selector. */
+function ZoneMatchStyle({ zone }: { zone: string }) {
+  return (
+    <style
+      dangerouslySetInnerHTML={{
+        __html: `html[data-tz="${zone}"] [data-zone-pending="${zone}"],html[data-tz="${zone}"] .site-footer{visibility:visible}`,
+      }}
+    />
   );
 }
 
@@ -323,10 +347,14 @@ function ScheduleCard({
   entry,
   time,
   priority,
+  eager,
 }: {
   entry: DisplayEntry;
   time: string;
+  /** First row on phones: the LCP candidates. */
   priority: boolean;
+  /** Rest of the selected day's first row on wide screens (up to 7). */
+  eager: boolean;
 }) {
   const { status, number } = entry.display;
   const label = statusLabels[status];
@@ -336,7 +364,7 @@ function ScheduleCard({
       href={`/anime/${entry.anime.slug}`}
       aria-label={[
         entry.anime.title,
-        `episodio ${number}`,
+        `episodio ${formatEpisodeNumber(number)}`,
         label?.toLocaleLowerCase("es"),
         time,
       ]
@@ -352,6 +380,8 @@ function ScheduleCard({
             fallbackSrc={entry.anime.backdropUrl}
             alt=""
             priority={priority}
+            loading={eager ? "eager" : "lazy"}
+            fetchPriority={eager && !priority ? "low" : undefined}
             sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 16vw"
           />
           <time
@@ -363,7 +393,7 @@ function ScheduleCard({
           <div className="absolute bottom-0 left-0 flex h-6 items-center rounded-tr-lg bg-surface px-2.5 text-[11px] font-bold">
             <span className="tracking-[.12em] text-link">EP</span>
             <strong className="ml-1 tabular-nums text-foreground">
-              {number}
+              {formatEpisodeNumber(number)}
             </strong>
           </div>
         </div>

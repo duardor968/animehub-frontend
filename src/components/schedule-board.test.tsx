@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { components } from "@/lib/api/generated";
 import { ScheduleBoard } from "./schedule-board";
@@ -129,5 +130,29 @@ describe("schedule semantics and accessibility", () => {
       screen.getByRole("tab", { name: "martes, 0 lanzamientos" }),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Scroll tabs/ })).toBeNull();
+  });
+});
+
+describe("first visit in a guessed zone", () => {
+  it("keeps the server render hidden unless the viewer is in that zone", () => {
+    const html = renderToString(
+      <ScheduleBoard entries={[finale]} {...server} zoneConfirmed={false} />,
+    );
+    // Hidden by CSS until hydration regroups the week…
+    expect(html).toContain('data-zone-pending="UTC"');
+    // …or shown at once when the head script found the same zone.
+    expect(html).toContain(
+      'html[data-tz="UTC"] [data-zone-pending="UTC"],html[data-tz="UTC"] .site-footer{visibility:visible}',
+    );
+  });
+
+  it("renders normally with the viewer's own zone and after hydration", () => {
+    expect(
+      renderToString(<ScheduleBoard entries={[finale]} {...server} />),
+    ).not.toContain("data-zone-pending");
+    const { container } = render(
+      <ScheduleBoard entries={[finale]} {...server} zoneConfirmed={false} />,
+    );
+    expect(container.querySelector("[data-zone-pending]")).toBeNull();
   });
 });

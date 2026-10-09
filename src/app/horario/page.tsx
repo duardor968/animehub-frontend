@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { PageHeader, pageMainClass } from "@/components/catalog/page-header";
 import { ScheduleBoard } from "@/components/schedule-board";
 import { LocalTime } from "@/components/schedule-client";
@@ -26,8 +26,8 @@ export const metadata: Metadata = {
   },
 };
 
-/** The viewer's IANA zone from the cookie the board sets, if it's valid. */
-function cookieTimeZone(value: string | undefined) {
+/** A valid IANA zone name (from the board's cookie or a geo header). */
+function validTimeZone(value: string | null | undefined) {
   if (!value || value.length > 64 || !/^[A-Za-z0-9_+\-/]+$/.test(value))
     return null;
   try {
@@ -39,12 +39,18 @@ function cookieTimeZone(value: string | undefined) {
 }
 
 export default async function SchedulePage() {
-  const [response, cookieStore] = await Promise.all([
+  const [response, cookieStore, headerStore] = await Promise.all([
     apiFetch<ScheduleResponse>("/schedule"),
     cookies(),
+    headers(),
   ]);
-  const viewerZone = cookieTimeZone(cookieStore.get(TIME_ZONE_COOKIE)?.value);
-  const serverTimeZone = viewerZone ?? "UTC";
+  // The board's cookie is the viewer's own zone. On a first visit, the edge's
+  // geolocation guess (Cloudflare, Vercel) beats UTC; the board re-checks it.
+  const viewerZone = validTimeZone(cookieStore.get(TIME_ZONE_COOKIE)?.value);
+  const guessedZone = validTimeZone(
+    headerStore.get("cf-timezone") ?? headerStore.get("x-vercel-ip-timezone"),
+  );
+  const serverTimeZone = viewerZone ?? guessedZone ?? "UTC";
   const serverNow = new Date().toISOString();
 
   return (
@@ -64,7 +70,8 @@ export default async function SchedulePage() {
           <LocalTime
             serverNow={serverNow}
             serverTimeZone={serverTimeZone}
-            zoneIsViewers={viewerZone !== null}
+            zoneIsViewers={viewerZone !== null || guessedZone !== null}
+            zoneConfirmed={viewerZone !== null}
           />
         }
       />
@@ -82,6 +89,7 @@ export default async function SchedulePage() {
         stale={response.meta.stale}
         serverNow={serverNow}
         serverTimeZone={serverTimeZone}
+        zoneConfirmed={viewerZone !== null}
       />
     </main>
   );

@@ -442,6 +442,21 @@
   }
 }
 
+/* == catalog & schedule == */
+@layer components {
+  /* Schedule parts rendered in a zone the server only guessed (first visit)
+     stay invisible until hydration regroups the week in the viewer's zone, so
+     the regrouping never moves visible content; so does the footer, which a
+     different day height would push. Without JavaScript the server render is
+     all there is: it shows. See zonePending() in schedule-client. */
+  @media (scripting: enabled) {
+    [data-zone-pending],
+    html:has([data-zone-pending]) .site-footer {
+      visibility: hidden;
+    }
+  }
+}
+
 /* == anime & downloads == */
 @layer components {
   /* Unchecked checkboxes need a visible edge (WCAG 1.4.11, 3:1). Selected and
