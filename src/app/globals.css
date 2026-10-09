@@ -167,7 +167,6 @@
 @layer components {
   html[data-device="portable"] {
     --portable-safe-bottom: env(safe-area-inset-bottom, 0px);
-    --portable-nav-bottom: calc(0.75rem + var(--portable-safe-bottom));
     --portable-overlay-bottom: calc(5.5rem + var(--portable-safe-bottom));
   }
 
@@ -183,14 +182,33 @@
     background: var(--surface);
   }
 
+  /* Lazy images fade in once loaded. Priority (LCP) images are painted as
+     soon as the browser decodes them, without waiting for hydration. */
   .anime-image img {
     object-fit: cover;
     opacity: 0;
     transition: opacity 180ms ease;
   }
 
-  .anime-image.is-loaded img {
+  .anime-image.is-loaded img,
+  .anime-image.is-priority img {
     opacity: 1;
+  }
+
+  .anime-image.is-priority img {
+    transition: none;
+  }
+
+  @media (scripting: none) {
+    .anime-image img {
+      opacity: 1;
+    }
+  }
+
+  /* Every source failed: brand mark on the surface, not fake artwork. */
+  .anime-image-placeholder {
+    display: grid;
+    place-items: center;
   }
 
   /* Shimmer animates a transform only, so it stays on the compositor. */
@@ -274,13 +292,6 @@
     min-width: 2.75rem;
   }
 
-  html[data-device="portable"] .recent-download-slot {
-    display: flex;
-    align-items: flex-start;
-    justify-content: flex-end;
-    padding: 0.5rem;
-  }
-
   html[data-device="portable"] .episode-card-download-slot {
     display: flex;
     align-items: flex-end;
@@ -316,10 +327,6 @@
     padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
   }
 
-  html[data-device="portable"] .search-suggestions [role="listbox"] {
-    max-height: min(70dvh, 26rem);
-  }
-
   html[data-device="portable"] .schedule-tabs-list {
     overscroll-behavior-inline: contain;
     scrollbar-width: none;
@@ -330,32 +337,14 @@
   }
 
   @media (max-width: 800px) {
-    html[data-device="portable"] .mobile-nav {
-      bottom: var(--portable-nav-bottom) !important;
-      background: rgb(17 26 42 / 98%);
-      backdrop-filter: none;
-    }
-
-    html[data-device="portable"] .animehub-toast-region,
     html[data-device="portable"] .episode-selection-bar {
       bottom: var(--portable-overlay-bottom) !important;
-    }
-
-    html[data-device="portable"] .animehub-toast-region {
-      inset-inline: 1rem !important;
-      width: auto !important;
-      max-width: none !important;
     }
 
     html[data-device="portable"] .episode-selection-bar {
       width: calc(100vw - 2rem);
       background: rgb(17 26 42 / 98%);
       backdrop-filter: none;
-    }
-
-    html[data-device="portable"] .featured-controls {
-      bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
-      gap: 0.5rem;
     }
 
     html[data-device="portable"] .episode-pager-content {
@@ -368,17 +357,6 @@
     html[data-device="portable"] .episode-pager-content::-webkit-scrollbar {
       display: none;
     }
-  }
-}
-
-@keyframes hero-in {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -411,20 +389,90 @@
   }
 }
 
-/* Portable layout overrides must share the utilities layer: a components-layer
-   rule otherwise loses to min-h-* / py-* classes even with higher specificity. */
-@layer utilities {
-  @media (max-width: 800px) {
-    html[data-device="portable"] .featured-hero,
-    html[data-device="portable"] .featured-slide,
-    html[data-device="portable"] .featured-hero-inner {
-      min-height: clamp(34rem, calc(100svh - 3.5rem), 40rem);
+/* == shell == */
+@layer components {
+  /* Hero scrim: keeps the copy readable over bright artwork. Below xl the
+     text column covers most of the slide, so the scrim reaches further. */
+  .featured-scrim {
+    background:
+      linear-gradient(
+        90deg,
+        var(--background) 0%,
+        color-mix(in srgb, var(--background) 94%, transparent) 25%,
+        color-mix(in srgb, var(--background) 46%, transparent) 56%,
+        color-mix(in srgb, var(--background) 12%, transparent) 100%
+      ),
+      linear-gradient(0deg, var(--background) 0%, transparent 45%);
+  }
+
+  @media (width < 80rem) {
+    .featured-scrim {
+      background:
+        linear-gradient(
+          90deg,
+          var(--background) 0%,
+          color-mix(in srgb, var(--background) 90%, transparent) 42%,
+          color-mix(in srgb, var(--background) 74%, transparent) 68%,
+          color-mix(in srgb, var(--background) 34%, transparent) 100%
+        ),
+        linear-gradient(0deg, var(--background) 0%, transparent 45%);
     }
   }
 
-  @media (min-width: 641px) and (max-width: 800px) {
-    html[data-device="portable"] main {
-      padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+  @media (width < 40rem) {
+    .featured-scrim {
+      background: linear-gradient(
+        0deg,
+        var(--background) 8%,
+        color-mix(in srgb, var(--background) 84%, transparent) 50%,
+        color-mix(in srgb, var(--background) 20%, transparent) 100%
+      );
     }
+  }
+
+  /* Skip-link target: focused programmatically, no outline around the page. */
+  main[tabindex="-1"]:focus-visible {
+    outline: none;
+  }
+}
+
+@layer utilities {
+  /* Toast dismiss button: always visible on the front toast with a 44px hit
+     area. HeroUI only reveals its 20px button on hover, which touch screens
+     never trigger. */
+  .animehub-toast-region .toast__close-button {
+    position: relative;
+    inset: auto;
+    flex-shrink: 0;
+    align-self: flex-start;
+    width: 2.75rem;
+    height: 2.75rem;
+    margin-block: -0.625rem;
+    margin-inline: 0 -0.875rem;
+    border: 0;
+    border-radius: 9999px;
+    background: transparent;
+    color: var(--muted);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .animehub-toast-region .toast__close-button:hover,
+  .animehub-toast-region .toast__close-button[data-hovered="true"] {
+    background: var(--default-hover);
+    color: var(--foreground);
+  }
+
+  .animehub-toast-region .toast__close-button[data-focus-visible="true"] {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
+
+  .animehub-toast-region
+    .toast:not([data-frontmost="true"]):not([data-expanded="true"])
+    .toast__close-button,
+  .animehub-toast-region .toast[data-exiting="true"] .toast__close-button {
+    opacity: 0;
+    pointer-events: none;
   }
 }

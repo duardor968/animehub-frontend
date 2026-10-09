@@ -22,7 +22,6 @@
     "@heroui/react": "3.2.6",
     "@heroui/styles": "3.2.6",
     "@internationalized/date": "3.12.4",
-    "@tanstack/react-query": "5.104.1",
     "embla-carousel-autoplay": "8.6.0",
     "embla-carousel-react": "8.6.0",
     "jdownloader-connect": "1.0.9",
