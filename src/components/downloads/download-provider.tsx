@@ -931,13 +931,17 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
             });
             return;
           }
-          const total = findIn(activitiesRef.current, id)?.total ?? 0;
+          const current = findIn(activitiesRef.current, id);
           const retryAfter =
             error instanceof ApiResponseError ? (error.retryAfterMs ?? 0) : 0;
           if (error instanceof ApiResponseError && error.status === 429) {
             // Rate limited: the job keeps running on the API. Wait as asked
             // and keep showing progress, not a lost connection.
-            scheduleNextPoll(Math.max(retryAfter, jobPollInterval(total)));
+            if (current?.reconnecting)
+              updateActivity(id, { reconnecting: false });
+            scheduleNextPoll(
+              Math.max(retryAfter, jobPollInterval(current?.total ?? 0)),
+            );
             return;
           }
           updateActivity(id, { status: "processing", reconnecting: true });
