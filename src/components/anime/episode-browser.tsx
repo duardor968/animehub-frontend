@@ -165,12 +165,19 @@ export function EpisodeBrowser({
         setEpisodes(response.data);
         setPage(target);
         if (scroll) {
+          // Back to the top pager (or the list) when the user paged from
+          // further down; html's scroll-padding keeps it below the header.
           const list = listRef.current;
+          const target = document.getElementById("episodios-paginas") ?? list;
           const header = Number.parseFloat(
             getComputedStyle(document.documentElement).scrollPaddingTop,
           );
-          if (list && list.getBoundingClientRect().top < (header || 0)) {
-            list.scrollIntoView({
+          if (
+            target &&
+            list &&
+            list.getBoundingClientRect().top < (header || 0)
+          ) {
+            target.scrollIntoView({
               behavior: prefersReducedMotion() ? "auto" : "smooth",
               block: "start",
             });
@@ -360,6 +367,7 @@ export function EpisodeBrowser({
 
       {totalPages > 1 && (
         <EpisodePager
+          id="episodios-paginas"
           label="Páginas de episodios"
           page={loadingPage ?? page}
           totalPages={totalPages}
@@ -734,6 +742,7 @@ const pagerTarget =
   "outline-none focus-visible:ring-2 focus-visible:ring-focus [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11";
 
 function EpisodePager({
+  id,
   label,
   page,
   totalPages,
@@ -742,6 +751,7 @@ function EpisodePager({
   onPage,
   className = "",
 }: {
+  id?: string;
   label: string;
   page: number;
   totalPages: number;
@@ -754,6 +764,7 @@ function EpisodePager({
   const end = Math.min(page * EPISODE_PAGE_SIZE, totalRecords);
   return (
     <Pagination
+      id={id}
       aria-label={label}
       className={`w-full gap-y-3 max-sm:flex-col max-sm:items-start ${className}`}
     >
