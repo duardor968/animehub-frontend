@@ -132,7 +132,7 @@ export function RecentEpisodes({ episodes }: { episodes: RecentEpisode[] }) {
                 slug={anime.slug}
                 title={anime.title}
                 episodeNumber={episode.number}
-                className="pointer-events-auto scale-90 opacity-0 transition-[opacity,transform,background-color] duration-200 group-hover:scale-100 group-hover:opacity-100 focus-visible:scale-100 focus-visible:opacity-100 [@media(hover:none)]:scale-100 [@media(hover:none)]:opacity-100"
+                className="pointer-events-auto scale-90 opacity-0 transition-[opacity,scale,background-color] duration-200 group-hover:scale-100 group-hover:opacity-100 focus-visible:scale-100 focus-visible:opacity-100 [@media(hover:none)]:scale-100 [@media(hover:none)]:opacity-100"
               />
             </div>
           </MediaCard>
