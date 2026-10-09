@@ -1,9 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Manrope } from "next/font/google";
 import type { ReactNode } from "react";
-import { AppHeader } from "@/components/app-header";
+import { preconnect } from "react-dom";
+import { AppHeader, SkipLink } from "@/components/app-header";
 import { MobileNav } from "@/components/mobile-nav";
 import { Providers } from "@/components/providers";
+import { SiteFooter } from "@/components/site-footer";
+import { siteDescription, siteName, siteOpenGraph, siteUrl } from "@/lib/site";
 import "./globals.css";
 
 const display = Bricolage_Grotesque({
@@ -18,32 +21,32 @@ const body = Manrope({
   display: "swap",
 });
 
+// Only site-wide defaults live here. Canonical URLs and og:url are per page:
+// a root canonical would make every page that forgets to set one (404,
+// search…) declare itself a duplicate of the home page.
 export const metadata: Metadata = {
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
-  ),
-  title: { default: "AnimeHub", template: "%s · AnimeHub" },
-  description: "Catálogo de anime y envíos directos a JDownloader.",
-  alternates: { canonical: "/" },
+  metadataBase: new URL(siteUrl),
+  title: { default: siteName, template: `%s · ${siteName}` },
+  description: siteDescription,
+  applicationName: siteName,
   verification: {
     google: "U9F_PrksjHryRoa2g3LzrUKi_-uogOfpzb3uKUdd-po",
   },
-  openGraph: {
-    title: "AnimeHub",
-    description: "Catálogo de anime y envíos directos a JDownloader.",
-    siteName: "AnimeHub",
-    locale: "es_ES",
-    type: "website",
-    url: "/",
-  },
+  openGraph: siteOpenGraph,
 };
 
 export const viewport: Viewport = {
   colorScheme: "dark",
-  themeColor: "#050A11",
+  // Matches --background so the mobile browser chrome blends with the header.
+  themeColor: "#030711",
+  // Lets env(safe-area-inset-*) report real insets (notch, home indicator).
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
+  // Artwork comes from the source CDN; open the connection while the HTML
+  // streams so the hero image doesn't pay DNS + TLS on the critical path.
+  preconnect("https://cdn.animeav1.com");
   return (
     <html
       lang="es"
@@ -52,8 +55,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     >
       <body>
         <Providers>
-          <AppHeader />
-          {children}
+          <div className="flex min-h-dvh flex-col">
+            <SkipLink />
+            <AppHeader />
+            <div className="flex-1">{children}</div>
+            <SiteFooter />
+          </div>
           <MobileNav />
         </Providers>
       </body>
