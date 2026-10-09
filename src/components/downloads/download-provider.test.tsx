@@ -672,3 +672,29 @@ describe("DownloadProvider requests", () => {
     expect(toastWith("Entrega parcial")).toBeUndefined();
   });
 });
+
+describe("DownloadProvider drawer", () => {
+  it("loads the drawer on first open and keeps it for later opens", async () => {
+    renderProvider();
+    // Nothing of the drawer is rendered (or loaded) before it opens.
+    expect(document.querySelector(".drawer-state-trigger")).toBeNull();
+
+    act(() => handle.current?.openSettings());
+    const drawer = await screen.findByRole("dialog", {
+      name: "Preferencias de descarga",
+    });
+    expect(
+      within(drawer).getByRole("radiogroup", {
+        name: "Destino de los enlaces",
+      }),
+    ).toBeVisible();
+    fireEvent.click(within(drawer).getByRole("button", { name: "Cerrar" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.querySelector(".drawer-state-trigger")).not.toBeNull();
+
+    act(() => handle.current?.openSettings());
+    expect(
+      await screen.findByRole("dialog", { name: "Preferencias de descarga" }),
+    ).toBeVisible();
+  });
+});

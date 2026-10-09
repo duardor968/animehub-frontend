@@ -1,13 +1,8 @@
 "use client";
 
-import {
-  Button,
-  Drawer,
-  ProgressCircle,
-  toast,
-  useOverlayState,
-} from "@heroui/react";
-import { Download, X } from "lucide-react";
+import { Button, ProgressCircle, toast, useOverlayState } from "@heroui/react";
+import { Download } from "lucide-react";
+import dynamic from "next/dynamic";
 import {
   createContext,
   useCallback,
@@ -69,13 +64,7 @@ import {
   saveActiveDownloadJobs,
   type PersistedDownloadJob,
 } from "./download-job-storage";
-import {
-  DrawerSummary,
-  LinksPanel,
-  MyJdPanel,
-  PreferencesPanel,
-  type MyJdDevice,
-} from "./download-panels";
+import type { MyJdDevice } from "./download-panels";
 import type {
   DownloadActivityStatus,
   DownloadDestination,
@@ -83,6 +72,18 @@ import type {
   DownloadProviderId,
   DownloadRequest,
 } from "./download-types";
+
+// The drawer (preferences, MyJDownloader devices, links) and its form
+// components load on demand: most page views never open it.
+const loadDownloadDrawer = () => import("./download-drawer");
+/** Starts fetching the drawer's code ahead of a likely open (hover/focus). */
+export function preloadDownloadDrawer() {
+  void loadDownloadDrawer();
+}
+const DownloadDrawer = dynamic(
+  () => loadDownloadDrawer().then((module) => module.DownloadDrawer),
+  { ssr: false },
+);
 
 /** The resolve endpoint accepts up to 50 episodes; more need a background job. */
 export const MAX_QUICK_EPISODES = 50;
@@ -312,6 +313,10 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       setDeviceError(null);
     },
   });
+  // The drawer mounts the first time it opens (fetching its code then) and
+  // stays mounted, so closing still animates and reopening is instant.
+  const [drawerLoaded, setDrawerLoaded] = useState(false);
+  if (drawer.isOpen && !drawerLoaded) setDrawerLoaded(true);
 
   const replaceActivities = useCallback((next: Activity[]) => {
     if (!mountedRef.current) return;
@@ -1076,6 +1081,8 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
 
   const openDownload = useCallback(
     (next: DownloadRequest) => {
+      // Device picker, link list and fallbacks all live in the drawer.
+      preloadDownloadDrawer();
       const profile = getDeviceProfile();
       deviceProfileRef.current = profile;
       setDeviceProfile(profile);
@@ -1498,85 +1505,63 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         pending={dismissedPending}
         onReopen={reopenDismissedActivity}
       />
-      <Drawer state={drawer}>
-        <Drawer.Trigger className="drawer-state-trigger" aria-hidden="true">
-          Abrir descargas
-        </Drawer.Trigger>
-        <Drawer.Backdrop
-          variant="blur"
-          className="download-drawer-backdrop z-[60]"
-        >
-          <Drawer.Content
-            placement="right"
-            className="download-drawer-content z-[70]"
-          >
-            <Drawer.Dialog className="download-drawer-dialog !w-full !max-w-md overflow-hidden border-l border-white/10 bg-background-secondary !p-0 text-foreground">
-              <Drawer.Header className="download-drawer-header flex shrink-0 flex-row items-start justify-between gap-4 border-b border-white/8 px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-4">
-                <div className="min-w-0">
-                  <span className="eyebrow">Descargas</span>
-                  <Drawer.Heading className="mt-1 font-display text-xl font-semibold tracking-[-.02em] text-foreground">
-                    {drawerTitle}
-                  </Drawer.Heading>
-                </div>
-                <Drawer.CloseTrigger
-                  className="static grid size-11 shrink-0 place-items-center rounded-xl text-muted outline-none transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus"
-                  aria-label="Cerrar"
-                >
-                  <X size={18} aria-hidden="true" />
-                </Drawer.CloseTrigger>
-              </Drawer.Header>
-              <Drawer.Body className="download-drawer-body mx-0 flex flex-col gap-4 px-5 pt-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-                <DrawerSummary summary={drawerSummary} />
-                {mode === "settings" ? (
-                  <PreferencesPanel
-                    preferences={preferences}
-                    savePreferences={savePreferences}
-                    toggleProvider={toggleProvider}
-                    portable={portable}
-                    effectiveDestination={effectiveDestination}
-                    selectedDeviceName={
+      {drawerLoaded && (
+        <DownloadDrawer
+          state={drawer}
+          title={drawerTitle}
+          summary={drawerSummary}
+          content={
+            mode === "settings"
+              ? {
+                  mode,
+                  props: {
+                    preferences,
+                    savePreferences,
+                    toggleProvider,
+                    portable,
+                    effectiveDestination,
+                    selectedDeviceName:
                       devices.find((device) => device.id === selectedDeviceId)
                         ?.name ??
-                      (selectedDeviceId ? "Dispositivo recordado" : null)
-                    }
-                    openDeviceSettings={openDeviceSettings}
-                  />
-                ) : mode === "links" ? (
-                  <LinksPanel
-                    urls={
-                      linksActivity
+                      (selectedDeviceId ? "Dispositivo recordado" : null),
+                    openDeviceSettings,
+                  },
+                }
+              : mode === "links"
+                ? {
+                    mode,
+                    props: {
+                      urls: linksActivity
                         ? collectUrls(deliverableEpisodes(linksActivity))
-                        : []
-                    }
-                    onCopied={() => {
-                      if (linksActivity) markCopied(linksActivity.id);
-                    }}
-                  />
-                ) : (
-                  <MyJdPanel
-                    portable={portable}
-                    connected={myJdConnected}
-                    connecting={connecting}
-                    devices={devices}
-                    devicesLoading={devicesLoading}
-                    deviceError={deviceError}
-                    hasTarget={Boolean(pendingRequest || deviceActivity)}
-                    deliveryPending={deviceDeliveryPending}
-                    onConnect={(email, password) =>
-                      void connect(email, password)
-                    }
-                    onRefresh={() => void refreshDevices()}
-                    onReset={() => void resetMyJdConnection()}
-                    onSelectDevice={(deviceId) => void sendDevice(deviceId)}
-                    onCopyInstead={() => chooseAlternative("COPY")}
-                    onUseClickNLoad={() => chooseAlternative("CNL")}
-                  />
-                )}
-              </Drawer.Body>
-            </Drawer.Dialog>
-          </Drawer.Content>
-        </Drawer.Backdrop>
-      </Drawer>
+                        : [],
+                      onCopied: () => {
+                        if (linksActivity) markCopied(linksActivity.id);
+                      },
+                    },
+                  }
+                : {
+                    mode,
+                    props: {
+                      portable,
+                      connected: myJdConnected,
+                      connecting,
+                      devices,
+                      devicesLoading,
+                      deviceError,
+                      hasTarget: Boolean(pendingRequest || deviceActivity),
+                      deliveryPending: deviceDeliveryPending,
+                      onConnect: (email, password) =>
+                        void connect(email, password),
+                      onRefresh: () => void refreshDevices(),
+                      onReset: () => void resetMyJdConnection(),
+                      onSelectDevice: (deviceId) => void sendDevice(deviceId),
+                      onCopyInstead: () => chooseAlternative("COPY"),
+                      onUseClickNLoad: () => chooseAlternative("CNL"),
+                    },
+                  }
+          }
+        />
+      )}
     </DownloadContext.Provider>
   );
 }
