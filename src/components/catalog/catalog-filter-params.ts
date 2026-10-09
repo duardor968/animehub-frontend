@@ -282,17 +282,11 @@ export function catalogHref(pathname: string, params: URLSearchParams) {
   return `${pathname}${params.size ? `?${params}` : ""}`;
 }
 
-type CatalogMetaLike = {
-  totalRecords: number;
-  capped?: boolean;
-};
-
 /**
  * True when the source truncated the result set (it serves at most 1,000
- * records / 50 pages). Reads the API's `meta.capped`; older API builds don't
- * send it, in which case the total is shown as is.
+ * records / 50 pages): more titles match than `totalRecords`.
  */
-export function isCatalogCapped(meta: CatalogMetaLike): boolean {
+export function isCatalogCapped(meta: { capped?: boolean }): boolean {
   return meta.capped === true;
 }
 
