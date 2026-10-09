@@ -18,13 +18,13 @@ La Web no incluye reproducción, cuentas, biblioteca personal ni seguimiento de 
 
 ## Arranque local
 
-Necesitas Node.js 24, pnpm 11.20.0 y una instancia accesible de AnimeHub API. No hace falta instalar PostgreSQL ni Prisma para trabajar en la Web.
+Necesitas Node.js 24, pnpm 12.10.1 y una instancia accesible de AnimeHub API. No hace falta instalar PostgreSQL ni Prisma para trabajar en la Web.
 
 Desde la raíz del repositorio:
 
 ```sh
 corepack enable
-corepack prepare pnpm@11.20.0 --activate
+corepack prepare pnpm@12.10.1 --activate
 pnpm install --frozen-lockfile
 ```
 

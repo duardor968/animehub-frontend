@@ -80,10 +80,13 @@ export function assessAudits(production, all) {
 function runAudit(production) {
   const pnpm = process.env.npm_execpath;
   if (!pnpm) throw new Error("Run this check with pnpm audit:ci.");
+  // pnpm 12 exposes its native executable here; older releases expose a
+  // JavaScript entry point that has to be started with Node.js.
+  const viaNode = /\.[cm]?js$/.test(pnpm);
   return spawnSync(
-    process.execPath,
+    viaNode ? process.execPath : pnpm,
     [
-      pnpm,
+      ...(viaNode ? [pnpm] : []),
       "audit",
       ...(production ? ["--prod"] : []),
       "--audit-level",
