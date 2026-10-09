@@ -169,12 +169,15 @@ export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
     selectedIdRef.current = item?.id;
     setSelected(index);
     timerRef.current?.restart();
-    // Only changes the user asked for are announced; autoplay stays silent.
+    // Only changes the user asked for are announced; autoplay stays silent
+    // and clears the last announcement so it never describes another slide.
     if (announceRef.current && item) {
       announceRef.current = false;
       setAnnouncement(
         `${item.title}, destacado ${index + 1} de ${itemsRef.current.length}`,
       );
+    } else {
+      setAnnouncement("");
     }
   }, [embla]);
 

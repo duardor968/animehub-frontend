@@ -350,7 +350,7 @@ function SearchBoxState({
     : result?.failed
       ? "No se pudieron cargar las sugerencias."
       : suggestions.length === 0
-        ? `Sin sugerencias para “${normalizedQuery}”. Pulsa Intro para buscar.`
+        ? `Sin sugerencias para «${normalizedQuery}». Pulsa Enter para buscar.`
         : null;
   const announcement = isLoadingSuggestions
     ? ""
@@ -364,7 +364,8 @@ function SearchBoxState({
     >
       <div className="relative min-w-0 flex-1">
         <div
-          className="flex w-full overflow-visible rounded-xl border border-white/10 bg-surface transition-[background-color,box-shadow] duration-200 focus-within:border-accent/45 focus-within:bg-surface-secondary focus-within:shadow-[0_0_0_2px_rgba(91,156,255,.3)]"
+          // Same solid 2px focus ring as every other control (≥3:1).
+          className="flex w-full overflow-visible rounded-xl border border-white/10 bg-surface transition-[background-color,box-shadow] duration-200 focus-within:border-transparent focus-within:bg-surface-secondary focus-within:ring-2 focus-within:ring-focus"
           onKeyDownCapture={handleKeyDownCapture}
         >
           <SearchField
@@ -463,7 +464,7 @@ function SearchBoxState({
                         <span className="min-w-0 truncate">
                           Buscar{" "}
                           <span className="font-semibold text-foreground">
-                            “{option.label}”
+                            «{option.label}»
                           </span>
                         </span>
                       </button>
