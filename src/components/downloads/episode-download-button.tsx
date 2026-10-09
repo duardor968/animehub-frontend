@@ -3,6 +3,7 @@
 import { Button, ProgressCircle, Tooltip } from "@heroui/react";
 import { Download } from "lucide-react";
 import { useDownloads } from "./download-provider";
+import { formatEpisodeNumber } from "@/lib/format";
 
 export function EpisodeDownloadButton({
   slug,
@@ -25,7 +26,7 @@ export function EpisodeDownloadButton({
       // Pending keeps the button visible even where it normally appears on
       // hover. `scale` (not `transform`) is what Tailwind's scale-* sets.
       className={`episode-download-action h-11 w-11 min-w-11 rounded-full bg-accent text-accent-foreground shadow-lg shadow-accent/30 outline-none hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95 ${className} ${pending ? "!scale-100 !opacity-100" : ""}`}
-      aria-label={`Descargar episodio ${episodeNumber} de ${title}`}
+      aria-label={`Descargar episodio ${formatEpisodeNumber(episodeNumber)} de ${title}`}
       isPending={pending}
       onClick={(event) => {
         event.preventDefault();

@@ -36,8 +36,9 @@ export function formatRelativeTime(value?: string | null) {
   }).format(timestamp);
 }
 
+/** Episode numbers read like every other number: 12,5 and 1.084. */
 export function formatEpisodeNumber(value: number) {
-  return String(value);
+  return formatNumber(value);
 }
 
 export function formatStatus(status: string) {

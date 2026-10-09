@@ -310,11 +310,6 @@
     -webkit-mask-image: linear-gradient(#000 0 0);
     mask-image: linear-gradient(#000 0 0);
   }
-
-  html[data-device="portable"] .download-drawer-backdrop {
-    background: rgb(3 7 17 / 76%) !important;
-    backdrop-filter: none !important;
-  }
 }
 
 @keyframes hero-progress {

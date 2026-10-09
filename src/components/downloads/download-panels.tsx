@@ -23,15 +23,24 @@ export interface MyJdDevice {
   name: string;
 }
 
+// Text actions are pills across the app; fields, list rows and icon
+// squares keep rounded-xl.
 const panelButton =
-  "min-h-11 rounded-xl px-4 font-semibold shadow-none outline-none focus-visible:ring-2 focus-visible:ring-focus";
+  "min-h-11 rounded-full px-4 font-semibold shadow-none outline-none focus-visible:ring-2 focus-visible:ring-focus";
 
-/** "Vas a enviar: One Piece · Ep. 5" — the drawer says what it acts on. */
-export function DrawerSummary({ summary }: { summary: string | null }) {
+/** "Vas a enviar: One Piece · Ep. 5" — the drawer says what it acts on
+ *  ("Enlaces de: …" when it only lists them). */
+export function DrawerSummary({
+  label,
+  summary,
+}: {
+  label: string;
+  summary: string | null;
+}) {
   if (!summary) return null;
   return (
     <p className="rounded-xl bg-surface px-4 py-3 text-sm text-subtle">
-      <span className="text-muted">Vas a enviar: </span>
+      <span className="text-muted">{label}: </span>
       <strong className="font-semibold text-foreground">{summary}</strong>
     </p>
   );
@@ -327,6 +336,7 @@ export function PreferencesPanel({
   portable,
   effectiveDestination,
   selectedDeviceName,
+  myJdConnected,
   openDeviceSettings,
 }: {
   preferences: DownloadPreferences;
@@ -335,6 +345,8 @@ export function PreferencesPanel({
   portable: boolean;
   effectiveDestination: DownloadDestination;
   selectedDeviceName: string | null;
+  /** A MyJDownloader session exists in this browser. */
+  myJdConnected: boolean;
   openDeviceSettings: () => void;
 }) {
   const destinations: DownloadDestination[] = portable
@@ -429,25 +441,37 @@ export function PreferencesPanel({
         <p className="mt-2 text-xs leading-5 text-muted">
           {destinationHelp[effectiveDestination]}
         </p>
-        {portable && effectiveDestination === "MYJD" && (
+        {effectiveDestination === "MYJD" && (
+          // Phones remember one device; on a computer the device is picked
+          // per download, so this row is about the account.
           <div className="mt-3 flex min-h-14 items-center gap-3 rounded-xl bg-surface px-4 py-2.5">
             <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-surface-tertiary text-link">
               <Send size={16} aria-hidden="true" />
             </span>
             <span className="min-w-0 flex-1">
               <strong className="block text-sm text-foreground">
-                Dispositivo
+                {portable ? "Dispositivo" : "Cuenta de MyJDownloader"}
               </strong>
               <span className="block truncate text-xs text-muted">
-                {selectedDeviceName ?? "Sin dispositivo elegido"}
+                {portable
+                  ? (selectedDeviceName ?? "Sin dispositivo elegido")
+                  : myJdConnected
+                    ? "Conectada: eliges el equipo al descargar"
+                    : "Sin conectar"}
               </span>
             </span>
             <Button
               variant="ghost"
-              className="min-h-11 shrink-0 rounded-lg px-3 text-xs font-semibold text-link outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              className="min-h-11 shrink-0 rounded-full px-3 text-xs font-semibold text-link outline-none focus-visible:ring-2 focus-visible:ring-focus"
               onPress={openDeviceSettings}
             >
-              {selectedDeviceName ? "Cambiar" : "Configurar"}
+              {portable
+                ? selectedDeviceName
+                  ? "Cambiar"
+                  : "Configurar"
+                : myJdConnected
+                  ? "Ver dispositivos"
+                  : "Conectar"}
             </Button>
           </div>
         )}

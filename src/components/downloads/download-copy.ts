@@ -21,17 +21,17 @@ export function requestKey(request: DownloadRequest): string {
   return `${request.slug}|range|${request.from ?? ""}-${request.to ?? ""}`;
 }
 
-/** Number of episodes a request covers, when it is known up front. */
+/** Number of episodes a request covers, when it is known up front. A range
+ *  only knows it when the caller does (`total`): the API also sends the
+ *  specials between its bounds (12.5 in 12–13) and skips gaps. */
 export function requestEpisodeCount(request: DownloadRequest): number {
   if (request.all) return request.total ?? 0;
   if (request.episodeNumbers) return new Set(request.episodeNumbers).size;
-  if (request.from !== undefined && request.to !== undefined)
-    return Math.max(0, request.to - request.from + 1);
-  return 0;
+  return request.total ?? 0;
 }
 
-/** Compresses episode numbers into runs: [1,2,3,5,8,9] → "1–3, 5, 8–9". */
-export function formatEpisodeRanges(numbers: number[]): string {
+/** Consecutive whole numbers grouped into [start, end] runs. */
+function episodeRuns(numbers: number[]): Array<[number, number]> {
   const sorted = [...new Set(numbers)].sort(byNumber);
   const runs: Array<[number, number]> = [];
   for (const number of sorted) {
@@ -40,14 +40,24 @@ export function formatEpisodeRanges(numbers: number[]): string {
       last[1] = number;
     else runs.push([number, number]);
   }
-  return runs
+  return runs;
+}
+
+/** Compresses episode numbers into runs: [1,2,3,5,8,9] → "1–3, 5, 8–9".
+ *  With a decimal special the runs are split by "; " ("12; 12,5; 13"), since
+ *  the comma is then the decimal separator. */
+export function formatEpisodeRanges(numbers: number[]): string {
+  const separator = numbers.every(Number.isInteger) ? ", " : "; ";
+  return episodeRuns(numbers)
     .map(([start, end]) =>
       start === end
         ? formatNumber(start)
         : `${formatNumber(start)}–${formatNumber(end)}`,
     )
-    .join(", ");
+    .join(separator);
 }
+
+const runCount = (numbers: number[]) => episodeRuns(numbers).length;
 
 /** Short label for the episodes in a request: "Ep. 5", "Ep. 1–50",
  *  "Ep. 1–3, 7", "12 episodios" or "Todos (1.180 episodios)". */
@@ -58,9 +68,8 @@ export function describeEpisodes(request: DownloadRequest): string {
       : "Todos los episodios";
   }
   if (request.episodeNumbers?.length) {
-    const ranges = formatEpisodeRanges(request.episodeNumbers);
-    return ranges.split(", ").length <= 3
-      ? `Ep. ${ranges}`
+    return runCount(request.episodeNumbers) <= 3
+      ? `Ep. ${formatEpisodeRanges(request.episodeNumbers)}`
       : plural(new Set(request.episodeNumbers).size, "episodio", "episodios");
   }
   if (request.from !== undefined && request.to !== undefined) {
@@ -121,15 +130,15 @@ export function describeFailed(
       .filter((episode) => failed.has(episode.episodeNumber))
       .every((episode) => episode.errorCode === "SOURCE_UNAVAILABLE");
   const ranges = formatEpisodeRanges(numbers);
-  const label =
-    ranges.split(", ").length > 4
-      ? plural(numbers.length, "episodio", "episodios")
-      : numbers.length === 1
-        ? `el episodio ${ranges}`
-        : `los episodios ${ranges}`;
+  const many = runCount(numbers) > 4;
+  const label = many
+    ? plural(numbers.length, "episodio", "episodios")
+    : numbers.length === 1
+      ? `el episodio ${ranges}`
+      : `los episodios ${ranges}`;
   if (sourceDown)
     return `AnimeAV1 no respondió para ${label}; puedes reintentarlo.`;
-  if (ranges.split(", ").length > 4)
+  if (many)
     return `${plural(numbers.length, "episodio", "episodios")} sin enlaces.`;
   return numbers.length === 1
     ? `El episodio ${ranges} no tiene enlaces.`
@@ -140,7 +149,7 @@ export function describeFailed(
 export function describeMissing(numbers: number[] | undefined): string {
   if (!numbers?.length) return "";
   const ranges = formatEpisodeRanges(numbers);
-  if (ranges.split(", ").length > 4)
+  if (runCount(numbers) > 4)
     return `Se omitieron ${plural(numbers.length, "episodio que no existe", "episodios que no existen")}.`;
   return numbers.length === 1
     ? `Se omitió el episodio ${ranges}: no existe.`

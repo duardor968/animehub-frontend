@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatNumber, plural } from "./format";
+import { formatEpisodeNumber, formatNumber, plural } from "./format";
 
 describe("formatNumber", () => {
   it("groups thousands with Spanish separators, including 4-digit numbers", () => {
@@ -18,5 +18,13 @@ describe("plural", () => {
 
   it("formats large counts with es grouping", () => {
     expect(plural(1180, "episodio", "episodios")).toBe("1.180 episodios");
+  });
+});
+
+describe("formatEpisodeNumber", () => {
+  it("writes specials and long series like every other number", () => {
+    expect(formatEpisodeNumber(12.5)).toBe("12,5");
+    expect(formatEpisodeNumber(1084)).toBe("1.084");
+    expect(formatEpisodeNumber(0)).toBe("0");
   });
 });

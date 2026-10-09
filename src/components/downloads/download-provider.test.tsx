@@ -33,7 +33,11 @@ import {
   type PersistedDownloadJob,
 } from "./download-job-storage";
 import { useEffect } from "react";
-import { DownloadProvider, useDownloads } from "./download-provider";
+import {
+  DownloadProvider,
+  jobPollInterval,
+  useDownloads,
+} from "./download-provider";
 import type { DownloadRequest } from "./download-types";
 
 vi.mock("@/lib/api/client", async (importOriginal) => {
@@ -191,6 +195,15 @@ function renderProvider() {
   );
 }
 
+/** The toast's "Anime · Ep. N" line (title and episodes are two spans). */
+function summaryLine(text: string) {
+  return screen.getAllByText(
+    (_, element) =>
+      element?.textContent === text &&
+      element.querySelector(".truncate") !== null,
+  );
+}
+
 function toastWith(text: string | RegExp) {
   return screen
     .getAllByRole("alertdialog")
@@ -208,7 +221,7 @@ describe("DownloadProvider restored jobs", () => {
       await screen.findByRole("button", { name: "Enviar a JDownloader" }),
     ).toBeVisible();
     expect(screen.getByText("Enlaces listos")).toBeVisible();
-    expect(screen.getByText("Otome Game Sekai 2 · Ep. 1–12")).toBeVisible();
+    expect(summaryLine("Otome Game Sekai 2 · Ep. 1–12")[0]).toBeVisible();
     expect(sendToClickNLoad).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(activeDownloadJobsStorageKey)).not.toBeNull();
 
@@ -291,7 +304,8 @@ describe("DownloadProvider restored jobs", () => {
     const dock = await screen.findByRole("button", {
       name: "Mostrar descarga: Otome Game Sekai 2 · Ep. 1–12",
     });
-    expect(dock).toHaveTextContent("Descargando 3/12");
+    // Same words as the toast, counts formatted like every other count.
+    expect(dock).toHaveTextContent("Reanudando la descarga · 3 de 12");
 
     vi.mocked(apiFetch).mockReturnValue(new Promise(() => undefined));
     await act(async () => {
@@ -300,7 +314,7 @@ describe("DownloadProvider restored jobs", () => {
       );
     });
 
-    expect(dock).toHaveTextContent("Descargando 4/12");
+    expect(dock).toHaveTextContent("Buscando enlaces · 4 de 12");
     expect(screen.queryByText("Buscando enlaces")).toBeNull();
   });
 
@@ -430,7 +444,7 @@ describe("DownloadProvider requests", () => {
     act(() => controls.openDownload(episodeOne));
 
     expect(await screen.findByText("Enviado a JDownloader")).toBeVisible();
-    expect(screen.getByText("Tensei Goblin · Ep. 1")).toBeVisible();
+    expect(summaryLine("Tensei Goblin · Ep. 1")[0]).toBeVisible();
     expect(
       screen.getByText(/2 enlaces \(espejos\) de 1 episodio/),
     ).toBeVisible();
@@ -500,7 +514,7 @@ describe("DownloadProvider requests", () => {
 
     await screen.findByText("Buscando enlaces");
     expect(apiFetch).toHaveBeenCalledTimes(1);
-    expect(screen.getAllByText("Tensei Goblin · Ep. 1")).toHaveLength(1);
+    expect(summaryLine("Tensei Goblin · Ep. 1")).toHaveLength(1);
     expect(controls.getRequestStatus(episodeOne)).toBe("resolving");
   });
 
@@ -580,7 +594,7 @@ describe("DownloadProvider requests", () => {
             expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
           },
         };
-      if (path.endsWith("/cancel")) return { data: {} };
+      if (path.endsWith("/cancel")) return { data: { status: "CANCELLED" } };
       expect(init?.headers).toEqual({ authorization: "Bearer token" });
       return jobData({ status: "RUNNING", completedItems: 2, episodes: [] });
     });
@@ -590,7 +604,7 @@ describe("DownloadProvider requests", () => {
       controls.openDownload({ ...range, slug: "one-piece", from: 9, to: 4 }),
     );
 
-    await screen.findByText("2/12");
+    await screen.findByText("2 de 12");
     const create = vi
       .mocked(apiFetch)
       .mock.calls.find(([path]) => path.endsWith("/download-jobs"));
@@ -670,6 +684,170 @@ describe("DownloadProvider requests", () => {
       "https://mega.example/2",
     ]);
     expect(toastWith("Entrega parcial")).toBeUndefined();
+  });
+});
+
+describe("DownloadProvider job requests", () => {
+  const receipt = (jobId = "job-k") => ({
+    data: {
+      jobId,
+      accessToken: `token-${jobId}`,
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      missingEpisodeNumbers: [],
+    },
+  });
+  const keyOf = (call: unknown[]) =>
+    ((call[1] as RequestInit | undefined)?.headers as Record<string, string>)?.[
+      "idempotency-key"
+    ];
+  const jobPosts = () =>
+    vi
+      .mocked(apiFetch)
+      .mock.calls.filter(([path]) => String(path).endsWith("/download-jobs"));
+
+  it("sends an Idempotency-Key and reuses it when retrying an unknown outcome", async () => {
+    const { ApiConnectionError } = await import("@/lib/api/client");
+    vi.mocked(apiFetch).mockRejectedValueOnce(new ApiConnectionError());
+    vi.mocked(apiFetch).mockImplementation(async (path) =>
+      String(path).endsWith("/download-jobs")
+        ? receipt()
+        : new Promise(() => undefined),
+    );
+    renderProvider();
+
+    act(() => controls.openDownload({ ...range, slug: "one-piece" }));
+    expect(await screen.findByText("Sin conexión con AnimeHub")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+
+    await waitFor(() => expect(jobPosts()).toHaveLength(2));
+    const [first, second] = jobPosts().map(keyOf);
+    expect(first).toMatch(/^[0-9a-f-]{36}$/);
+    // The API returns the job the first attempt may have created.
+    expect(second).toBe(first);
+  });
+
+  it("starts over with a new key when the old one conflicts (422)", async () => {
+    const { ApiResponseError } = await import("@/lib/api/client");
+    vi.mocked(apiFetch)
+      .mockRejectedValueOnce(new ApiResponseError(422, "Key reused"))
+      .mockResolvedValueOnce(receipt())
+      .mockReturnValue(new Promise(() => undefined));
+    renderProvider();
+
+    act(() => controls.openDownload({ ...range, slug: "one-piece" }));
+
+    await waitFor(() => expect(jobPosts()).toHaveLength(2));
+    const [first, second] = jobPosts().map(keyOf);
+    expect(second).not.toBe(first);
+    expect(await screen.findByText("Buscando enlaces")).toBeVisible();
+  });
+
+  it("cancels the job an abandoned request may have created", async () => {
+    let posts = 0;
+    vi.mocked(apiFetch).mockImplementation(async (path, init) => {
+      if (String(path).endsWith("/download-jobs")) {
+        posts += 1;
+        // The first request never answers; the repeat returns the job.
+        if (posts === 1)
+          return new Promise((_, reject) =>
+            init?.signal?.addEventListener("abort", () =>
+              reject(new DOMException("Aborted", "AbortError")),
+            ),
+          );
+        return receipt("job-orphan");
+      }
+      return { data: { status: "CANCELLED" } };
+    });
+    renderProvider();
+
+    act(() => controls.openDownload({ ...range, slug: "one-piece" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+
+    expect(await screen.findByText("Descarga cancelada")).toBeVisible();
+    await waitFor(() =>
+      expect(apiFetch).toHaveBeenCalledWith(
+        "/download-jobs/job-orphan/cancel",
+        expect.objectContaining({
+          method: "POST",
+          headers: { authorization: "Bearer token-job-orphan" },
+        }),
+        true,
+        expect.anything(),
+      ),
+    );
+    const [first, second] = jobPosts().map(keyOf);
+    expect(second).toBe(first);
+  });
+
+  it("keeps delivering when the job finished before the cancel arrived", async () => {
+    let polls = 0;
+    vi.mocked(apiFetch).mockImplementation(async (path) => {
+      if (String(path).endsWith("/download-jobs")) return receipt("job-done");
+      if (String(path).endsWith("/cancel"))
+        return { data: { status: "COMPLETED" } };
+      polls += 1;
+      return polls === 1
+        ? jobData({ status: "RUNNING", completedItems: 2, episodes: [] })
+        : jobData();
+    });
+    renderProvider();
+
+    act(() => controls.openDownload({ ...range, slug: "one-piece" }));
+    await screen.findByText("2 de 12");
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    expect(await screen.findByText("Enviado a JDownloader")).toBeVisible();
+    expect(sendToClickNLoad).toHaveBeenCalled();
+    expect(screen.queryByText("Descarga cancelada")).toBeNull();
+  });
+
+  it("waits out a rate limit without reporting a lost connection", async () => {
+    const { ApiResponseError } = await import("@/lib/api/client");
+    let polls = 0;
+    vi.mocked(apiFetch).mockImplementation(async (path) => {
+      if (String(path).endsWith("/download-jobs")) return receipt("job-429");
+      polls += 1;
+      if (polls === 1)
+        return jobData({ status: "RUNNING", completedItems: 2, episodes: [] });
+      if (polls === 2)
+        throw new ApiResponseError(429, "Too Many Requests", 7_000);
+      return new Promise(() => undefined);
+    });
+    const setTimeoutSpy = vi.spyOn(window, "setTimeout");
+    renderProvider();
+
+    act(() => controls.openDownload({ ...range, slug: "one-piece" }));
+    await screen.findByText("2 de 12");
+    // The second poll runs after the regular 1.25 s and gets the 429.
+    await waitFor(
+      () =>
+        expect(
+          setTimeoutSpy.mock.calls.some(([, delay]) => delay === 7_000),
+        ).toBe(true),
+      { timeout: 3_000 },
+    );
+    expect(screen.getByText("Buscando enlaces")).toBeVisible();
+    expect(screen.queryByText("Reconectando con la descarga")).toBeNull();
+  });
+
+  it("doesn't offer to retry a request the API rejected as invalid", async () => {
+    const { ApiResponseError } = await import("@/lib/api/client");
+    vi.mocked(apiFetch).mockRejectedValue(
+      new ApiResponseError(400, "No episodes match the requested scope."),
+    );
+    renderProvider();
+
+    act(() => controls.openDownload({ ...range, slug: "one-piece" }));
+
+    expect(await screen.findByText("Solicitud no válida")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Reintentar" })).toBeNull();
+  });
+
+  it("polls big jobs less often", () => {
+    expect(jobPollInterval(12)).toBe(1_250);
+    expect(jobPollInterval(120)).toBe(2_000);
+    expect(jobPollInterval(400)).toBe(3_000);
+    expect(jobPollInterval(1_180)).toBe(5_000);
   });
 });
 

@@ -13,13 +13,19 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ApiResponseError, apiFetch } from "@/lib/api/client";
+import {
+  ApiConnectionError,
+  ApiResponseError,
+  ApiTimeoutError,
+  apiFetch,
+} from "@/lib/api/client";
 import type { components } from "@/lib/api/generated";
 import { formatNumber, plural } from "@/lib/format";
 import {
   ActivityToastBody,
   activeStatuses,
   deliverableEpisodes,
+  formatProgress,
   presentActivity,
   unfinishedStatuses,
   type Activity,
@@ -95,6 +101,78 @@ type JobRequestBody =
   | components["schemas"]["RangeDownloadJobRequestDto"]
   | components["schemas"]["EpisodesDownloadJobRequestDto"];
 type JobReceipt = components["schemas"]["DownloadJobReceiptDto"];
+type JobData = components["schemas"]["DownloadJobDataDto"];
+
+/** Poll less often as a job grows: every poll returns all its items. */
+export function jobPollInterval(totalItems: number) {
+  if (totalItems > 500) return 5_000;
+  if (totalItems > 200) return 3_000;
+  if (totalItems > 50) return 2_000;
+  return 1_250;
+}
+
+/** The request may have reached the API (no answer, a server error or a
+ *  rate limit): retrying with the same Idempotency-Key can't duplicate it. */
+function outcomeUnknown(error: unknown) {
+  return (
+    error instanceof ApiConnectionError ||
+    error instanceof TypeError ||
+    (error instanceof ApiResponseError &&
+      (error.status >= 500 || error.status === 429))
+  );
+}
+
+/** A 4xx (other than a rate limit or a key conflict) fails the same way on
+ *  every retry: the request itself is wrong. */
+function retryable(error: unknown) {
+  return !(
+    error instanceof ApiResponseError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    ![408, 409, 422, 429].includes(error.status)
+  );
+}
+
+function postJob(
+  slug: string,
+  body: string,
+  key: string,
+  signal?: AbortSignal,
+) {
+  return apiFetch<{ data: JobReceipt }>(
+    `/anime/${encodeURIComponent(slug)}/download-jobs`,
+    { method: "POST", signal, headers: { "idempotency-key": key }, body },
+    true,
+  );
+}
+
+/**
+ * A job POST abandoned in flight (Cancel, or the 25 s deadline) may still
+ * create the job. Repeating it with the same Idempotency-Key returns that job
+ * (or creates it) with a token, so it can be cancelled instead of running
+ * unseen. Best effort: nothing else depends on it.
+ */
+async function cancelAbandonedJob(slug: string, body: string, key: string) {
+  try {
+    const { data } = await apiFetch<{ data: JobReceipt }>(
+      `/anime/${encodeURIComponent(slug)}/download-jobs`,
+      { method: "POST", headers: { "idempotency-key": key }, body },
+      true,
+      { timeoutMs: 30_000 },
+    );
+    await apiFetch(
+      `/download-jobs/${data.jobId}/cancel`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${data.accessToken}` },
+      },
+      true,
+      { timeoutMs: 15_000 },
+    );
+  } catch {
+    // The job (if any) expires on its own.
+  }
+}
 
 /** A request that can't be expressed as a bounded job. */
 export class SelectionTooLargeError extends Error {
@@ -244,7 +322,12 @@ type DrawerMode = "settings" | "devices" | "links";
 export function DownloadProvider({ children }: { children: ReactNode }) {
   const [preferences, setPreferences] = useState(defaults);
   const preferencesRef = useRef(defaults);
-  const [mode, setMode] = useState<DrawerMode>("settings");
+  const [mode, setModeState] = useState<DrawerMode>("settings");
+  const modeRef = useRef<DrawerMode>("settings");
+  const setMode = useCallback((next: DrawerMode) => {
+    modeRef.current = next;
+    setModeState(next);
+  }, []);
   const [activities, setActivities] = useState<Activity[]>([]);
   const activitiesRef = useRef<Activity[]>([]);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(
@@ -268,6 +351,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const [deviceActivityId, setDeviceActivityId] = useState<string | null>(null);
   const deviceActivityIdRef = useRef<string | null>(null);
   const [linksActivityId, setLinksActivityId] = useState<string | null>(null);
+  const linksActivityIdRef = useRef<string | null>(null);
   const [deviceProfile, setDeviceProfile] = useState<DeviceProfile>("unknown");
   const deviceProfileRef = useRef<DeviceProfile>("unknown");
   const [pendingRequest, setPendingRequest] = useState<DownloadRequest | null>(
@@ -299,6 +383,14 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     onOpenChange: (isOpen) => {
       drawerOpenRef.current = isOpen;
       if (isOpen) return;
+      // The links panel stood in for its activity's toast: bring it back.
+      const linksActivity = activitiesRef.current.find(
+        (activity) =>
+          modeRef.current === "links" &&
+          activity.id === linksActivityIdRef.current,
+      );
+      linksActivityIdRef.current = null;
+      if (linksActivity) publishActivityRef.current(linksActivity);
       // Closing the picker leaves the job recoverable from the dock button.
       const waiting = activitiesRef.current.find(
         (activity) =>
@@ -404,11 +496,14 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       if (!mountedRef.current) return;
       const quietlyRunning = activeStatuses.has(activity.status);
       if (quietlyRunning && dismissedIdsRef.current.has(activity.id)) return;
-      // While the device picker is open it is the UI for this activity.
+      // While the device picker or the links panel is open, it is the UI
+      // for this activity: no toast on top of (or under) the drawer.
       if (
-        activity.status === "waiting-device" &&
         drawerOpenRef.current &&
-        deviceActivityIdRef.current === activity.id
+        ((activity.status === "waiting-device" &&
+          deviceActivityIdRef.current === activity.id) ||
+          (modeRef.current === "links" &&
+            linksActivityIdRef.current === activity.id))
       ) {
         closeToast(activity.id);
         return;
@@ -575,7 +670,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       drawer.open();
       if (isMyJdConnected()) void refreshDevices(Boolean(error));
     },
-    [drawer, refreshDevices],
+    [drawer, refreshDevices, setMode],
   );
 
   const requestDevice = useCallback(
@@ -593,11 +688,13 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const showLinks = useCallback(
     (activityId: string) => {
       setLinksActivityId(activityId);
+      linksActivityIdRef.current = activityId;
       setMode("links");
       drawerOpenRef.current = true;
+      closeToast(activityId);
       drawer.open();
     },
-    [drawer],
+    [closeToast, drawer, setMode],
   );
 
   const deliver = useCallback(
@@ -754,14 +851,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         }
         try {
           const response = await apiFetch<{
-            data: {
-              status: string;
-              packageName: string;
-              completedItems: number;
-              failedItems: number;
-              totalItems: number;
-              episodes: ResolvedEpisode[];
-            };
+            data: Omit<JobData, "episodes"> & { episodes: ResolvedEpisode[] };
           }>(
             `/download-jobs/${receipt.jobId}`,
             { headers: { authorization: `Bearer ${receipt.accessToken}` } },
@@ -791,7 +881,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
             !finished,
           );
           if (!finished) {
-            scheduleNextPoll(1_250);
+            scheduleNextPoll(jobPollInterval(job.totalItems));
             return;
           }
           stopPolling(id);
@@ -841,8 +931,17 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
             });
             return;
           }
+          const total = findIn(activitiesRef.current, id)?.total ?? 0;
+          const retryAfter =
+            error instanceof ApiResponseError ? (error.retryAfterMs ?? 0) : 0;
+          if (error instanceof ApiResponseError && error.status === 429) {
+            // Rate limited: the job keeps running on the API. Wait as asked
+            // and keep showing progress, not a lost connection.
+            scheduleNextPoll(Math.max(retryAfter, jobPollInterval(total)));
+            return;
+          }
           updateActivity(id, { status: "processing", reconnecting: true });
-          scheduleNextPoll(3_000);
+          scheduleNextPoll(Math.max(retryAfter, 3_000));
         }
       }
 
@@ -911,6 +1010,8 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       options?: {
         destination?: DownloadDestination;
         preferredDeviceId?: string;
+        /** Repeats an earlier job POST whose outcome is unknown. */
+        idempotencyKey?: string;
       },
     ) => {
       const snapshot = preferencesRef.current;
@@ -933,6 +1034,10 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       }
       const id = crypto.randomUUID();
       const isJob = requiresBackgroundJob(next);
+      // One Idempotency-Key per user action: a retry of the same action
+      // reuses it, so the API returns the job it may already have created.
+      let idempotencyKey = options?.idempotencyKey ?? crypto.randomUUID();
+      let jobRequest: string | null = null;
       // One controller serves the user's Cancel and the 25 s deadline.
       const controller = new AbortController();
       const deadline = window.setTimeout(
@@ -960,15 +1065,31 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       const signal = controller.signal;
       try {
         if (isJob) {
-          const response = await apiFetch<{ data: JobReceipt }>(
-            `/anime/${encodeURIComponent(next.slug)}/download-jobs`,
-            {
-              method: "POST",
+          jobRequest = JSON.stringify(jobBody(next, snapshot));
+          let response: { data: JobReceipt };
+          try {
+            response = await postJob(
+              next.slug,
+              jobRequest,
+              idempotencyKey,
               signal,
-              body: JSON.stringify(jobBody(next, snapshot)),
-            },
-            true,
-          );
+            );
+          } catch (error) {
+            // 409/422: the key is spent (too many repeats) or belongs to a
+            // different body (preferences changed). This is a new attempt.
+            if (
+              !(error instanceof ApiResponseError) ||
+              (error.status !== 409 && error.status !== 422)
+            )
+              throw error;
+            idempotencyKey = crypto.randomUUID();
+            response = await postJob(
+              next.slug,
+              jobRequest,
+              idempotencyKey,
+              signal,
+            );
+          }
           abortersRef.current.delete(id);
           const { missingEpisodeNumbers, ...receipt } = response.data;
           updateActivity(id, {
@@ -1010,12 +1131,22 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         await deliver(id, { deviceId: options?.preferredDeviceId });
       } catch (error) {
         abortersRef.current.delete(id);
+        const abandoned =
+          isUserAbort(signal) || error instanceof ApiTimeoutError;
+        // The job POST may have reached the API anyway: cancel that job.
+        if (abandoned && jobRequest)
+          void cancelAbandonedJob(next.slug, jobRequest, idempotencyKey);
         if (isUserAbort(signal)) {
           updateActivity(id, { status: "cancelled" });
           return;
         }
         updateActivity(id, {
           status: "error",
+          retryable:
+            !(error instanceof SelectionTooLargeError) && retryable(error),
+          // Unknown outcome: "Reintentar" repeats the same job request.
+          retryKey:
+            jobRequest && outcomeUnknown(error) ? idempotencyKey : undefined,
           failure:
             error instanceof SelectionTooLargeError
               ? {
@@ -1126,7 +1257,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     setMode("settings");
     drawerOpenRef.current = true;
     drawer.open();
-  }, [drawer]);
+  }, [drawer, setMode]);
 
   const openDeviceSettings = useCallback(() => {
     showDevicePanel({});
@@ -1141,19 +1272,34 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         controller.abort("user-cancel");
         return;
       }
-      if (!activity.receipt || activity.cancelling) return;
+      const receipt = activity.receipt;
+      if (!receipt || activity.cancelling) return;
       updateActivity(id, { cancelling: true });
       try {
-        await apiFetch(
-          `/download-jobs/${activity.receipt.jobId}/cancel`,
+        const response = await apiFetch<{ data: Pick<JobData, "status"> }>(
+          `/download-jobs/${receipt.jobId}/cancel`,
           {
             method: "POST",
-            headers: {
-              authorization: `Bearer ${activity.receipt.accessToken}`,
-            },
+            headers: { authorization: `Bearer ${receipt.accessToken}` },
           },
           true,
         );
+        const current = findIn(activitiesRef.current, id);
+        if (!current) return;
+        // Only a job still being resolved can be cancelled. If it finished
+        // first, the API returns its final status unchanged: its links are
+        // (being) delivered, so the cancel changes nothing here.
+        if (
+          response.data?.status !== "CANCELLED" ||
+          current.status !== "processing"
+        ) {
+          const stillPolling = current.status === "processing";
+          updateActivity(id, { cancelling: false }, stillPolling);
+          // Pick up the final state now instead of at the next poll.
+          if (stillPolling && current.receipt)
+            void pollJob(id, current.receipt);
+          return;
+        }
         stopPolling(id);
         updateActivity(id, {
           receipt: undefined,
@@ -1161,7 +1307,13 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           cancelling: false,
         });
       } catch (error) {
-        updateActivity(id, { cancelling: false });
+        const current = findIn(activitiesRef.current, id);
+        if (!current) return;
+        updateActivity(
+          id,
+          { cancelling: false },
+          current.status === "processing",
+        );
         const friendly = describeApiError(error);
         toast.danger("No se pudo cancelar", {
           description: `${describeRequest(activity.request)}. ${friendly.detail}`,
@@ -1169,7 +1321,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         });
       }
     },
-    [stopPolling, updateActivity],
+    [pollJob, stopPolling, updateActivity],
   );
 
   const retryFailed = useCallback(
@@ -1304,7 +1456,9 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           return;
         case "retry":
           removeActivity(id);
-          void startOperation(activity.request);
+          void startOperation(activity.request, {
+            idempotencyKey: activity.retryKey,
+          });
           return;
         case "retry-failed":
           void retryFailed(id);
@@ -1503,6 +1657,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       <DownloadDock
         onSlot={setDockSlot}
         pending={dismissedPending}
+        portable={deviceProfile === "portable"}
         onReopen={reopenDismissedActivity}
       />
       {drawerLoaded && (
@@ -1524,6 +1679,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                       devices.find((device) => device.id === selectedDeviceId)
                         ?.name ??
                       (selectedDeviceId ? "Dispositivo recordado" : null),
+                    myJdConnected,
                     openDeviceSettings,
                   },
                 }
@@ -1575,13 +1731,18 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
 function DownloadDock({
   onSlot,
   pending,
+  portable,
   onReopen,
 }: {
   onSlot: (element: HTMLElement | null) => void;
   pending: Activity[];
+  portable: boolean;
   onReopen: (id: string) => void;
 }) {
   const dockRef = useRef<HTMLDivElement>(null);
+  // A landmark only while it shows something (button or selection bar), so
+  // its controls are reachable from landmark navigation.
+  const [occupied, setOccupied] = useState(false);
 
   useEffect(() => {
     const dock = dockRef.current;
@@ -1589,6 +1750,7 @@ function DownloadDock({
     const root = document.documentElement;
     const observer = new ResizeObserver(() => {
       const height = dock.getBoundingClientRect().height;
+      setOccupied(height > 0);
       root.style.setProperty(
         "--download-dock-height",
         height > 0 ? `${Math.ceil(height) + 12}px` : "0px",
@@ -1605,6 +1767,8 @@ function DownloadDock({
   return (
     <div
       ref={dockRef}
+      role={occupied ? "region" : undefined}
+      aria-label={occupied ? "Descargas y selección" : undefined}
       className="download-dock pointer-events-none fixed inset-x-0 bottom-[calc(var(--bottom-nav-clearance)+1rem)] z-40 mx-auto flex w-full max-w-[1600px] flex-col items-end gap-3 px-4 sm:px-6"
     >
       {first && (
@@ -1625,7 +1789,7 @@ function DownloadDock({
                   "descarga pendiente",
                   "descargas pendientes",
                 )
-              : dockLabel(first)}
+              : dockLabel(first, portable)}
           </span>
         </Button>
       )}
@@ -1634,21 +1798,12 @@ function DownloadDock({
   );
 }
 
-function dockLabel(activity: Activity) {
-  switch (activity.status) {
-    case "processing":
-      return activity.total > 0
-        ? `Descargando ${activity.current}/${activity.total}`
-        : "Descarga en curso";
-    case "resolving":
-      return "Buscando enlaces";
-    case "sending":
-      return "Enviando enlaces";
-    case "waiting-device":
-      return "Elige un dispositivo";
-    default:
-      return "Descarga pendiente";
-  }
+/** The dock names the job with the same words as its toast. */
+function dockLabel(activity: Activity, portable: boolean) {
+  const view = presentActivity(activity, { portable });
+  return view.progress
+    ? `${view.title} · ${formatProgress(view.progress.current, view.progress.total)}`
+    : view.title;
 }
 
 function DockIcon({ activity }: { activity: Activity }) {
