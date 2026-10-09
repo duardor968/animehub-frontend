@@ -54,8 +54,6 @@ export function paginationItems(
 // Pages beyond this count get the "Ir a la página" field next to the numbers.
 const jumpThreshold = 7;
 
-const linkClass = pagerLinkClass;
-
 export function Pagination({
   page,
   totalPages,
@@ -139,7 +137,7 @@ export function Pagination({
         onClick={onLinkClick(target)}
         aria-label={`Página ${target}`}
         aria-busy={isTarget || undefined}
-        className={`${linkClass} ${isTarget ? "border-link/60 text-foreground" : ""}`}
+        className={`${pagerLinkClass} ${isTarget ? "border-link/60 text-foreground" : ""}`}
       >
         {isTarget ? <Spinner /> : formatNumber(target)}
       </Link>
@@ -167,7 +165,7 @@ export function Pagination({
         onClick={onLinkClick(target)}
         aria-label={label}
         aria-busy={target === pendingPage || undefined}
-        className={linkClass}
+        className={pagerLinkClass}
       >
         {target === pendingPage ? <Spinner /> : icon}
       </Link>
