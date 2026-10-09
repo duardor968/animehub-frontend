@@ -336,7 +336,7 @@ export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
                 : null,
             ].filter((fact): fact is string => Boolean(fact));
             return (
-              <article
+              <div
                 className={`featured-slide relative min-w-0 flex-[0_0_100%] ${HERO_HEIGHT_CLASS}`}
                 key={item.id}
                 role="group"
@@ -414,7 +414,7 @@ export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
                     </div>
                   </div>
                 </div>
-              </article>
+              </div>
             );
           })}
         </div>
