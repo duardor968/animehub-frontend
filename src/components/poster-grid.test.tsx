@@ -80,13 +80,15 @@ describe("PosterGrid", () => {
     const { container, unmount } = render(<PosterGrid anime={items} />);
     const images = [...container.querySelectorAll("img")];
 
+    // The rest of a desktop first row is eager but low priority, so phones
+    // (two columns) don't preload or prioritize posters below the fold.
     expect(images.map((image) => image.getAttribute("fetchpriority"))).toEqual([
       "high",
       "high",
-      null,
-      null,
-      null,
-      null,
+      "low",
+      "low",
+      "low",
+      "low",
       null,
       null,
     ]);

@@ -102,8 +102,10 @@ describe("Pagination", () => {
     const list = screen.getByRole("list");
 
     fireEvent.click(within(list).getByRole("link", { name: "Página 3" }));
+    // Paging scrolls up and hands keyboard focus to the new results.
     expect(navigate).toHaveBeenLastCalledWith("/catalogo?page=3", {
       scroll: true,
+      focusResults: true,
     });
 
     const field = screen.getByRole("textbox", { name: "Ir a la página" });
@@ -111,11 +113,35 @@ describe("Pagination", () => {
     fireEvent.submit(field.closest("form")!);
     expect(navigate).toHaveBeenLastCalledWith("/catalogo?page=50", {
       scroll: true,
+      focusResults: true,
     });
 
     fireEvent.change(screen.getByRole("combobox", { name: "Ir a la página" }), {
       target: { value: "1" },
     });
-    expect(navigate).toHaveBeenLastCalledWith("/catalogo", { scroll: true });
+    expect(navigate).toHaveBeenLastCalledWith("/catalogo", {
+      scroll: true,
+      focusResults: true,
+    });
+  });
+
+  it("keeps its controls focusable while a page loads", () => {
+    const navigate = vi.fn();
+    render(
+      <CatalogNavigationContext value={{ navigate, isPending: true }}>
+        <Pagination page={2} totalPages={50} query="page=2" />
+      </CatalogNavigationContext>,
+    );
+    const picker = screen.getByRole("combobox", { name: "Ir a la página" });
+    // Disabling the focused control would drop focus to <body>.
+    expect(picker).not.toBeDisabled();
+    expect(picker).toHaveClass("text-base");
+    expect(screen.getByRole("button", { name: "Ir" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    fireEvent.change(picker, { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("link", { name: "Página 3" }));
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

@@ -28,6 +28,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   useTransition,
   type Key,
@@ -151,6 +152,23 @@ export function CatalogFilters({
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const [isNavigationPending, startNavigation] = useTransition();
   const [hasNavigated, setHasNavigated] = useState(false);
+  const filtersButtonRef = useRef<HTMLButtonElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  // Where keyboard focus goes once a navigation lands (see navigate()).
+  const focusAfterRef = useRef<"results" | "if-lost" | null>(null);
+
+  useEffect(() => {
+    const intent = focusAfterRef.current;
+    if (isNavigationPending || !intent) return;
+    focusAfterRef.current = null;
+    if (intent === "results") {
+      resultsRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    const active = document.activeElement;
+    if (!active || active === document.body || !active.isConnected)
+      filtersButtonRef.current?.focus({ preventScroll: true });
+  }, [isNavigationPending, appliedKey]);
   const draftKey = draft.toString();
   const draftMatchesApplied = draftKey === appliedKey;
   const isPreviewPending = Boolean(
@@ -232,6 +250,7 @@ export function CatalogFilters({
       navigate: (href, options) => {
         if (isNavigationPending) return;
         setHasNavigated(true);
+        focusAfterRef.current = options?.focusResults ? "results" : "if-lost";
         startNavigation(() =>
           router.push(href, { scroll: options?.scroll ?? false }),
         );
@@ -300,7 +319,7 @@ export function CatalogFilters({
       : previewResult === null
         ? "Mostrar resultados"
         : previewResult.capped
-          ? `Mostrar ${formatNumber(previewResult.count)}+ obras`
+          ? `Mostrar más de ${formatNumber(previewResult.count)} obras`
           : `Mostrar ${plural(previewResult.count, "obra", "obras")}`;
 
   const countText = formatCatalogCount(totalRecords, capped);
@@ -310,10 +329,13 @@ export function CatalogFilters({
       <div className="min-w-0">
         <div className="mb-6 rounded-2xl border border-white/8 bg-surface px-3 py-3 shadow-[0_18px_45px_rgb(0_0_0/0.12)] sm:px-4">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+            {/* Pending, not disabled, while results load: focus returns
+                here when the drawer closes and must not be dropped. */}
             <Button
+              ref={filtersButtonRef}
               onPress={() => openDrawer()}
-              className="min-h-11 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-foreground shadow-none transition-colors hover:bg-accent-hover"
-              isDisabled={isNavigationPending}
+              className="min-h-11 rounded-full bg-accent px-4 text-sm font-semibold text-accent-foreground shadow-none transition-colors hover:bg-accent-hover"
+              isPending={isNavigationPending}
             >
               <SlidersHorizontal size={17} aria-hidden="true" />
               <span>Filtros</span>
@@ -359,7 +381,6 @@ export function CatalogFilters({
                   )
                 }
                 variant="secondary"
-                isDisabled={isNavigationPending}
               >
                 <Select.Trigger className="h-11 items-center rounded-xl border border-white/8 bg-surface-secondary text-sm text-foreground shadow-none">
                   <Select.Value />
@@ -386,11 +407,15 @@ export function CatalogFilters({
             <p className="mt-3 border-t border-white/7 pt-3 text-xs leading-5 text-muted">
               Solo se pueden recorrer las primeras {formatNumber(totalRecords)}.
               Filtra por formato, género o{" "}
+              {/* Inline link-style button with a 44px tall hit area; the
+                  negative margin keeps the line height unchanged. */}
               <button
                 type="button"
-                onClick={() => openDrawer(letterSectionId)}
-                disabled={isNavigationPending}
-                className="rounded font-semibold text-link underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-focus"
+                onClick={() => {
+                  if (!isNavigationPending) openDrawer(letterSectionId);
+                }}
+                aria-disabled={isNavigationPending || undefined}
+                className="-mx-1 -my-3 inline-block rounded px-1 py-3 font-semibold text-link underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-focus"
               >
                 inicial
               </button>{" "}
@@ -411,12 +436,12 @@ export function CatalogFilters({
                       id={entry.id}
                       key={entry.id}
                       variant="surface"
-                      className="min-h-9 gap-1 rounded-xl border border-white/8 bg-surface-hover py-0 pl-3 pr-1 text-xs font-medium text-subtle pointer-coarse:min-h-11 pointer-coarse:pr-0"
+                      className="min-h-9 gap-1 rounded-full border border-white/8 bg-surface-hover py-0 pl-3 pr-1 text-xs font-medium text-subtle pointer-coarse:min-h-11 pointer-coarse:pr-0"
                     >
                       {entry.label}
                       <Tag.RemoveButton
                         aria-label="Quitar"
-                        className="grid size-7 place-items-center rounded-lg text-muted transition-colors hover:bg-white/8 hover:text-foreground pointer-coarse:size-11 [&_svg]:!size-3.5"
+                        className="grid size-7 place-items-center rounded-full text-muted transition-colors hover:bg-white/8 hover:text-foreground pointer-coarse:size-11 [&_svg]:!size-3.5"
                       >
                         <X size={14} aria-hidden="true" />
                       </Tag.RemoveButton>
@@ -427,9 +452,9 @@ export function CatalogFilters({
               <Button
                 size="sm"
                 variant="ghost"
-                className="min-h-9 px-2 text-xs font-semibold text-link pointer-coarse:min-h-11"
+                className="min-h-9 rounded-full px-2 text-xs font-semibold text-link pointer-coarse:min-h-11"
                 onPress={clearApplied}
-                isDisabled={isNavigationPending}
+                isPending={isNavigationPending}
               >
                 Limpiar filtros
               </Button>
@@ -503,7 +528,7 @@ export function CatalogFilters({
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="min-h-8 shrink-0 px-2 text-xs font-semibold text-danger-soft-foreground pointer-coarse:min-h-11"
+                          className="min-h-8 shrink-0 rounded-full px-2 text-xs font-semibold text-danger-soft-foreground pointer-coarse:min-h-11"
                           onPress={() =>
                             setPreviewAttempt((attempt) => attempt + 1)
                           }
@@ -514,7 +539,7 @@ export function CatalogFilters({
                     )}
                   <Button
                     variant="secondary"
-                    className="h-11 w-full items-center justify-center rounded-xl border border-white/10 bg-surface px-3 text-sm font-semibold leading-none text-subtle shadow-none"
+                    className="h-11 w-full items-center justify-center rounded-full border border-white/10 bg-surface px-3 text-sm font-semibold leading-none text-subtle shadow-none"
                     onPress={() =>
                       setDraft((params) => clearCatalogFilters(params, bounds))
                     }
@@ -525,9 +550,10 @@ export function CatalogFilters({
                     Limpiar filtros
                   </Button>
                   <Button
-                    className="h-11 w-full items-center justify-center whitespace-nowrap rounded-xl bg-accent px-3 text-sm font-semibold leading-none tabular-nums text-accent-foreground shadow-none hover:bg-accent-hover"
+                    // "Mostrar más de 1.000 obras" fits 320px phones at 12px.
+                    className="h-11 w-full items-center justify-center whitespace-nowrap rounded-full bg-accent px-3 text-sm font-semibold leading-none tabular-nums text-accent-foreground shadow-none hover:bg-accent-hover max-[359px]:px-2 max-[359px]:text-xs"
                     onPress={applyFilters}
-                    isDisabled={isNavigationPending}
+                    isPending={isNavigationPending}
                   >
                     {applyLabel}
                   </Button>
@@ -543,8 +569,16 @@ export function CatalogFilters({
         </Drawer>
 
         <div
+          ref={resultsRef}
+          tabIndex={-1}
+          role="region"
+          aria-label={
+            scope === "search"
+              ? "Resultados de la búsqueda"
+              : "Obras del catálogo"
+          }
           aria-busy={isNavigationPending}
-          className={`transition-opacity duration-150 ${isNavigationPending ? "pointer-events-none opacity-55" : "opacity-100"}`}
+          className={`outline-none transition-opacity duration-150 ${isNavigationPending ? "pointer-events-none opacity-55" : "opacity-100"}`}
         >
           {children}
           {footer}
