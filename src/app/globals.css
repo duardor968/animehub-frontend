@@ -254,11 +254,6 @@
     opacity: 1 !important;
   }
 
-  html[data-device="portable"] .episode-download-action {
-    opacity: 1 !important;
-    transform: scale(1) !important;
-  }
-
   .media-card-clip {
     position: relative;
     min-width: 0;
@@ -269,21 +264,9 @@
     mask-image: linear-gradient(#000 0 0);
   }
 
-  html[data-device="portable"] .download-settings-button {
-    min-height: 2.75rem;
-    min-width: 2.75rem;
-  }
-
   html[data-device="portable"] .recent-download-slot {
     display: flex;
     align-items: flex-start;
-    justify-content: flex-end;
-    padding: 0.5rem;
-  }
-
-  html[data-device="portable"] .episode-card-download-slot {
-    display: flex;
-    align-items: flex-end;
     justify-content: flex-end;
     padding: 0.5rem;
   }
@@ -336,8 +319,7 @@
       backdrop-filter: none;
     }
 
-    html[data-device="portable"] .animehub-toast-region,
-    html[data-device="portable"] .episode-selection-bar {
+    html[data-device="portable"] .animehub-toast-region {
       bottom: var(--portable-overlay-bottom) !important;
     }
 
@@ -347,26 +329,9 @@
       max-width: none !important;
     }
 
-    html[data-device="portable"] .episode-selection-bar {
-      width: calc(100vw - 2rem);
-      background: rgb(17 26 42 / 98%);
-      backdrop-filter: none;
-    }
-
     html[data-device="portable"] .featured-controls {
       bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
       gap: 0.5rem;
-    }
-
-    html[data-device="portable"] .episode-pager-content {
-      max-width: 100%;
-      overflow-x: auto;
-      overscroll-behavior-inline: contain;
-      scrollbar-width: none;
-    }
-
-    html[data-device="portable"] .episode-pager-content::-webkit-scrollbar {
-      display: none;
     }
   }
 }
@@ -426,5 +391,69 @@
     html[data-device="portable"] main {
       padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
     }
+  }
+}
+
+/* == anime & downloads == */
+@layer components {
+  /* Unchecked checkboxes need a visible edge (WCAG 1.4.11, 3:1). Selected and
+     indeterminate states keep HeroUI's filled style. */
+  .checkbox-visible .checkbox__control {
+    border-width: 1.5px;
+    border-color: var(--faint);
+  }
+
+  .checkbox-visible:hover:not([data-selected="true"]):not(
+      [data-indeterminate="true"]
+    )
+    .checkbox__control {
+    border-color: var(--muted);
+  }
+
+  /* The episode pager scrolls sideways on narrow screens instead of
+     overflowing; the padding keeps focus rings visible. */
+  .episode-pager-content {
+    max-width: 100%;
+    padding: 3px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+
+  .episode-pager-content::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Indeterminate page-load bar; animates a transform only. */
+  .episode-loading-bar {
+    animation: episode-loading 1.1s ease-in-out infinite;
+  }
+
+  /* Related timeline: fade the edges that have more content. */
+  .related-scroller[data-fade-start] {
+    mask-image: linear-gradient(to right, transparent, black 3rem);
+  }
+
+  .related-scroller[data-fade-end] {
+    mask-image: linear-gradient(to left, transparent, black 3rem);
+  }
+
+  .related-scroller[data-fade-start][data-fade-end] {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      black 3rem,
+      black calc(100% - 3rem),
+      transparent
+    );
+  }
+}
+
+@keyframes episode-loading {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
   }
 }
