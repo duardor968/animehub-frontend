@@ -77,9 +77,14 @@ describe("detectDeviceProfile", () => {
 });
 
 describe("getEffectiveDestination", () => {
-  it("forces MyJDownloader only on portable devices", () => {
+  it("replaces Click'n'Load with MyJDownloader on portable devices", () => {
     expect(getEffectiveDestination("portable", "CNL")).toBe("MYJD");
     expect(getEffectiveDestination("portable", "MYJD")).toBe("MYJD");
+  });
+
+  it("keeps copying links available everywhere", () => {
+    expect(getEffectiveDestination("portable", "COPY")).toBe("COPY");
+    expect(getEffectiveDestination("desktop", "COPY")).toBe("COPY");
   });
 
   it("preserves desktop and unknown preferences", () => {

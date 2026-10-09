@@ -20,16 +20,21 @@ import {
 } from "vitest";
 import { apiFetch } from "@/lib/api/client";
 import {
+  copyLinks,
   isMyJdConnected,
   sendToClickNLoad,
   sendToMyJd,
 } from "./download-client";
 import { getDeviceProfile, isPortableDevice } from "./device-profile";
+import { ClickNLoadError } from "./download-errors";
 import {
   activeDownloadJobsStorageKey,
   saveActiveDownloadJobs,
+  type PersistedDownloadJob,
 } from "./download-job-storage";
-import { DownloadProvider } from "./download-provider";
+import { useEffect } from "react";
+import { DownloadProvider, useDownloads } from "./download-provider";
+import type { DownloadRequest } from "./download-types";
 
 vi.mock("@/lib/api/client", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/api/client")>();
@@ -38,7 +43,8 @@ vi.mock("@/lib/api/client", async (importOriginal) => {
 
 vi.mock("./download-client", () => ({
   connectMyJd: vi.fn(),
-  disconnectMyJd: vi.fn(),
+  copyLinks: vi.fn(async () => true),
+  disconnectMyJd: vi.fn(async () => undefined),
   isMyJdConnected: vi.fn(() => false),
   listMyJdDevices: vi.fn(async () => []),
   providerLabels: {
@@ -64,14 +70,17 @@ vi.mock("./device-profile", async (importOriginal) => {
 
 afterEach(() => {
   cleanup();
+  toast.clear();
   vi.restoreAllMocks();
 });
 
 beforeAll(() => {
+  // Reduced motion makes closed toasts leave the shared queue immediately,
+  // so one test's toasts never leak into the next.
   vi.stubGlobal(
     "matchMedia",
-    vi.fn(() => ({
-      matches: false,
+    vi.fn((query: string) => ({
+      matches: query.includes("prefers-reduced-motion"),
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     })),
@@ -88,346 +97,221 @@ beforeAll(() => {
 
 beforeEach(() => {
   sessionStorage.clear();
+  localStorage.clear();
   vi.clearAllMocks();
   vi.mocked(isMyJdConnected).mockReturnValue(false);
   vi.mocked(getDeviceProfile).mockReturnValue("desktop");
   vi.mocked(isPortableDevice).mockReturnValue(false);
+  vi.mocked(copyLinks).mockResolvedValue(true);
   vi.mocked(sendToClickNLoad).mockResolvedValue({
     acceptedAt: new Date().toISOString(),
   });
   vi.mocked(sendToMyJd).mockResolvedValue(undefined);
 });
 
-describe("DownloadProvider restored jobs", () => {
-  it("resumes polling but waits for an explicit delivery action", async () => {
-    const now = Date.now();
-    saveActiveDownloadJobs(
-      sessionStorage,
-      [
+const range: DownloadRequest = {
+  slug: "otome-game-sekai-2",
+  title: "Otome Game Sekai 2",
+  from: 1,
+  to: 12,
+};
+
+function persist(overrides: Partial<PersistedDownloadJob> = {}) {
+  const now = Date.now();
+  saveActiveDownloadJobs(
+    sessionStorage,
+    [
+      {
+        id: "restored-activity",
+        request: range,
+        receipt: {
+          jobId: "job-1",
+          accessToken: "bearer-capability",
+          expiresAt: new Date(now + 60 * 60_000).toISOString(),
+        },
+        destination: "CNL",
+        createdAt: now - 1_000,
+        current: 8,
+        total: 12,
+        deliveryAttempted: false,
+        ...overrides,
+      },
+    ],
+    now,
+  );
+}
+
+function jobData(overrides: Record<string, unknown> = {}) {
+  return {
+    data: {
+      status: "COMPLETED",
+      packageName: "Otome Game Sekai 2",
+      completedItems: 12,
+      failedItems: 0,
+      totalItems: 12,
+      episodes: [
         {
-          id: "restored-activity",
-          request: {
-            slug: "otome-game-sekai-2",
-            title: "Otome Game Sekai 2",
-            from: 1,
-            to: 12,
-          },
-          receipt: {
-            jobId: "job-1",
-            accessToken: "bearer-capability",
-            expiresAt: new Date(now + 60 * 60_000).toISOString(),
-          },
-          destination: "CNL",
-          createdAt: now - 1_000,
-          current: 8,
-          total: 12,
-          deliveryAttempted: false,
+          episodeNumber: 12,
+          audio: "SUB",
+          links: [{ provider: "MEGA", url: "https://example.com/file" }],
+          errorCode: null,
         },
       ],
-      now,
-    );
-    vi.mocked(apiFetch).mockResolvedValue({
-      data: {
-        status: "COMPLETED",
-        packageName: "Otome Game Sekai 2",
-        completedItems: 12,
-        failedItems: 0,
-        totalItems: 12,
-        episodes: [
-          {
-            episodeNumber: 12,
-            audio: "SUB",
-            links: [{ provider: "MEGA", url: "https://example.com/file" }],
-            errorCode: null,
-          },
-        ],
-      },
-    });
+      ...overrides,
+    },
+  };
+}
 
-    render(
-      <>
-        <Toast.Provider />
-        <DownloadProvider>
-          <div>AnimeHub</div>
-        </DownloadProvider>
-      </>,
-    );
+const handle: { current: ReturnType<typeof useDownloads> | null } = {
+  current: null,
+};
+function Controls() {
+  const value = useDownloads();
+  useEffect(() => {
+    handle.current = value;
+  });
+  return null;
+}
+const controls = {
+  openDownload: (request: DownloadRequest) =>
+    handle.current?.openDownload(request),
+  getRequestStatus: (request: DownloadRequest) =>
+    handle.current?.getRequestStatus(request),
+};
+
+function renderProvider() {
+  return render(
+    <>
+      <Toast.Provider />
+      <DownloadProvider>
+        <div>AnimeHub</div>
+        <Controls />
+      </DownloadProvider>
+    </>,
+  );
+}
+
+function toastWith(text: string | RegExp) {
+  return screen
+    .getAllByRole("alertdialog")
+    .find((element) => within(element).queryByText(text));
+}
+
+describe("DownloadProvider restored jobs", () => {
+  it("resumes polling but waits for an explicit delivery action", async () => {
+    persist();
+    vi.mocked(apiFetch).mockResolvedValue(jobData());
+
+    renderProvider();
 
     expect(
-      await screen.findByRole("button", { name: "Entregar ahora" }),
+      await screen.findByRole("button", { name: "Enviar a JDownloader" }),
     ).toBeVisible();
-    expect(screen.getByText("Listo para entregar")).toBeVisible();
+    expect(screen.getByText("Enlaces listos")).toBeVisible();
+    expect(screen.getByText("Otome Game Sekai 2 · Ep. 1–12")).toBeVisible();
     expect(sendToClickNLoad).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(activeDownloadJobsStorageKey)).not.toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Entregar ahora" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Enviar a JDownloader" }),
+    );
 
     await waitFor(() =>
       expect(sendToClickNLoad).toHaveBeenCalledWith("Otome Game Sekai 2", [
         "https://example.com/file",
       ]),
     );
+    expect(await screen.findByText("Enviado a JDownloader")).toBeVisible();
     await waitFor(() =>
       expect(sessionStorage.getItem(activeDownloadJobsStorageKey)).toBeNull(),
     );
   });
 
   it("survives a second reload until the user completes delivery", async () => {
-    const now = Date.now();
-    saveActiveDownloadJobs(
-      sessionStorage,
-      [
-        {
-          id: "restored-twice",
-          request: {
-            slug: "otome-game-sekai-2",
-            title: "Otome Game Sekai 2",
-            from: 1,
-            to: 12,
-          },
-          receipt: {
-            jobId: "job-twice",
-            accessToken: "bearer-capability",
-            expiresAt: new Date(now + 60 * 60_000).toISOString(),
-          },
-          destination: "CNL",
-          createdAt: now - 1_000,
-          current: 12,
-          total: 12,
-          deliveryAttempted: false,
-        },
-      ],
-      now,
-    );
-    vi.mocked(apiFetch).mockResolvedValue({
-      data: {
-        status: "COMPLETED",
-        packageName: "Otome Game Sekai 2",
-        completedItems: 12,
-        failedItems: 0,
-        totalItems: 12,
-        episodes: [
-          {
-            episodeNumber: 12,
-            audio: "SUB",
-            links: [{ provider: "MEGA", url: "https://example.com/file" }],
-            errorCode: null,
-          },
-        ],
-      },
-    });
+    persist({ current: 12 });
+    vi.mocked(apiFetch).mockResolvedValue(jobData());
 
-    const firstMount = render(
-      <>
-        <Toast.Provider />
-        <DownloadProvider>
-          <div>AnimeHub</div>
-        </DownloadProvider>
-      </>,
-    );
+    const firstMount = renderProvider();
     expect(
-      await screen.findByRole("button", { name: "Entregar ahora" }),
+      await screen.findByRole("button", { name: "Enviar a JDownloader" }),
     ).toBeVisible();
     firstMount.unmount();
 
-    render(
-      <>
-        <Toast.Provider />
-        <DownloadProvider>
-          <div>AnimeHub</div>
-        </DownloadProvider>
-      </>,
-    );
+    renderProvider();
 
     expect(
-      await screen.findByRole("button", { name: "Entregar ahora" }),
+      await screen.findByRole("button", { name: "Enviar a JDownloader" }),
     ).toBeVisible();
     expect(apiFetch).toHaveBeenCalledTimes(2);
     expect(sessionStorage.getItem(activeDownloadJobsStorageKey)).not.toBeNull();
   });
 
   it("warns when a reload interrupted an unconfirmed delivery", async () => {
-    const now = Date.now();
-    saveActiveDownloadJobs(
-      sessionStorage,
-      [
-        {
-          id: "ambiguous-delivery",
-          request: {
-            slug: "otome-game-sekai-2",
-            title: "Otome Game Sekai 2",
-            from: 1,
-            to: 12,
-          },
-          receipt: {
-            jobId: "job-ambiguous",
-            accessToken: "bearer-capability",
-            expiresAt: new Date(now + 60 * 60_000).toISOString(),
-          },
-          destination: "CNL",
-          createdAt: now - 1_000,
-          current: 12,
-          total: 12,
-          deliveryAttempted: true,
-        },
-      ],
-      now,
-    );
-    vi.mocked(apiFetch).mockResolvedValue({
-      data: {
-        status: "COMPLETED",
-        packageName: "Otome Game Sekai 2",
-        completedItems: 12,
-        failedItems: 0,
-        totalItems: 12,
-        episodes: [
-          {
-            episodeNumber: 12,
-            audio: "SUB",
-            links: [{ provider: "MEGA", url: "https://example.com/file" }],
-            errorCode: null,
-          },
-        ],
-      },
-    });
+    persist({ current: 12, deliveryAttempted: true });
+    vi.mocked(apiFetch).mockResolvedValue(jobData());
 
-    render(
-      <>
-        <Toast.Provider />
-        <DownloadProvider>
-          <div>AnimeHub</div>
-        </DownloadProvider>
-      </>,
-    );
+    renderProvider();
 
     expect(await screen.findByText("Entrega sin confirmar")).toBeVisible();
-    expect(
-      screen.getByText(/reintentar puede duplicar enlaces/i),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("button", { name: "Reintentar entrega" }),
-    ).toBeVisible();
+    expect(screen.getByText(/para no duplicarlos/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Reintentar" })).toBeVisible();
   });
 
-  it("keeps a dismissed running job in the recovery pill during polling", async () => {
-    const now = Date.now();
-    saveActiveDownloadJobs(
-      sessionStorage,
-      [
-        {
-          id: "dismissed-running",
-          request: {
-            slug: "otome-game-sekai-2",
-            title: "Otome Game Sekai 2",
-            from: 1,
-            to: 12,
-          },
-          receipt: {
-            jobId: "job-running",
-            accessToken: "bearer-capability",
-            expiresAt: new Date(now + 60 * 60_000).toISOString(),
-          },
-          destination: "CNL",
-          createdAt: now - 1_000,
-          current: 3,
-          total: 12,
-          deliveryAttempted: false,
-        },
-      ],
-      now,
-    );
+  it("doesn't blame the reload for a delivery that had already failed", async () => {
+    persist({ current: 12, deliveryAttempted: false, deliveryFailed: true });
+    vi.mocked(apiFetch).mockResolvedValue(jobData());
+
+    renderProvider();
+
+    expect(await screen.findByText("Enlaces listos")).toBeVisible();
+    expect(screen.getByText(/el último envío falló/i)).toBeVisible();
+    expect(screen.queryByText("Entrega sin confirmar")).toBeNull();
+  });
+
+  it("updates one toast in place and keeps a dismissed job in the dock", async () => {
+    persist({ current: 3 });
     let resolvePoll!: (value: unknown) => void;
-    vi.mocked(apiFetch).mockReturnValue(
+    vi.mocked(apiFetch).mockReturnValueOnce(
       new Promise((resolve) => {
         resolvePoll = resolve;
       }) as ReturnType<typeof apiFetch>,
     );
-    const info = vi.spyOn(toast, "info").mockReturnValue("running-toast");
-    vi.spyOn(toast, "close").mockImplementation(() => undefined);
 
-    render(
-      <>
-        <Toast.Provider />
-        <DownloadProvider>
-          <div>AnimeHub</div>
-        </DownloadProvider>
-      </>,
+    renderProvider();
+
+    const running = await screen.findByText("Reanudando la descarga");
+    const toastElement = running.closest('[data-slot="toast"]');
+    expect(toastElement).not.toBeNull();
+    fireEvent.click(
+      within(toastElement as HTMLElement).getByRole("button", {
+        name: /close|cerrar/i,
+      }),
     );
 
-    await waitFor(() => expect(info).toHaveBeenCalledTimes(1));
-    const options = info.mock.calls[0]?.[1];
-    expect(options?.onClose).toBeTypeOf("function");
-    act(() => options?.onClose?.());
-    expect(
-      screen.getByRole("button", { name: "Abrir descarga pendiente" }),
-    ).toHaveTextContent("Descarga en curso");
+    const dock = await screen.findByRole("button", {
+      name: "Mostrar descarga: Otome Game Sekai 2 · Ep. 1–12",
+    });
+    expect(dock).toHaveTextContent("Descargando 3/12");
 
+    vi.mocked(apiFetch).mockReturnValue(new Promise(() => undefined));
     await act(async () => {
-      resolvePoll({
-        data: {
-          status: "RUNNING",
-          packageName: "Otome Game Sekai 2",
-          completedItems: 4,
-          failedItems: 0,
-          totalItems: 12,
-          episodes: [],
-        },
-      });
+      resolvePoll(
+        jobData({ status: "RUNNING", completedItems: 4, episodes: [] }),
+      );
     });
 
-    expect(info).toHaveBeenCalledTimes(1);
-    expect(
-      screen.getByRole("button", { name: "Abrir descarga pendiente" }),
-    ).toBeVisible();
+    expect(dock).toHaveTextContent("Descargando 4/12");
+    expect(screen.queryByText("Buscando enlaces")).toBeNull();
   });
 
   it("cancels the scheduled poll when the provider unmounts", async () => {
-    const now = Date.now();
-    saveActiveDownloadJobs(
-      sessionStorage,
-      [
-        {
-          id: "unmounted-running",
-          request: {
-            slug: "otome-game-sekai-2",
-            title: "Otome Game Sekai 2",
-            from: 1,
-            to: 12,
-          },
-          receipt: {
-            jobId: "job-unmounted",
-            accessToken: "bearer-capability",
-            expiresAt: new Date(now + 60 * 60_000).toISOString(),
-          },
-          destination: "CNL",
-          createdAt: now - 1_000,
-          current: 3,
-          total: 12,
-          deliveryAttempted: false,
-        },
-      ],
-      now,
+    persist({ current: 3 });
+    vi.mocked(apiFetch).mockResolvedValue(
+      jobData({ status: "RUNNING", completedItems: 4, episodes: [] }),
     );
-    vi.mocked(apiFetch).mockResolvedValue({
-      data: {
-        status: "RUNNING",
-        packageName: "Otome Game Sekai 2",
-        completedItems: 4,
-        failedItems: 0,
-        totalItems: 12,
-        episodes: [],
-      },
-    });
     const setTimeoutSpy = vi.spyOn(window, "setTimeout");
     const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
-    const view = render(
-      <>
-        <Toast.Provider />
-        <DownloadProvider>
-          <div>AnimeHub</div>
-        </DownloadProvider>
-      </>,
-    );
+    const view = renderProvider();
 
     await waitFor(() =>
       expect(
@@ -456,14 +340,7 @@ describe("DownloadProvider restored jobs", () => {
       },
     });
     try {
-      const view = render(
-        <>
-          <Toast.Provider />
-          <DownloadProvider>
-            <div>AnimeHub</div>
-          </DownloadProvider>
-        </>,
-      );
+      const view = renderProvider();
       expect(screen.getByText("AnimeHub")).toBeVisible();
       view.unmount();
     } finally {
@@ -473,66 +350,18 @@ describe("DownloadProvider restored jobs", () => {
   });
 
   it("does not send twice when MyJDownloader is activated twice", async () => {
-    const now = Date.now();
     sessionStorage.setItem("animehub.myjd.device", "device-1");
-    saveActiveDownloadJobs(
-      sessionStorage,
-      [
-        {
-          id: "myjd-double-send",
-          request: {
-            slug: "otome-game-sekai-2",
-            title: "Otome Game Sekai 2",
-            from: 1,
-            to: 12,
-          },
-          receipt: {
-            jobId: "job-myjd",
-            accessToken: "bearer-capability",
-            expiresAt: new Date(now + 60 * 60_000).toISOString(),
-          },
-          destination: "MYJD",
-          createdAt: now - 1_000,
-          current: 12,
-          total: 12,
-          deliveryAttempted: false,
-        },
-      ],
-      now,
-    );
+    persist({ current: 12, destination: "MYJD" });
     vi.mocked(isMyJdConnected).mockReturnValue(true);
-    vi.mocked(apiFetch).mockResolvedValue({
-      data: {
-        status: "COMPLETED",
-        packageName: "Otome Game Sekai 2",
-        completedItems: 12,
-        failedItems: 0,
-        totalItems: 12,
-        episodes: [
-          {
-            episodeNumber: 12,
-            audio: "SUB",
-            links: [{ provider: "MEGA", url: "https://example.com/file" }],
-            errorCode: null,
-          },
-        ],
-      },
-    });
+    vi.mocked(apiFetch).mockResolvedValue(jobData());
     vi.mocked(sendToMyJd).mockImplementation(
       () => new Promise(() => undefined),
     );
 
-    render(
-      <>
-        <Toast.Provider />
-        <DownloadProvider>
-          <div>AnimeHub</div>
-        </DownloadProvider>
-      </>,
-    );
+    renderProvider();
 
     const deliverButton = await screen.findByRole("button", {
-      name: "Entregar ahora",
+      name: "Enviar a MyJDownloader",
     });
     fireEvent.click(deliverButton);
     fireEvent.click(deliverButton);
@@ -541,75 +370,305 @@ describe("DownloadProvider restored jobs", () => {
   });
 
   it("keeps a portable waiting-device job recoverable after closing the drawer", async () => {
-    const now = Date.now();
-    saveActiveDownloadJobs(
-      sessionStorage,
-      [
-        {
-          id: "portable-device-picker",
-          request: {
-            slug: "otome-game-sekai-2",
-            title: "Otome Game Sekai 2",
-            from: 1,
-            to: 12,
-          },
-          receipt: {
-            jobId: "job-portable",
-            accessToken: "bearer-capability",
-            expiresAt: new Date(now + 60 * 60_000).toISOString(),
-          },
-          destination: "MYJD",
-          createdAt: now - 1_000,
-          current: 12,
-          total: 12,
-          deliveryAttempted: false,
-        },
-      ],
-      now,
-    );
+    persist({ current: 12, destination: "MYJD" });
     vi.mocked(getDeviceProfile).mockReturnValue("portable");
     vi.mocked(isPortableDevice).mockReturnValue(true);
-    vi.mocked(apiFetch).mockResolvedValue({
-      data: {
-        status: "COMPLETED",
-        packageName: "Otome Game Sekai 2",
-        completedItems: 12,
-        failedItems: 0,
-        totalItems: 12,
-        episodes: [
-          {
-            episodeNumber: 12,
-            audio: "SUB",
-            links: [{ provider: "MEGA", url: "https://example.com/file" }],
-            errorCode: null,
-          },
-        ],
-      },
-    });
+    vi.mocked(apiFetch).mockResolvedValue(jobData());
 
-    render(
-      <>
-        <Toast.Provider />
-        <DownloadProvider>
-          <div>AnimeHub</div>
-        </DownloadProvider>
-      </>,
-    );
+    renderProvider();
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Entregar ahora" }),
+      await screen.findByRole("button", { name: "Enviar a MyJDownloader" }),
     );
-    const drawer = await screen.findByRole("dialog", { name: "Descargas" });
+    const drawer = await screen.findByRole("dialog", {
+      name: "Conectar MyJDownloader",
+    });
+    expect(
+      within(drawer).getByText("Otome Game Sekai 2 · Ep. 1–12"),
+    ).toBeVisible();
     fireEvent.click(within(drawer).getByRole("button", { name: "Cerrar" }));
 
     const recovery = await screen.findByRole("button", {
-      name: "Abrir descarga pendiente",
+      name: "Mostrar descarga: Otome Game Sekai 2 · Ep. 1–12",
     });
-    expect(recovery).toHaveTextContent("Descarga pendiente");
+    expect(recovery).toHaveTextContent("Elige un dispositivo");
 
     fireEvent.click(recovery);
     expect(
-      await screen.findByRole("dialog", { name: "Descargas" }),
+      await screen.findByRole("dialog", { name: "Conectar MyJDownloader" }),
     ).toBeVisible();
+  });
+});
+
+describe("DownloadProvider requests", () => {
+  const episodeOne: DownloadRequest = {
+    slug: "tensei-goblin",
+    title: "Tensei Goblin",
+    episodeNumbers: [1],
+  };
+  const resolved = {
+    data: {
+      packageName: "Tensei Goblin",
+      episodes: [
+        {
+          episodeNumber: 1,
+          audio: "SUB",
+          links: [
+            { provider: "MEGA", url: "https://mega.example/1" },
+            { provider: "PIXELDRAIN", url: "https://pixeldrain.example/1" },
+          ],
+          errorCode: null,
+        },
+      ],
+    },
+  };
+
+  it("names the anime and mirrors in the result", async () => {
+    vi.mocked(apiFetch).mockResolvedValue(resolved);
+    renderProvider();
+
+    act(() => controls.openDownload(episodeOne));
+
+    expect(await screen.findByText("Enviado a JDownloader")).toBeVisible();
+    expect(screen.getByText("Tensei Goblin · Ep. 1")).toBeVisible();
+    expect(
+      screen.getByText(/2 enlaces \(espejos\) de 1 episodio/),
+    ).toBeVisible();
+  });
+
+  it("offers copy and MyJDownloader when Click'n'Load is unreachable", async () => {
+    vi.mocked(apiFetch).mockResolvedValue(resolved);
+    vi.mocked(sendToClickNLoad).mockRejectedValue(
+      new ClickNLoadError("unreachable"),
+    );
+    renderProvider();
+
+    act(() => controls.openDownload(episodeOne));
+
+    expect(
+      await screen.findByText("No se pudo conectar con JDownloader"),
+    ).toBeVisible();
+    expect(screen.getByText(/red local/)).toBeVisible();
+    expect(screen.queryByText(/duplicar/)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Usar MyJDownloader" }),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Copiar enlaces" }));
+
+    await waitFor(() =>
+      expect(copyLinks).toHaveBeenCalledWith([
+        "https://mega.example/1",
+        "https://pixeldrain.example/1",
+      ]),
+    );
+    expect(await screen.findByText("Enlaces copiados")).toBeVisible();
+  });
+
+  it("shows the links when the clipboard is blocked", async () => {
+    localStorage.setItem(
+      "animehub.download-preferences",
+      JSON.stringify({
+        audio: "SUB",
+        providers: ["MEGA"],
+        destination: "COPY",
+      }),
+    );
+    vi.mocked(apiFetch).mockResolvedValue(resolved);
+    vi.mocked(copyLinks).mockResolvedValue(false);
+    renderProvider();
+    await act(async () => undefined);
+
+    act(() => controls.openDownload(episodeOne));
+
+    expect(await screen.findByText("Enlaces listos para copiar")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Ver enlaces" }));
+    const drawer = await screen.findByRole("dialog", {
+      name: "Enlaces de descarga",
+    });
+    expect(within(drawer).getByRole("textbox")).toHaveValue(
+      "https://mega.example/1\nhttps://pixeldrain.example/1",
+    );
+  });
+
+  it("does not resend a request that is still running", async () => {
+    vi.mocked(apiFetch).mockReturnValue(new Promise(() => undefined));
+    renderProvider();
+
+    act(() => controls.openDownload(episodeOne));
+    act(() => controls.openDownload(episodeOne));
+
+    await screen.findByText("Buscando enlaces");
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByText("Tensei Goblin · Ep. 1")).toHaveLength(1);
+    expect(controls.getRequestStatus(episodeOne)).toBe("resolving");
+  });
+
+  it("maps API failures to Spanish copy", async () => {
+    const { ApiResponseError } = await import("@/lib/api/client");
+    vi.mocked(apiFetch).mockRejectedValue(
+      new ApiResponseError(400, "No episodes match the requested scope."),
+    );
+    renderProvider();
+
+    act(() => controls.openDownload(episodeOne));
+
+    expect(await screen.findByText("Solicitud no válida")).toBeVisible();
+    expect(
+      screen.getByText("Ningún episodio coincide con los números indicados."),
+    ).toBeVisible();
+    expect(screen.queryByText(/No episodes match/)).toBeNull();
+  });
+
+  it("sends large selections as an explicit episode list", async () => {
+    vi.mocked(apiFetch).mockImplementation(async (path) => {
+      if (path.endsWith("/download-jobs"))
+        return {
+          data: {
+            jobId: "job-e",
+            accessToken: "token",
+            expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+            missingEpisodeNumbers: [51],
+          },
+        };
+      return new Promise(() => undefined);
+    });
+    renderProvider();
+    const episodeNumbers = Array.from({ length: 51 }, (_, index) => index + 1);
+
+    act(() =>
+      controls.openDownload({
+        slug: "one-piece",
+        title: "One Piece",
+        episodeNumbers,
+      }),
+    );
+
+    expect(
+      await screen.findByText("Se omitió el episodio 51: no existe."),
+    ).toBeVisible();
+    const create = vi
+      .mocked(apiFetch)
+      .mock.calls.find(([path]) => path.endsWith("/download-jobs"));
+    const body = JSON.parse(String(create?.[1]?.body));
+    expect(body).toMatchObject({ scope: "EPISODES", episodeNumbers });
+    expect(body).not.toHaveProperty("from");
+  });
+
+  it("refuses lists beyond what a job accepts", async () => {
+    renderProvider();
+
+    act(() =>
+      controls.openDownload({
+        slug: "one-piece",
+        title: "One Piece",
+        episodeNumbers: Array.from({ length: 5_001 }, (_, index) => index),
+      }),
+    );
+
+    expect(await screen.findByText("Selección demasiado grande")).toBeVisible();
+    expect(apiFetch).not.toHaveBeenCalled();
+  });
+
+  it("sends ranges with ordered bounds and can cancel the job", async () => {
+    vi.mocked(apiFetch).mockImplementation(async (path, init) => {
+      if (path.endsWith("/download-jobs"))
+        return {
+          data: {
+            jobId: "job-9",
+            accessToken: "token",
+            expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+          },
+        };
+      if (path.endsWith("/cancel")) return { data: {} };
+      expect(init?.headers).toEqual({ authorization: "Bearer token" });
+      return jobData({ status: "RUNNING", completedItems: 2, episodes: [] });
+    });
+    renderProvider();
+
+    act(() =>
+      controls.openDownload({ ...range, slug: "one-piece", from: 9, to: 4 }),
+    );
+
+    await screen.findByText("2/12");
+    const create = vi
+      .mocked(apiFetch)
+      .mock.calls.find(([path]) => path.endsWith("/download-jobs"));
+    expect(JSON.parse(String(create?.[1]?.body))).toMatchObject({
+      scope: "RANGE",
+      from: 4,
+      to: 9,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    expect(await screen.findByText("Descarga cancelada")).toBeVisible();
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/download-jobs/job-9/cancel",
+      expect.objectContaining({ method: "POST" }),
+      true,
+    );
+  });
+
+  it("retries only the failed episodes of a partial job", async () => {
+    let retried = false;
+    vi.mocked(apiFetch).mockImplementation(async (path) => {
+      if (path.endsWith("/download-jobs"))
+        return {
+          data: {
+            jobId: "job-p",
+            accessToken: "token",
+            expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+          },
+        };
+      if (path.endsWith("/retry")) {
+        retried = true;
+        return { data: {} };
+      }
+      const episodes = [1, 2, 3].map((episodeNumber) => ({
+        episodeNumber,
+        audio: "SUB",
+        links:
+          episodeNumber === 2 && !retried
+            ? []
+            : [
+                {
+                  provider: "MEGA",
+                  url: `https://mega.example/${episodeNumber}`,
+                },
+              ],
+        errorCode:
+          episodeNumber === 2 && !retried ? "NO_SUPPORTED_LINKS" : null,
+      }));
+      return jobData({
+        status: retried ? "COMPLETED" : "PARTIAL",
+        completedItems: retried ? 3 : 2,
+        failedItems: retried ? 0 : 1,
+        totalItems: 3,
+        episodes,
+      });
+    });
+    renderProvider();
+
+    act(() =>
+      controls.openDownload({ ...range, slug: "one-piece", from: 1, to: 3 }),
+    );
+
+    expect(await screen.findByText("Entrega parcial")).toBeVisible();
+    expect(screen.getByText(/El episodio 2 no tiene enlaces/)).toBeVisible();
+    expect(sendToClickNLoad).toHaveBeenLastCalledWith("Otome Game Sekai 2", [
+      "https://mega.example/1",
+      "https://mega.example/3",
+    ]);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reintentar fallidos" }),
+    );
+
+    expect(await screen.findByText("Enviado a JDownloader")).toBeVisible();
+    expect(sendToClickNLoad).toHaveBeenLastCalledWith("Otome Game Sekai 2", [
+      "https://mega.example/2",
+    ]);
+    expect(toastWith("Entrega parcial")).toBeUndefined();
   });
 });

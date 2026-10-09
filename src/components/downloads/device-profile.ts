@@ -44,10 +44,13 @@ export function isPortableDevice() {
   return getDeviceProfile() === "portable";
 }
 
+/** Phones and tablets can't run JDownloader, so Click'n'Load maps to
+ *  MyJDownloader there; copying links works on every device. */
 export function getEffectiveDestination(
   profile: DeviceProfile,
   storedDestination: DownloadDestination,
 ): DownloadDestination {
-  return profile === "portable" ? "MYJD" : storedDestination;
+  if (profile === "portable" && storedDestination === "CNL") return "MYJD";
+  return storedDestination;
 }
 import type { DownloadDestination } from "./download-types";
