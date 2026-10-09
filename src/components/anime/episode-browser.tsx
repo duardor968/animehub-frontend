@@ -513,7 +513,7 @@ export function EpisodeBrowser({
 
 function BusyIcon({ busy }: { busy: boolean }) {
   return busy ? (
-    <Spinner size="sm" color="current" />
+    <Spinner size="sm" color="current" aria-label="Preparando descarga" />
   ) : (
     <Download size={15} aria-hidden="true" />
   );
@@ -903,7 +903,13 @@ function RangeDownload({
             openDownload(request);
           }}
         >
-          {busy && <Spinner size="sm" color="current" />}
+          {busy && (
+            <Spinner
+              size="sm"
+              color="current"
+              aria-label="Preparando descarga"
+            />
+          )}
           {count > 0
             ? `Descargar ${plural(count, "episodio", "episodios")}`
             : "Descargar rango"}

@@ -50,7 +50,14 @@ function AppToast({ toast }: { toast: QueuedToast<ToastContentValue> }) {
       {indicator === null ? null : (
         <Toast.Indicator variant={variant}>
           {isLoading ? (
-            <Spinner aria-hidden="true" color="current" size="sm" />
+            // Decorative (the title says what is loading); the label only
+            // replaces HeroUI's English default "Loading".
+            <Spinner
+              aria-hidden="true"
+              aria-label="Cargando"
+              color="current"
+              size="sm"
+            />
           ) : (
             indicator
           )}
