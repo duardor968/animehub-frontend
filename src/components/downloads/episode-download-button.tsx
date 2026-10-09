@@ -22,10 +22,10 @@ export function EpisodeDownloadButton({
     <Button
       isIconOnly
       variant="ghost"
-      className={`episode-download-action h-11 w-11 min-w-11 rounded-full bg-accent text-accent-foreground shadow-[0_12px_34px_rgba(47,129,247,.32)] hover:bg-accent-hover active:scale-95 ${className}`}
-      style={pending ? { opacity: 1, transform: "scale(1)" } : undefined}
+      // Pending keeps the button visible even where it normally appears on
+      // hover. `scale` (not `transform`) is what Tailwind's scale-* sets.
+      className={`episode-download-action h-11 w-11 min-w-11 rounded-full bg-accent text-accent-foreground shadow-[0_12px_34px_rgb(31_111_235/0.32)] outline-none hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95 ${className} ${pending ? "!scale-100 !opacity-100" : ""}`}
       aria-label={`Descargar episodio ${episodeNumber} de ${title}`}
-      aria-busy={pending}
       isPending={pending}
       onClick={(event) => {
         event.preventDefault();

@@ -1,7 +1,9 @@
 export type AudioPreference = "SUB" | "DUB";
 export type DownloadProviderId =
   "MEGA" | "PIXELDRAIN" | "MP4UPLOAD" | "ONE_FICHIER";
-export type DownloadDestination = "CNL" | "MYJD";
+/** Where resolved links go: Click'n'Load (local JDownloader), a MyJDownloader
+ *  device, or the clipboard (works everywhere, including phones). */
+export type DownloadDestination = "CNL" | "MYJD" | "COPY";
 
 export interface DownloadPreferences {
   audio: AudioPreference;
@@ -28,4 +30,8 @@ export interface DownloadRequest {
   all?: boolean;
   from?: number;
   to?: number;
+  /** Known episode count for an `all` request, used only for copy. */
+  total?: number;
+  /** Ask the API to re-scrape instead of reusing cached links (retries). */
+  refresh?: boolean;
 }

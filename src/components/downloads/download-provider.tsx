@@ -2,18 +2,12 @@
 
 import {
   Button,
-  Checkbox,
   Drawer,
-  InputGroup,
-  Label,
-  ProgressBar,
-  TextField,
-  ToggleButton,
-  ToggleButtonGroup,
+  ProgressCircle,
   toast,
   useOverlayState,
 } from "@heroui/react";
-import { RefreshCw, Send, X } from "lucide-react";
+import { Download, X } from "lucide-react";
 import {
   createContext,
   useCallback,
@@ -24,19 +18,45 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ApiResponseError, ApiTimeoutError, apiFetch } from "@/lib/api/client";
+import { ApiResponseError, apiFetch } from "@/lib/api/client";
+import { plural } from "@/lib/format";
+import {
+  ActivityToastBody,
+  activeStatuses,
+  deliverableEpisodes,
+  presentActivity,
+  unfinishedStatuses,
+  type Activity,
+  type ActivityAction,
+  type ResolvedEpisode,
+  type SavedJob,
+} from "./download-activity";
 import {
   connectMyJd,
+  copyLinks,
   disconnectMyJd,
   isMyJdConnected,
   listMyJdDevices,
-  providerLabels,
   sendToClickNLoad,
   sendToMyJd,
 } from "./download-client";
 import {
+  collectUrls,
+  describeLinks,
+  describeRequest,
+  failedEpisodeNumbers,
+  requestEpisodeCount,
+  requestKey,
+} from "./download-copy";
+import {
+  ClickNLoadError,
+  describeApiError,
+  describeClickNLoadError,
+  describeMyJdError,
+} from "./download-errors";
+import {
   getDeviceProfile,
-  isPortableDevice,
+  getEffectiveDestination,
   type DeviceProfile,
 } from "./device-profile";
 import {
@@ -48,45 +68,36 @@ import {
   saveActiveDownloadJobs,
   type PersistedDownloadJob,
 } from "./download-job-storage";
+import {
+  DrawerSummary,
+  LinksPanel,
+  MyJdPanel,
+  PreferencesPanel,
+  type MyJdDevice,
+} from "./download-panels";
 import type {
   DownloadActivityStatus,
+  DownloadDestination,
   DownloadPreferences,
   DownloadProviderId,
   DownloadRequest,
 } from "./download-types";
 
-interface ResolvedEpisode {
-  episodeNumber: number;
-  audio: "SUB" | "DUB";
-  links: Array<{ provider: DownloadProviderId; url: string }>;
-  errorCode: string | null;
-}
+/** The resolve endpoint accepts up to 50 episodes; more need a background job. */
+export const MAX_QUICK_EPISODES = 50;
 
-interface SavedJob {
-  jobId: string;
-  accessToken: string;
-  expiresAt: string;
-}
+/**
+ * Whether the API accepts `scope: "EPISODES"` jobs with an explicit list.
+ * Until it does, selections above MAX_QUICK_EPISODES are refused: a RANGE job
+ * without bounds would download the whole series.
+ */
+export const SUPPORTS_EPISODES_SCOPE = false;
 
-interface Activity {
-  id: string;
-  request: DownloadRequest;
-  status: DownloadActivityStatus;
-  label: string;
-  detail: string;
-  current: number;
-  total: number;
-  packageName: string;
-  episodes: ResolvedEpisode[];
-  receipt?: SavedJob;
-  destination: DownloadPreferences["destination"];
-  createdAt: number;
-  deliveryAttempted?: boolean;
-}
-
-interface MyJdDevice {
-  id: string;
-  name: string;
+export class SelectionTooLargeError extends Error {
+  constructor() {
+    super(`Selection above ${MAX_QUICK_EPISODES} episodes`);
+    this.name = "SelectionTooLargeError";
+  }
 }
 
 interface DownloadContextValue {
@@ -95,9 +106,16 @@ interface DownloadContextValue {
     slug: string,
     episodeNumber: number,
   ) => DownloadActivityStatus | undefined;
+  /** Status of the latest activity for exactly this request, if any. */
+  getRequestStatus: (
+    request: DownloadRequest,
+  ) => DownloadActivityStatus | undefined;
   openSettings: () => void;
   preferences: DownloadPreferences;
   deviceProfile: DeviceProfile;
+  /** Fixed bottom stack where page-level bars (episode selection) portal in,
+   *  so they never overlap the pending-download button. */
+  dockSlot: HTMLElement | null;
 }
 
 const defaults: DownloadPreferences = {
@@ -109,14 +127,34 @@ const storageKey = "animehub.download-preferences";
 const selectedDeviceStorageKey = "animehub.myjd.device";
 const DownloadContext = createContext<DownloadContextValue | null>(null);
 
-function requiresBackgroundJob(request: DownloadRequest, total: number) {
-  return (
-    request.all ||
-    (!request.episodeNumbers &&
-      request.from !== undefined &&
-      request.to !== undefined) ||
-    total > 50
-  );
+function requiresBackgroundJob(request: DownloadRequest) {
+  if (request.all) return true;
+  if (request.episodeNumbers)
+    return request.episodeNumbers.length > MAX_QUICK_EPISODES;
+  return request.from !== undefined && request.to !== undefined;
+}
+
+/** Body for POST /download-jobs. Never sends a RANGE without both bounds:
+ *  the API reads a missing bound as "to the end of the series". */
+function jobBody(request: DownloadRequest, preferences: DownloadPreferences) {
+  const common = { audio: preferences.audio, providers: preferences.providers };
+  if (request.all) return { scope: "ALL", ...common };
+  if (request.episodeNumbers) {
+    if (!SUPPORTS_EPISODES_SCOPE) throw new SelectionTooLargeError();
+    return {
+      scope: "EPISODES",
+      episodeNumbers: [...new Set(request.episodeNumbers)],
+      ...common,
+    };
+  }
+  if (request.from === undefined || request.to === undefined)
+    throw new SelectionTooLargeError();
+  return {
+    scope: "RANGE",
+    from: Math.min(request.from, request.to),
+    to: Math.max(request.from, request.to),
+    ...common,
+  };
 }
 
 const resumableStatuses = new Set<DownloadActivityStatus>([
@@ -178,7 +216,16 @@ function persistedJobFromActivity(
     current: activity.current,
     total: activity.total,
     deliveryAttempted: activity.deliveryAttempted === true,
+    deliveryFailed: activity.deliveryFailed === true,
   };
+}
+
+function isUserAbort(signal: AbortSignal | undefined) {
+  return Boolean(signal?.aborted && signal.reason === "user-cancel");
+}
+
+function findIn(list: Activity[], id: string | null | undefined) {
+  return id ? list.find((activity) => activity.id === id) : undefined;
 }
 
 export function useDownloads() {
@@ -187,45 +234,35 @@ export function useDownloads() {
   return value;
 }
 
+type DrawerMode = "settings" | "devices" | "links";
+
 export function DownloadProvider({ children }: { children: ReactNode }) {
   const [preferences, setPreferences] = useState(defaults);
   const preferencesRef = useRef(defaults);
-  const [mode, setMode] = useState<"settings" | "devices">("settings");
+  const [mode, setMode] = useState<DrawerMode>("settings");
   const [activities, setActivities] = useState<Activity[]>([]);
   const activitiesRef = useRef<Activity[]>([]);
-  const [dismissedResumableIds, setDismissedResumableIds] = useState<
-    Set<string>
-  >(() => new Set());
-  const dismissedResumableIdsRef = useRef(new Set<string>());
-  const setActivityDismissed = useCallback(
-    (activityId: string, dismissed: boolean) => {
-      const next = new Set(dismissedResumableIdsRef.current);
-      if (dismissed) next.add(activityId);
-      else next.delete(activityId);
-      dismissedResumableIdsRef.current = next;
-      setDismissedResumableIds(next);
-    },
-    [],
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(
+    () => new Set(),
   );
+  const dismissedIdsRef = useRef(new Set<string>());
   const toastIds = useRef(new Map<string, string>());
-  const deliveryActionRef = useRef<(activityId: string) => void>(() => {});
+  const actionRef = useRef<(id: string, action: ActivityAction) => void>(
+    () => {},
+  );
   const publishActivityRef = useRef<(activity: Activity) => void>(() => {});
   const pollJobRef = useRef<
-    (
-      id: string,
-      receipt: SavedJob,
-      destination: DownloadPreferences["destination"],
-      preferredDeviceId?: string,
-      deferDelivery?: boolean,
-      deliveryMayHaveSucceeded?: boolean,
-    ) => Promise<void>
+    (id: string, receipt: SavedJob, deferDelivery?: boolean) => Promise<void>
   >(async () => {});
   const pollSessionsRef = useRef(new Map<string, symbol>());
   const pollTimeoutsRef = useRef(new Map<string, number>());
   const deliverySessionsRef = useRef(new Set<string>());
+  const abortersRef = useRef(new Map<string, AbortController>());
   const mountedRef = useRef(false);
   const [devices, setDevices] = useState<MyJdDevice[]>([]);
   const [deviceActivityId, setDeviceActivityId] = useState<string | null>(null);
+  const deviceActivityIdRef = useRef<string | null>(null);
+  const [linksActivityId, setLinksActivityId] = useState<string | null>(null);
   const [deviceProfile, setDeviceProfile] = useState<DeviceProfile>("unknown");
   const deviceProfileRef = useRef<DeviceProfile>("unknown");
   const [pendingRequest, setPendingRequest] = useState<DownloadRequest | null>(
@@ -235,21 +272,38 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const selectedDeviceIdRef = useRef<string | null>(null);
   const [myJdConnected, setMyJdConnected] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [deviceError, setDeviceError] = useState<string | null>(null);
   const [devicesLoading, setDevicesLoading] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [dockSlot, setDockSlot] = useState<HTMLElement | null>(null);
+  const drawerOpenRef = useRef(false);
+
+  const setActivityDismissed = useCallback(
+    (activityId: string, dismissed: boolean) => {
+      if (dismissedIdsRef.current.has(activityId) === dismissed) return;
+      const next = new Set(dismissedIdsRef.current);
+      if (dismissed) next.add(activityId);
+      else next.delete(activityId);
+      dismissedIdsRef.current = next;
+      setDismissedIds(next);
+    },
+    [],
+  );
+
   const drawer = useOverlayState({
     onOpenChange: (isOpen) => {
-      if (isOpen || deviceProfileRef.current !== "portable") return;
-      const waitingActivity = activitiesRef.current.find(
+      drawerOpenRef.current = isOpen;
+      if (isOpen) return;
+      // Closing the picker leaves the job recoverable from the dock button.
+      const waiting = activitiesRef.current.find(
         (activity) =>
-          activity.id === deviceActivityId &&
+          activity.id === deviceActivityIdRef.current &&
           activity.status === "waiting-device",
       );
-      if (waitingActivity) setActivityDismissed(waitingActivity.id, true);
+      if (waiting) setActivityDismissed(waiting.id, true);
       pendingRequestRef.current = null;
       setPendingRequest(null);
+      deviceActivityIdRef.current = null;
       setDeviceActivityId(null);
       setDeviceError(null);
     },
@@ -281,10 +335,13 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     const pollSessions = pollSessionsRef.current;
     const deliverySessions = deliverySessionsRef.current;
     const activeToastIds = toastIds.current;
+    const aborters = abortersRef.current;
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       for (const id of [...pollSessions.keys()]) stopPolling(id);
+      for (const controller of aborters.values()) controller.abort();
+      aborters.clear();
       deliverySessions.clear();
       const visibleToasts = [...activeToastIds.values()];
       activeToastIds.clear();
@@ -292,117 +349,98 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     };
   }, [stopPolling]);
 
+  const closeToast = useCallback((activityId: string) => {
+    const toastId = toastIds.current.get(activityId);
+    if (!toastId) return;
+    // Forget it first so the close callback treats this as programmatic.
+    toastIds.current.delete(activityId);
+    toast.close(toastId);
+  }, []);
+
   const removeActivity = useCallback(
     (id: string) => {
       stopPolling(id);
+      abortersRef.current.get(id)?.abort("user-cancel");
+      abortersRef.current.delete(id);
       setActivityDismissed(id, false);
+      closeToast(id);
       replaceActivities(
         activitiesRef.current.filter((activity) => activity.id !== id),
       );
-      toastIds.current.delete(id);
     },
-    [replaceActivities, setActivityDismissed, stopPolling],
+    [closeToast, replaceActivities, setActivityDismissed, stopPolling],
   );
 
+  const handleToastClosed = useCallback(
+    (activityId: string, toastId: string) => {
+      if (toastIds.current.get(activityId) !== toastId) return;
+      toastIds.current.delete(activityId);
+      const activity = activitiesRef.current.find(
+        (entry) => entry.id === activityId,
+      );
+      if (!activity) return;
+      // Unfinished work stays reachable from the dock button.
+      if (unfinishedStatuses.has(activity.status)) {
+        setActivityDismissed(activity.id, true);
+        return;
+      }
+      removeActivity(activity.id);
+    },
+    [removeActivity, setActivityDismissed],
+  );
+
+  /** Shows or updates the activity's single toast in place. */
   const publishActivity = useCallback(
     (activity: Activity) => {
       if (!mountedRef.current) return;
-      const isQuietlyRunning = ["processing", "sending"].includes(
-        activity.status,
-      );
-      if (isQuietlyRunning && dismissedResumableIdsRef.current.has(activity.id))
+      const quietlyRunning = activeStatuses.has(activity.status);
+      if (quietlyRunning && dismissedIdsRef.current.has(activity.id)) return;
+      // While the device picker is open it is the UI for this activity.
+      if (
+        activity.status === "waiting-device" &&
+        drawerOpenRef.current &&
+        deviceActivityIdRef.current === activity.id
+      ) {
+        closeToast(activity.id);
         return;
-      const previous = toastIds.current.get(activity.id);
-      if (previous) {
-        toastIds.current.delete(activity.id);
-        toast.close(previous);
       }
       setActivityDismissed(activity.id, false);
-      const active = ["resolving", "processing", "sending"].includes(
-        activity.status,
-      );
-      const description = (
-        <div className="flex min-w-0 flex-col gap-2">
-          <span className="text-sm text-muted">{activity.detail}</span>
-          {activity.total > 0 && active && (
-            <ProgressBar
-              aria-label={`Progreso: ${activity.current} de ${activity.total}`}
-              value={activity.current}
-              maxValue={activity.total}
-              color="accent"
-            >
-              <ProgressBar.Track>
-                <ProgressBar.Fill />
-              </ProgressBar.Track>
-            </ProgressBar>
-          )}
-          {activity.status === "ready" && (
-            <Button
-              variant="secondary"
-              className="min-h-10 self-start rounded-lg px-4 font-semibold"
-              onPress={() => deliveryActionRef.current(activity.id)}
-            >
-              <Send size={15} />
-              {activity.deliveryAttempted
-                ? "Reintentar entrega"
-                : "Entregar ahora"}
-            </Button>
-          )}
-        </div>
-      );
-      let toastId = "";
+      const view = presentActivity(activity, {
+        portable: deviceProfileRef.current === "portable",
+      });
+      const existing = toastIds.current.get(activity.id);
+      const holder = { id: existing ?? "" };
       const options = {
-        description,
-        isLoading: active,
-        timeout:
-          active ||
-          activity.status === "ready" ||
-          (activity.status === "error" &&
-            deviceProfileRef.current !== "portable")
-            ? 0
-            : activity.status === "error"
-              ? 8_000
-              : 6_000,
-        onClose: () => {
-          if (toastIds.current.get(activity.id) !== toastId) return;
-          toastIds.current.delete(activity.id);
-          if (isResumableActivity(activity)) {
-            setActivityDismissed(activity.id, true);
-            return;
-          }
-          if (!active) removeActivity(activity.id);
-        },
+        description: (
+          <ActivityToastBody
+            view={view}
+            onAction={(action) => actionRef.current(activity.id, action)}
+          />
+        ),
+        variant: view.variant,
+        isLoading: view.isLoading,
+        timeout: view.timeout,
+        onClose: () => handleToastClosed(activity.id, holder.id),
       };
-      toastId =
-        activity.status === "error"
-          ? toast.danger(activity.label, options)
-          : activity.status === "partial"
-            ? toast.warning(activity.label, options)
-            : activity.status === "handed-off" || activity.status === "success"
-              ? toast.success(activity.label, options)
-              : activity.status === "cancelled"
-                ? toast.warning(activity.label, options)
-                : toast.info(activity.label, options);
-      toastIds.current.set(activity.id, toastId);
+      holder.id = existing
+        ? toast.update(existing, view.title, options)
+        : toast(view.title, options);
+      toastIds.current.set(activity.id, holder.id);
     },
-    [removeActivity, setActivityDismissed],
+    [closeToast, handleToastClosed, setActivityDismissed],
   );
 
   const addActivity = useCallback(
     (activity: Activity) => {
       if (!mountedRef.current) return;
       replaceActivities([activity, ...activitiesRef.current]);
-      // A background job has no button-local pending state and must remain
-      // visible even when the requested range is small.
-      if (requiresBackgroundJob(activity.request, activity.total)) {
-        publishActivity(activity);
-      }
+      publishActivity(activity);
     },
     [publishActivity, replaceActivities],
   );
 
   const updateActivity = useCallback(
-    (id: string, changes: Partial<Activity>) => {
+    (id: string, changes: Partial<Activity>, publish = true) => {
       if (!mountedRef.current) return;
       const existing = activitiesRef.current.find(
         (activity) => activity.id === id,
@@ -414,22 +452,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           activity.id === id ? updated : activity,
         ),
       );
-      const active = ["resolving", "processing", "sending"].includes(
-        updated.status,
-      );
-      const quickOperation = !requiresBackgroundJob(
-        updated.request,
-        updated.total,
-      );
-      // Quick operations communicate pending state in the download button;
-      // the toast appears only for their terminal result. This prevents a
-      // transient loading toast from racing a near-instant success/error.
-      if (
-        updated.status === "waiting-device" &&
-        deviceProfileRef.current === "portable"
-      )
-        return;
-      if (!active || !quickOperation) publishActivity(updated);
+      if (publish) publishActivity(updated);
     },
     [publishActivity, replaceActivities],
   );
@@ -460,33 +483,29 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
-      const storage = getBrowserStorage("localStorage");
-      if (!storage) return;
-      let stored: string | null = null;
+      const stored = readBrowserStorage("localStorage", storageKey);
+      if (!stored) return;
       try {
-        stored = storage.getItem(storageKey);
+        const legacy = JSON.parse(stored) as Partial<DownloadPreferences> & {
+          quickSend?: boolean;
+          confirmSingleEpisode?: boolean;
+        };
+        const destination: DownloadDestination =
+          legacy.destination === "MYJD" || legacy.destination === "COPY"
+            ? legacy.destination
+            : defaults.destination;
+        const next: DownloadPreferences = {
+          audio: legacy.audio === "DUB" ? "DUB" : defaults.audio,
+          providers: legacy.providers?.length
+            ? legacy.providers
+            : defaults.providers,
+          destination,
+        };
+        preferencesRef.current = next;
+        setPreferences(next);
+        writeBrowserStorage("localStorage", storageKey, JSON.stringify(next));
       } catch {
-        return;
-      }
-      if (stored) {
-        try {
-          const legacy = JSON.parse(stored) as Partial<DownloadPreferences> & {
-            quickSend?: boolean;
-            confirmSingleEpisode?: boolean;
-          };
-          const next: DownloadPreferences = {
-            audio: legacy.audio ?? defaults.audio,
-            providers: legacy.providers?.length
-              ? legacy.providers
-              : defaults.providers,
-            destination: legacy.destination ?? defaults.destination,
-          };
-          preferencesRef.current = next;
-          setPreferences(next);
-          writeBrowserStorage("localStorage", storageKey, JSON.stringify(next));
-        } catch {
-          writeBrowserStorage("localStorage", storageKey, null);
-        }
+        writeBrowserStorage("localStorage", storageKey, null);
       }
     });
     return () => {
@@ -524,25 +543,26 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       await disconnectMyJd().catch(() => undefined);
       setMyJdConnected(false);
       setDevices([]);
-      setDeviceError(
-        error instanceof Error
-          ? error.message
-          : "No se pudieron consultar los dispositivos.",
-      );
+      setDeviceError(describeMyJdError(error));
       return [] as MyJdDevice[];
     } finally {
       setDevicesLoading(false);
     }
   }, []);
 
-  const openPortableDevicePanel = useCallback(
-    (request: DownloadRequest | null, error?: string) => {
-      pendingRequestRef.current = request;
-      setPendingRequest(request);
-      setDeviceActivityId(null);
+  const showDevicePanel = useCallback(
+    (
+      target: { request?: DownloadRequest; activityId?: string },
+      error?: string,
+    ) => {
+      pendingRequestRef.current = target.request ?? null;
+      setPendingRequest(target.request ?? null);
+      deviceActivityIdRef.current = target.activityId ?? null;
+      setDeviceActivityId(target.activityId ?? null);
       setDeviceError(error ?? null);
       setMyJdConnected(isMyJdConnected());
       setMode("devices");
+      drawerOpenRef.current = true;
       drawer.open();
       if (isMyJdConnected()) void refreshDevices(Boolean(error));
     },
@@ -550,125 +570,140 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   );
 
   const requestDevice = useCallback(
-    async (activityId: string, error?: string) => {
-      await refreshDevices();
-      setDeviceActivityId(activityId);
-      pendingRequestRef.current = null;
-      setPendingRequest(null);
-      setDeviceError(error ?? null);
-      setMode("devices");
-      drawer.open();
+    (activityId: string, error?: string) => {
+      showDevicePanel({ activityId }, error);
       updateActivity(activityId, {
         status: "waiting-device",
-        label: "Elige un dispositivo",
-        detail: "Este destino necesita un dispositivo de MyJDownloader",
+        destination: "MYJD",
+        failure: undefined,
       });
     },
-    [drawer, refreshDevices, updateActivity],
+    [showDevicePanel, updateActivity],
+  );
+
+  const showLinks = useCallback(
+    (activityId: string) => {
+      setLinksActivityId(activityId);
+      setMode("links");
+      drawerOpenRef.current = true;
+      drawer.open();
+    },
+    [drawer],
   );
 
   const deliver = useCallback(
     async (
       id: string,
-      packageName: string,
-      episodes: ResolvedEpisode[],
-      destination: DownloadPreferences["destination"],
-      failed = 0,
-      preferredDeviceId?: string,
+      overrides: {
+        destination?: DownloadDestination;
+        deviceId?: string;
+      } = {},
     ) => {
-      const urls = episodes.flatMap((episode) =>
-        episode.links.map((link) => link.url),
-      );
+      const activity = findIn(activitiesRef.current, id);
+      if (!activity) return;
+      const destination = overrides.destination ?? activity.destination;
+      const episodes = deliverableEpisodes(activity);
+      const urls = collectUrls(episodes);
       if (!urls.length) {
         updateActivity(id, {
-          receipt: undefined,
+          receipt: activity.status === "partial" ? activity.receipt : undefined,
           status: "error",
-          label: "Sin enlaces compatibles",
-          detail: "No se encontraron espejos para la selección",
-          episodes,
+          noLinks: true,
+          destination,
         });
         return;
       }
+      const failedNumbers = failedEpisodeNumbers(episodes);
+      const failedCount = Math.max(
+        failedNumbers.length,
+        activity.onlyEpisodes ? 0 : (activity.failedCount ?? 0),
+      );
+      const finish = (via: DownloadDestination) =>
+        updateActivity(id, {
+          // Keep the job receipt while episodes failed so they can be retried.
+          receipt: failedCount > 0 ? activity.receipt : undefined,
+          status: failedCount > 0 ? "partial" : "handed-off",
+          deliveredVia: via,
+          destination,
+          deliveryFailed: false,
+          failure: undefined,
+          interrupted: false,
+          copyBlocked: false,
+        });
+
+      if (deliverySessionsRef.current.has(id)) return;
+
+      if (destination === "COPY") {
+        const copied = await copyLinks(urls);
+        if (copied) finish("COPY");
+        else
+          updateActivity(id, {
+            status: "ready",
+            destination,
+            copyBlocked: true,
+            failure: undefined,
+          });
+        return;
+      }
+
       if (destination === "MYJD") {
-        updateActivity(id, { packageName, episodes });
-        if (!preferredDeviceId) {
-          await requestDevice(id);
+        const deviceId = overrides.deviceId ?? selectedDeviceIdRef.current;
+        if (!deviceId || !isMyJdConnected()) {
+          requestDevice(id);
           return;
         }
-        if (deliverySessionsRef.current.has(id)) return;
         deliverySessionsRef.current.add(id);
         updateActivity(id, {
           status: "sending",
-          label: "Enviando a MyJDownloader",
-          detail: "Conectando con el dispositivo",
+          destination,
           deliveryAttempted: true,
+          deliveryFailed: false,
+          failure: undefined,
         });
         try {
-          await sendToMyJd(preferredDeviceId, packageName, urls);
-          updateActivity(id, {
-            receipt: undefined,
-            status: "handed-off",
-            label: "Solicitud aceptada por MyJDownloader",
-            detail: `${urls.length} enlaces enviados al dispositivo`,
-          });
+          await sendToMyJd(deviceId, activity.packageName, urls);
+          finish("MYJD");
         } catch (error) {
-          rememberDevice(null);
-          await requestDevice(
+          if (deviceProfileRef.current === "portable") rememberDevice(null);
+          updateActivity(
             id,
-            error instanceof Error
-              ? error.message
-              : "El dispositivo ya no está disponible.",
+            { deliveryFailed: true, deliveryAttempted: false },
+            false,
           );
+          requestDevice(id, describeMyJdError(error));
         } finally {
           deliverySessionsRef.current.delete(id);
         }
         return;
       }
-      if (deliverySessionsRef.current.has(id)) return;
+
       deliverySessionsRef.current.add(id);
       updateActivity(id, {
         status: "sending",
-        label: "Enviando a JDownloader",
-        detail: "Entregando los enlaces a LinkGrabber",
-        packageName,
-        episodes,
+        destination,
         deliveryAttempted: true,
+        deliveryFailed: false,
+        failure: undefined,
+        interrupted: false,
       });
       try {
-        await sendToClickNLoad(packageName, urls);
+        await sendToClickNLoad(activity.packageName, urls);
       } catch (error) {
+        const uncertain =
+          error instanceof ClickNLoadError && error.maybeDelivered;
         updateActivity(id, {
           status: "ready",
-          label: "Entrega sin confirmar",
-          detail:
-            error instanceof Error
-              ? `${error.message} Reintentar puede duplicar enlaces.`
-              : "JDownloader no confirmó la entrega; reintentar puede duplicar enlaces.",
-          episodes,
-          packageName,
+          failure: describeClickNLoadError(error),
+          // A refused connection proves nothing was delivered; a lost reply
+          // after sending stays "attempted" so a reload warns about duplicates.
+          deliveryFailed: !uncertain,
+          deliveryAttempted: uncertain,
         });
         return;
       } finally {
         deliverySessionsRef.current.delete(id);
       }
-      const failedCount = Math.max(
-        failed,
-        episodes.filter((episode) => episode.errorCode).length,
-      );
-      updateActivity(id, {
-        receipt: undefined,
-        status: failedCount > 0 ? "partial" : "handed-off",
-        label:
-          failedCount > 0
-            ? "Entrega parcial"
-            : "Solicitud aceptada por JDownloader",
-        detail:
-          failedCount > 0
-            ? `${urls.length} enlaces entregados; ${failedCount} episodios requieren atención`
-            : `${urls.length} enlaces añadidos a LinkGrabber`,
-        episodes,
-        packageName,
-      });
+      finish("CNL");
     },
     [rememberDevice, requestDevice, updateActivity],
   );
@@ -677,10 +712,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     async function startPolling(
       id: string,
       receipt: SavedJob,
-      destination: DownloadPreferences["destination"],
-      preferredDeviceId?: string,
       deferDelivery = false,
-      deliveryMayHaveSucceeded = false,
     ) {
       stopPolling(id);
       const session = Symbol(receipt.jobId);
@@ -704,8 +736,10 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           updateActivity(id, {
             receipt: undefined,
             status: "error",
-            label: "La descarga expiró",
-            detail: "Inicia la descarga de nuevo para obtener enlaces actuales",
+            failure: {
+              title: "La descarga caducó",
+              detail: "Vuelve a iniciarla para obtener enlaces actuales.",
+            },
           });
           return;
         }
@@ -727,62 +761,56 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           if (!isCurrentSession()) return;
           const job = response.data;
           const processed = job.completedItems + job.failedItems;
-          updateActivity(id, {
-            status: "processing",
-            label: "Resolviendo episodios",
-            detail: `${processed} de ${job.totalItems} procesados`,
-            current: processed,
-            total: job.totalItems,
-            episodes: job.episodes,
-            packageName: job.packageName,
-          });
-          if (
-            ["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"].includes(job.status)
-          ) {
-            stopPolling(id);
-            if (job.status === "CANCELLED") {
-              updateActivity(id, {
-                receipt: undefined,
-                status: "cancelled",
-                label: "Trabajo cancelado",
-                detail: "La operación se detuvo",
-              });
-              return;
-            }
-            const availableLinks = job.episodes.reduce(
-              (total, episode) => total + episode.links.length,
-              0,
-            );
-            if (deferDelivery && availableLinks > 0) {
-              updateActivity(id, {
-                status: "ready",
-                label: deliveryMayHaveSucceeded
-                  ? "Entrega sin confirmar"
-                  : "Listo para entregar",
-                detail: deliveryMayHaveSucceeded
-                  ? "La pestaña se recargó durante el envío; reintentar puede duplicar enlaces"
-                  : destination === "MYJD"
-                    ? "Conecta o elige un dispositivo para enviar los enlaces"
-                    : "Confirma para enviar los enlaces a JDownloader",
-                current: processed,
-                total: job.totalItems,
-                episodes: job.episodes,
-                packageName: job.packageName,
-                deliveryAttempted: deliveryMayHaveSucceeded,
-              });
-              return;
-            }
-            await deliver(
-              id,
-              job.packageName,
-              job.episodes,
-              destination,
-              job.failedItems,
-              preferredDeviceId,
-            );
+          const finished = [
+            "COMPLETED",
+            "PARTIAL",
+            "FAILED",
+            "CANCELLED",
+          ].includes(job.status);
+          updateActivity(
+            id,
+            {
+              status: "processing",
+              reconnecting: false,
+              restored: false,
+              current: processed,
+              total: job.totalItems,
+              episodes: job.episodes,
+              packageName: job.packageName,
+              failedCount: job.failedItems,
+            },
+            !finished,
+          );
+          if (!finished) {
+            scheduleNextPoll(1_250);
             return;
           }
-          scheduleNextPoll(1_250);
+          stopPolling(id);
+          if (job.status === "CANCELLED") {
+            updateActivity(id, {
+              receipt: undefined,
+              status: "cancelled",
+              cancelling: false,
+            });
+            return;
+          }
+          const activity = findIn(activitiesRef.current, id);
+          const deliverable = activity
+            ? collectUrls(deliverableEpisodes(activity))
+            : [];
+          if (deferDelivery && deliverable.length > 0 && activity) {
+            const interrupted =
+              activity.deliveryAttempted === true &&
+              activity.deliveryFailed !== true;
+            updateActivity(id, {
+              status: "ready",
+              retrying: false,
+              interrupted,
+            });
+            return;
+          }
+          updateActivity(id, { retrying: false }, false);
+          await deliver(id);
         } catch (error) {
           if (!isCurrentSession()) return;
           const capabilityRejected =
@@ -796,17 +824,15 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
             updateActivity(id, {
               receipt: undefined,
               status: "error",
-              label: "La descarga ya no está disponible",
-              detail:
-                "La autorización expiró. Inicia la descarga de nuevo para continuar.",
+              failure: {
+                title: "La descarga ya no está disponible",
+                detail:
+                  "La autorización caducó. Vuelve a iniciar la descarga para continuar.",
+              },
             });
             return;
           }
-          updateActivity(id, {
-            status: "processing",
-            label: "Reconectando con la descarga",
-            detail: "Conservamos el trabajo y volveremos a intentarlo",
-          });
+          updateActivity(id, { status: "processing", reconnecting: true });
           scheduleNextPoll(3_000);
         }
       }
@@ -828,18 +854,21 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     if (restoredJobs.length === 0) return;
     const restoredActivities = restoredJobs.map((job): Activity => ({
       id: job.id,
+      key: requestKey(job.request),
       request: job.request,
       status: "processing",
-      label: "Reanudando descarga",
-      detail: job.request.title,
       current: job.current,
       total: job.total,
       packageName: job.request.title,
       episodes: [],
       receipt: job.receipt,
       destination: job.destination,
+      preferredAudio: preferencesRef.current.audio,
       createdAt: job.createdAt,
+      isJob: true,
+      restored: true,
       deliveryAttempted: job.deliveryAttempted,
+      deliveryFailed: job.deliveryFailed,
     }));
     const restoredIds = new Set(
       restoredActivities.map((activity) => activity.id),
@@ -857,10 +886,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         void pollJobRef.current(
           activity.id,
           activity.receipt as SavedJob,
-          activity.destination,
-          undefined,
           true,
-          activity.deliveryAttempted === true,
         );
       }
     });
@@ -870,118 +896,76 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     };
   }, [replaceActivities, stopPolling]);
 
-  const deliverReadyActivity = useCallback(
-    (activityId: string) => {
-      const activity = activitiesRef.current.find(
-        (entry) => entry.id === activityId && entry.status === "ready",
-      );
-      if (!activity) return;
-      if (activity.destination === "MYJD") {
-        const deviceId = selectedDeviceIdRef.current;
-        if (!isMyJdConnected() || !deviceId) {
-          void requestDevice(activity.id);
-          return;
-        }
-        void deliver(
-          activity.id,
-          activity.packageName,
-          activity.episodes,
-          activity.destination,
-          0,
-          deviceId,
-        );
-        return;
-      }
-      void deliver(
-        activity.id,
-        activity.packageName,
-        activity.episodes,
-        activity.destination,
-      );
-    },
-    [deliver, requestDevice],
-  );
-  useEffect(() => {
-    deliveryActionRef.current = deliverReadyActivity;
-    return () => {
-      deliveryActionRef.current = () => {};
-    };
-  }, [deliverReadyActivity]);
-
-  const reopenDismissedActivity = useCallback(
-    (activityId: string) => {
-      const activity = activitiesRef.current.find(
-        (entry) => entry.id === activityId && isResumableActivity(entry),
-      );
-      if (!activity) return;
-      setActivityDismissed(activity.id, false);
-      if (activity.status === "waiting-device") {
-        void requestDevice(activity.id);
-        return;
-      }
-      publishActivity(activity);
-    },
-    [publishActivity, requestDevice, setActivityDismissed],
-  );
-
   const startOperation = useCallback(
     async (
       next: DownloadRequest,
       options?: {
-        destination?: DownloadPreferences["destination"];
+        destination?: DownloadDestination;
         preferredDeviceId?: string;
       },
     ) => {
       const snapshot = preferencesRef.current;
-      const destination = options?.destination ?? snapshot.destination;
+      const destination =
+        options?.destination ??
+        getEffectiveDestination(deviceProfileRef.current, snapshot.destination);
+      const key = requestKey(next);
+      const existing = activitiesRef.current.find(
+        (activity) => activity.key === key,
+      );
+      if (existing) {
+        // The same request is still running: surface it instead of sending
+        // a duplicate. A finished one is replaced by the new attempt.
+        if (activeStatuses.has(existing.status)) {
+          setActivityDismissed(existing.id, false);
+          publishActivity(existing);
+          return;
+        }
+        removeActivity(existing.id);
+      }
       const id = crypto.randomUUID();
-      const count =
-        next.episodeNumbers?.length ??
-        (next.from !== undefined && next.to !== undefined
-          ? next.to - next.from + 1
-          : 0);
+      const isJob = requiresBackgroundJob(next);
+      // One controller serves the user's Cancel and the 25 s deadline.
+      const controller = new AbortController();
+      const deadline = window.setTimeout(
+        () =>
+          controller.abort(
+            new DOMException("Resolve deadline exceeded", "TimeoutError"),
+          ),
+        25_000,
+      );
+      abortersRef.current.set(id, controller);
       addActivity({
         id,
+        key,
         request: next,
         status: "resolving",
-        label:
-          next.all || count > 50 ? "Preparando trabajo" : "Resolviendo espejos",
-        detail: next.title,
         current: 0,
-        total: count,
+        total: requestEpisodeCount(next),
         packageName: next.title,
         episodes: [],
         destination,
+        preferredAudio: snapshot.audio,
         createdAt: Date.now(),
+        isJob,
       });
+      const signal = controller.signal;
       try {
-        const requiresJob = requiresBackgroundJob(next, count);
-        if (requiresJob) {
+        if (isJob) {
           const response = await apiFetch<{
             data: { jobId: string; accessToken: string; expiresAt: string };
           }>(
             `/anime/${encodeURIComponent(next.slug)}/download-jobs`,
             {
               method: "POST",
-              signal: AbortSignal.timeout(25_000),
-              body: JSON.stringify({
-                scope: next.all ? "ALL" : "RANGE",
-                from: next.from,
-                to: next.to,
-                audio: snapshot.audio,
-                providers: snapshot.providers,
-              }),
+              signal,
+              body: JSON.stringify(jobBody(next, snapshot)),
             },
             true,
           );
+          abortersRef.current.delete(id);
           const receipt = response.data;
-          updateActivity(id, {
-            receipt,
-            status: "processing",
-            label: "Resolviendo episodios",
-            detail: `0 de ${count || "todos"} procesados`,
-          });
-          void pollJob(id, receipt, destination, options?.preferredDeviceId);
+          updateActivity(id, { receipt, status: "processing" });
+          void pollJob(id, receipt);
           return;
         }
         const response = await apiFetch<{
@@ -990,47 +974,63 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           `/anime/${encodeURIComponent(next.slug)}/downloads/resolve`,
           {
             method: "POST",
-            signal: AbortSignal.timeout(25_000),
+            signal,
             body: JSON.stringify({
               episodeNumbers: next.episodeNumbers,
               audio: snapshot.audio,
               providers: snapshot.providers,
+              ...(next.refresh ? { refresh: true } : {}),
             }),
           },
           true,
         );
-        await deliver(
+        abortersRef.current.delete(id);
+        updateActivity(
           id,
-          response.data.packageName,
-          response.data.episodes,
-          destination,
-          0,
-          options?.preferredDeviceId,
+          {
+            packageName: response.data.packageName,
+            episodes: response.data.episodes,
+            current: response.data.episodes.length,
+          },
+          false,
         );
+        await deliver(id, { deviceId: options?.preferredDeviceId });
       } catch (error) {
+        abortersRef.current.delete(id);
+        if (isUserAbort(signal)) {
+          updateActivity(id, { status: "cancelled" });
+          return;
+        }
         updateActivity(id, {
           status: "error",
-          label:
-            error instanceof ApiTimeoutError
-              ? "La fuente tardó demasiado"
-              : "No se pudo preparar la descarga",
-          detail:
-            error instanceof ApiTimeoutError
-              ? "AnimeAV1 no respondió en 25 segundos. No se envió nada a JDownloader."
-              : error instanceof Error
-                ? error.message
-                : "Error inesperado",
+          failure:
+            error instanceof SelectionTooLargeError
+              ? {
+                  title: "Selección demasiado grande",
+                  detail: `Puedes enviar hasta ${MAX_QUICK_EPISODES} episodios seleccionados a la vez. Usa «Descargar rango» para más.`,
+                }
+              : describeApiError(error),
         });
+      } finally {
+        window.clearTimeout(deadline);
       }
     },
-    [addActivity, deliver, pollJob, updateActivity],
+    [
+      addActivity,
+      deliver,
+      pollJob,
+      publishActivity,
+      removeActivity,
+      setActivityDismissed,
+      updateActivity,
+    ],
   );
 
   const preparePortableDownload = useCallback(
     async (next: DownloadRequest) => {
       const deviceId = selectedDeviceIdRef.current;
       if (!isMyJdConnected() || !deviceId) {
-        openPortableDevicePanel(next);
+        showDevicePanel({ request: next });
         return;
       }
       setDevicesLoading(true);
@@ -1045,8 +1045,8 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           )
         ) {
           rememberDevice(null);
-          openPortableDevicePanel(
-            next,
+          showDevicePanel(
+            { request: next },
             "El dispositivo guardado ya no está disponible. Elige otro.",
           );
           return;
@@ -1058,17 +1058,12 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         await disconnectMyJd().catch(() => undefined);
         setMyJdConnected(false);
-        openPortableDevicePanel(
-          next,
-          error instanceof Error
-            ? error.message
-            : "Vuelve a conectar MyJDownloader.",
-        );
+        showDevicePanel({ request: next }, describeMyJdError(error));
       } finally {
         setDevicesLoading(false);
       }
     },
-    [openPortableDevicePanel, rememberDevice, startOperation],
+    [rememberDevice, showDevicePanel, startOperation],
   );
 
   const openDownload = useCallback(
@@ -1077,40 +1072,264 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       deviceProfileRef.current = profile;
       setDeviceProfile(profile);
       document.documentElement.dataset.device = profile;
+      const running = activitiesRef.current.find(
+        (activity) =>
+          activity.key === requestKey(next) &&
+          activeStatuses.has(activity.status),
+      );
+      if (running) {
+        setActivityDismissed(running.id, false);
+        publishActivity(running);
+        return;
+      }
       const dispatch = planDownloadDispatch({
         profile,
         storedDestination: preferencesRef.current.destination,
         myJdConnected: isMyJdConnected(),
         selectedDeviceId: selectedDeviceIdRef.current,
       });
-      if (profile === "portable") {
-        if (dispatch.action === "configure-myjd") {
-          openPortableDevicePanel(next);
-        } else {
-          void preparePortableDownload(next);
-        }
+      if (dispatch.action === "configure-myjd") {
+        showDevicePanel({ request: next });
         return;
       }
-      if (dispatch.action === "start")
-        void startOperation(next, { destination: dispatch.destination });
+      if (profile === "portable" && dispatch.destination === "MYJD") {
+        void preparePortableDownload(next);
+        return;
+      }
+      void startOperation(next, { destination: dispatch.destination });
     },
-    [openPortableDevicePanel, preparePortableDownload, startOperation],
+    [
+      preparePortableDownload,
+      publishActivity,
+      setActivityDismissed,
+      showDevicePanel,
+      startOperation,
+    ],
   );
+
   const openSettings = useCallback(() => {
     setMode("settings");
+    drawerOpenRef.current = true;
     drawer.open();
   }, [drawer]);
 
   const openDeviceSettings = useCallback(() => {
-    pendingRequestRef.current = null;
-    setPendingRequest(null);
-    setDeviceActivityId(null);
-    setDeviceError(null);
-    setMyJdConnected(isMyJdConnected());
-    setMode("devices");
-    drawer.open();
-    if (isMyJdConnected()) void refreshDevices();
-  }, [drawer, refreshDevices]);
+    showDevicePanel({});
+  }, [showDevicePanel]);
+
+  const cancelActivity = useCallback(
+    async (id: string) => {
+      const activity = findIn(activitiesRef.current, id);
+      if (!activity) return;
+      const controller = abortersRef.current.get(id);
+      if (controller) {
+        controller.abort("user-cancel");
+        return;
+      }
+      if (!activity.receipt || activity.cancelling) return;
+      updateActivity(id, { cancelling: true });
+      try {
+        await apiFetch(
+          `/download-jobs/${activity.receipt.jobId}/cancel`,
+          {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${activity.receipt.accessToken}`,
+            },
+          },
+          true,
+        );
+        stopPolling(id);
+        updateActivity(id, {
+          receipt: undefined,
+          status: "cancelled",
+          cancelling: false,
+        });
+      } catch (error) {
+        updateActivity(id, { cancelling: false });
+        const friendly = describeApiError(error);
+        toast.danger("No se pudo cancelar", {
+          description: `${describeRequest(activity.request)}. ${friendly.detail}`,
+          timeout: 8_000,
+        });
+      }
+    },
+    [stopPolling, updateActivity],
+  );
+
+  const retryFailed = useCallback(
+    async (id: string) => {
+      const activity = findIn(activitiesRef.current, id);
+      if (!activity) return;
+      const failed = failedEpisodeNumbers(deliverableEpisodes(activity));
+      if (activity.receipt) {
+        updateActivity(id, { retrying: true });
+        try {
+          await apiFetch(
+            `/download-jobs/${activity.receipt.jobId}/retry`,
+            {
+              method: "POST",
+              headers: {
+                authorization: `Bearer ${activity.receipt.accessToken}`,
+              },
+            },
+            true,
+          );
+          updateActivity(id, {
+            status: "processing",
+            onlyEpisodes: failed.length ? failed : undefined,
+            deliveredVia: undefined,
+            current: 0,
+          });
+          void pollJob(id, activity.receipt);
+        } catch (error) {
+          updateActivity(id, { retrying: false });
+          toast.danger("No se pudo reintentar", {
+            description: describeApiError(error).detail,
+            timeout: 8_000,
+          });
+        }
+        return;
+      }
+      if (!failed.length) return;
+      removeActivity(id);
+      void startOperation(
+        {
+          slug: activity.request.slug,
+          title: activity.request.title,
+          episodeNumbers: failed,
+          refresh: true,
+        },
+        { destination: activity.deliveredVia ?? activity.destination },
+      );
+    },
+    [pollJob, removeActivity, startOperation, updateActivity],
+  );
+
+  const copyActivityLinks = useCallback(
+    async (id: string) => {
+      const activity = findIn(activitiesRef.current, id);
+      if (!activity) return;
+      const episodes = deliverableEpisodes(activity);
+      const urls = collectUrls(episodes);
+      if (!urls.length) return;
+      const copied = await copyLinks(urls);
+      if (!copied) {
+        showLinks(id);
+        return;
+      }
+      if (activity.status === "handed-off" || activity.status === "partial") {
+        toast.success("Enlaces copiados", {
+          description: `${describeRequest(activity.request)} · ${describeLinks(episodes)}.`,
+          timeout: 4_000,
+        });
+        return;
+      }
+      const failedCount = failedEpisodeNumbers(episodes).length;
+      updateActivity(id, {
+        status: failedCount > 0 ? "partial" : "handed-off",
+        deliveredVia: "COPY",
+        failure: undefined,
+        copyBlocked: false,
+        interrupted: false,
+        receipt: failedCount > 0 ? activity.receipt : undefined,
+      });
+      if (deviceActivityIdRef.current === id) drawer.close();
+    },
+    [drawer, showLinks, updateActivity],
+  );
+
+  /** The links panel copied them by hand: record the delivery. */
+  const markCopied = useCallback(
+    (id: string) => {
+      const activity = findIn(activitiesRef.current, id);
+      if (!activity || !unfinishedStatuses.has(activity.status)) return;
+      const failedCount = failedEpisodeNumbers(
+        deliverableEpisodes(activity),
+      ).length;
+      updateActivity(id, {
+        status: failedCount > 0 ? "partial" : "handed-off",
+        deliveredVia: "COPY",
+        failure: undefined,
+        copyBlocked: false,
+        interrupted: false,
+        receipt: failedCount > 0 ? activity.receipt : undefined,
+      });
+    },
+    [updateActivity],
+  );
+
+  const runAction = useCallback(
+    (id: string, action: ActivityAction) => {
+      const activity = findIn(activitiesRef.current, id);
+      if (!activity) return;
+      switch (action) {
+        case "cancel":
+          void cancelActivity(id);
+          return;
+        case "deliver":
+          void deliver(id);
+          return;
+        case "copy":
+          void copyActivityLinks(id);
+          return;
+        case "show-links":
+          showLinks(id);
+          return;
+        case "use-myjd":
+          updateActivity(id, { destination: "MYJD" }, false);
+          void deliver(id, { destination: "MYJD" });
+          return;
+        case "use-cnl":
+          updateActivity(id, { destination: "CNL" }, false);
+          void deliver(id, { destination: "CNL" });
+          return;
+        case "choose-device":
+          requestDevice(id);
+          return;
+        case "retry":
+          removeActivity(id);
+          void startOperation(activity.request);
+          return;
+        case "retry-failed":
+          void retryFailed(id);
+          return;
+        case "preferences":
+          openSettings();
+          return;
+      }
+    },
+    [
+      cancelActivity,
+      copyActivityLinks,
+      deliver,
+      openSettings,
+      removeActivity,
+      requestDevice,
+      retryFailed,
+      showLinks,
+      startOperation,
+      updateActivity,
+    ],
+  );
+
+  useEffect(() => {
+    actionRef.current = runAction;
+  }, [runAction]);
+
+  const reopenDismissedActivity = useCallback(
+    (activityId: string) => {
+      const activity = findIn(activitiesRef.current, activityId);
+      if (!activity) return;
+      setActivityDismissed(activity.id, false);
+      if (activity.status === "waiting-device") {
+        requestDevice(activity.id);
+        return;
+      }
+      publishActivity(activity);
+    },
+    [publishActivity, requestDevice, setActivityDismissed],
+  );
 
   function toggleProvider(provider: DownloadProviderId) {
     const current = preferencesRef.current;
@@ -1119,7 +1338,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       : [...current.providers, provider];
     if (!providers.length) {
       toast.warning("Mantén al menos un proveedor", {
-        description: "Necesitas al menos uno para resolver los enlaces.",
+        description: "Necesitas al menos uno para buscar los enlaces.",
         timeout: 4_000,
       });
       return;
@@ -1127,96 +1346,76 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     savePreferences({ ...current, providers });
   }
 
-  async function connect(event: React.FormEvent) {
-    event.preventDefault();
+  async function connect(email: string, password: string) {
+    if (connecting) return;
     setDeviceError(null);
+    setConnecting(true);
     try {
       const available = await connectMyJd(email, password);
-      setPassword("");
       setMyJdConnected(true);
       setDevices(available.map(({ id, name }) => ({ id, name })));
     } catch (error) {
-      setPassword("");
       await disconnectMyJd().catch(() => undefined);
       setMyJdConnected(false);
-      if (deviceProfileRef.current === "portable" || isPortableDevice()) {
-        setDeviceError(
-          error instanceof Error ? error.message : "Revisa las credenciales.",
-        );
-        return;
-      }
-      toast.danger("No se pudo conectar con MyJDownloader", {
-        description:
-          error instanceof Error ? error.message : "Revisa las credenciales.",
-      });
+      setDeviceError(describeMyJdError(error));
+    } finally {
+      setConnecting(false);
     }
   }
 
   async function sendDevice(deviceId: string) {
-    const portable =
-      deviceProfileRef.current === "portable" || isPortableDevice();
+    const portable = deviceProfileRef.current === "portable";
     const stagedRequest = pendingRequestRef.current;
-    const activity = activitiesRef.current.find(
-      (entry) => entry.id === deviceActivityId,
-    );
-    if (
-      activity &&
-      activity.status !== "waiting-device" &&
-      activity.status !== "ready"
-    )
+    const activity = deviceActivityId
+      ? findIn(activitiesRef.current, deviceActivityId)
+      : null;
+    if (activity && !["waiting-device", "ready"].includes(activity.status))
       return;
-    if (portable) {
-      rememberDevice(deviceId);
+    if (portable || stagedRequest) rememberDevice(deviceId);
+    if (stagedRequest) {
       pendingRequestRef.current = null;
       setPendingRequest(null);
-      setDeviceError(null);
       drawer.close();
-      if (stagedRequest) {
-        void startOperation(stagedRequest, {
-          destination: "MYJD",
-          preferredDeviceId: deviceId,
-        });
-        return;
-      }
-      if (!activity) return;
-    } else if (!activity) return;
-
-    if (deliverySessionsRef.current.has(activity.id)) return;
-    deliverySessionsRef.current.add(activity.id);
-    const urls = activity.episodes.flatMap((episode) =>
-      episode.links.map((link) => link.url),
-    );
-    updateActivity(activity.id, {
-      status: "sending",
-      label: "Enviando a MyJDownloader",
-      detail: "Conectando con el dispositivo",
-      deliveryAttempted: true,
-    });
-    drawer.close();
-    try {
-      await sendToMyJd(deviceId, activity.packageName, urls);
-      updateActivity(activity.id, {
-        receipt: undefined,
-        status: "handed-off",
-        label: "Solicitud aceptada por MyJDownloader",
-        detail: `${urls.length} enlaces enviados al dispositivo`,
+      void startOperation(stagedRequest, {
+        destination: "MYJD",
+        preferredDeviceId: deviceId,
       });
-    } catch (error) {
-      if (portable) rememberDevice(null);
-      await requestDevice(
-        activity.id,
-        error instanceof Error
-          ? error.message
-          : "El dispositivo ya no está disponible.",
-      );
-    } finally {
-      deliverySessionsRef.current.delete(activity.id);
+      return;
     }
+    if (!activity) {
+      if (portable) drawer.close();
+      return;
+    }
+    drawer.close();
+    void deliver(activity.id, { destination: "MYJD", deviceId });
+  }
+
+  function chooseAlternative(destination: "COPY" | "CNL") {
+    const stagedRequest = pendingRequestRef.current;
+    const activityId = deviceActivityIdRef.current;
+    pendingRequestRef.current = null;
+    setPendingRequest(null);
+    if (stagedRequest) {
+      drawer.close();
+      void startOperation(stagedRequest, { destination });
+      return;
+    }
+    if (!activityId) return;
+    updateActivity(activityId, { destination }, false);
+    if (destination === "COPY") {
+      // Copy first (still inside the click) and let the result close it.
+      void copyActivityLinks(activityId);
+      return;
+    }
+    drawer.close();
+    void deliver(activityId, { destination });
   }
 
   async function resetMyJdConnection() {
     try {
       await disconnectMyJd();
+    } catch {
+      // The local session is dropped either way.
     } finally {
       setMyJdConnected(false);
       setDevices([]);
@@ -1225,56 +1424,72 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const getEpisodeStatus = useCallback(
-    (slug: string, episodeNumber: number) =>
-      activities.find(
-        (activity) =>
-          activity.request.slug === slug &&
-          activity.request.episodeNumbers?.length === 1 &&
-          activity.request.episodeNumbers[0] === episodeNumber,
-      )?.status,
+  const getRequestStatus = useCallback(
+    (request: DownloadRequest) => {
+      const key = requestKey(request);
+      return activities.find((activity) => activity.key === key)?.status;
+    },
     [activities],
   );
-  const dismissedResumable = activities.filter(
-    (activity) =>
-      dismissedResumableIds.has(activity.id) && isResumableActivity(activity),
+  const getEpisodeStatus = useCallback(
+    (slug: string, episodeNumber: number) =>
+      getRequestStatus({ slug, title: "", episodeNumbers: [episodeNumber] }),
+    [getRequestStatus],
   );
-  const deviceDeliveryPending = activities.some(
+
+  const dismissedPending = activities.filter(
     (activity) =>
-      activity.id === deviceActivityId && activity.status === "sending",
+      dismissedIds.has(activity.id) && unfinishedStatuses.has(activity.status),
   );
+  const deviceActivity = deviceActivityId
+    ? activities.find((activity) => activity.id === deviceActivityId)
+    : undefined;
+  const deviceDeliveryPending = deviceActivity?.status === "sending";
+  const linksActivity = linksActivityId
+    ? activities.find((activity) => activity.id === linksActivityId)
+    : undefined;
+  const portable = deviceProfile === "portable";
+  const effectiveDestination = getEffectiveDestination(
+    deviceProfile,
+    preferences.destination,
+  );
+  const drawerTitle =
+    mode === "settings"
+      ? "Preferencias de descarga"
+      : mode === "links"
+        ? "Enlaces de descarga"
+        : myJdConnected
+          ? "Elegir dispositivo"
+          : "Conectar MyJDownloader";
+  const drawerSummary =
+    mode === "devices"
+      ? pendingRequest
+        ? describeRequest(pendingRequest)
+        : deviceActivity
+          ? describeRequest(deviceActivity.request)
+          : null
+      : mode === "links" && linksActivity
+        ? `${describeRequest(linksActivity.request)} · ${describeLinks(deliverableEpisodes(linksActivity))}`
+        : null;
 
   return (
     <DownloadContext.Provider
       value={{
         openDownload,
         getEpisodeStatus,
+        getRequestStatus,
         openSettings,
         preferences,
         deviceProfile,
+        dockSlot,
       }}
     >
       {children}
-      {dismissedResumable.length > 0 && (
-        <Button
-          className="fixed bottom-6 right-6 z-50 min-h-11 rounded-xl bg-surface-tertiary px-4 text-sm font-semibold text-accent-soft-foreground shadow-[0_16px_40px_rgb(0_0_0/0.34)] max-sm:bottom-24 max-sm:right-4"
-          onPress={() => reopenDismissedActivity(dismissedResumable[0].id)}
-          aria-label={
-            dismissedResumable.length === 1
-              ? "Abrir descarga pendiente"
-              : `Abrir ${dismissedResumable.length} descargas pendientes`
-          }
-        >
-          <Send size={16} aria-hidden="true" />
-          {dismissedResumable.length === 1
-            ? dismissedResumable[0].status === "processing"
-              ? "Descarga en curso"
-              : dismissedResumable[0].status === "sending"
-                ? "Entrega en curso"
-                : "Descarga pendiente"
-            : `${dismissedResumable.length} descargas pendientes`}
-        </Button>
-      )}
+      <DownloadDock
+        onSlot={setDockSlot}
+        pending={dismissedPending}
+        onReopen={reopenDismissedActivity}
+      />
       <Drawer state={drawer}>
         <Drawer.Trigger className="drawer-state-trigger" aria-hidden="true">
           Abrir descargas
@@ -1287,37 +1502,30 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
             placement="right"
             className="download-drawer-content z-[70]"
           >
-            <Drawer.Dialog
-              className="download-drawer-dialog !w-full !max-w-md border-l border-white/10 bg-background-secondary text-foreground"
-              aria-label="Descargas"
-            >
-              <Drawer.Header className="mobile-drawer-header flex items-center justify-between border-b border-white/8 px-5 py-4">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-[.18em] text-link">
-                    Descargas
-                  </span>
-                  <h2>
-                    {mode === "settings"
-                      ? "Preferencias"
-                      : deviceProfile === "portable" && !pendingRequest
-                        ? "MyJDownloader"
-                        : "Elegir dispositivo"}
-                  </h2>
+            <Drawer.Dialog className="download-drawer-dialog !w-full !max-w-md overflow-hidden border-l border-white/10 bg-background-secondary !p-0 text-foreground">
+              <Drawer.Header className="download-drawer-header flex shrink-0 flex-row items-start justify-between gap-4 border-b border-white/8 px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-4">
+                <div className="min-w-0">
+                  <span className="eyebrow">Descargas</span>
+                  <Drawer.Heading className="mt-1 font-display text-xl font-semibold tracking-[-.02em] text-foreground">
+                    {drawerTitle}
+                  </Drawer.Heading>
                 </div>
                 <Drawer.CloseTrigger
-                  className="grid size-10 place-items-center rounded-lg text-muted hover:bg-surface-hover"
+                  className="static grid size-11 shrink-0 place-items-center rounded-xl text-muted outline-none transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus"
                   aria-label="Cerrar"
                 >
-                  <X size={18} />
+                  <X size={18} aria-hidden="true" />
                 </Drawer.CloseTrigger>
               </Drawer.Header>
-              <Drawer.Body className="mobile-drawer-body px-5 py-5">
+              <Drawer.Body className="download-drawer-body mx-0 flex flex-col gap-4 px-5 pt-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+                <DrawerSummary summary={drawerSummary} />
                 {mode === "settings" ? (
                   <PreferencesPanel
                     preferences={preferences}
                     savePreferences={savePreferences}
                     toggleProvider={toggleProvider}
-                    portable={deviceProfile === "portable"}
+                    portable={portable}
+                    effectiveDestination={effectiveDestination}
                     selectedDeviceName={
                       devices.find((device) => device.id === selectedDeviceId)
                         ?.name ??
@@ -1325,173 +1533,36 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                     }
                     openDeviceSettings={openDeviceSettings}
                   />
-                ) : deviceProfile === "portable" ? (
-                  <div className="flex flex-col gap-4">
-                    {deviceError && (
-                      <div
-                        className="rounded-xl border border-danger/25 bg-danger/8 px-4 py-3 text-sm text-danger-soft-foreground"
-                        role="alert"
-                      >
-                        {deviceError}
-                      </div>
-                    )}
-                    {myJdConnected ? (
-                      <>
-                        {devicesLoading ? (
-                          <div
-                            className="flex min-h-24 items-center justify-center gap-2 text-sm text-muted"
-                            role="status"
-                          >
-                            <RefreshCw className="size-4 animate-spin" />
-                            Buscando dispositivos
-                          </div>
-                        ) : devices.length > 0 ? (
-                          <>
-                            <p className="text-sm text-muted">
-                              {pendingRequest
-                                ? "Elige dónde enviar esta descarga."
-                                : "El dispositivo elegido se usará durante esta sesión."}
-                            </p>
-                            {devices.map((device) => (
-                              <Button
-                                variant="secondary"
-                                className="min-h-12 justify-between rounded-xl bg-surface text-foreground"
-                                key={device.id}
-                                onPress={() => void sendDevice(device.id)}
-                                isDisabled={deviceDeliveryPending}
-                              >
-                                <span className="min-w-0 truncate">
-                                  {device.name}
-                                </span>
-                                <Send size={16} />
-                              </Button>
-                            ))}
-                          </>
-                        ) : (
-                          <div className="rounded-xl bg-surface p-4">
-                            <strong className="text-sm text-foreground">
-                              No hay dispositivos disponibles
-                            </strong>
-                            <p className="mt-1 text-xs leading-5 text-muted">
-                              Abre JDownloader en el equipo de destino y vuelve
-                              a buscar.
-                            </p>
-                          </div>
-                        )}
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            variant="secondary"
-                            className="min-h-11 rounded-xl bg-default text-foreground"
-                            onPress={() => void refreshDevices()}
-                          >
-                            <RefreshCw size={15} /> Actualizar
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            className="min-h-11 text-muted"
-                            onPress={() => void resetMyJdConnection()}
-                          >
-                            Usar otra cuenta
-                          </Button>
-                        </div>
-                      </>
-                    ) : (
-                      <form className="flex flex-col gap-4" onSubmit={connect}>
-                        <p className="text-sm text-muted">
-                          Conecta tu cuenta para elegir el JDownloader de
-                          destino. La contraseña no se guarda.
-                        </p>
-                        <TextField
-                          type="email"
-                          value={email}
-                          onChange={setEmail}
-                          variant="secondary"
-                          isRequired
-                        >
-                          <Label>Correo</Label>
-                          <InputGroup>
-                            <InputGroup.Input autoComplete="username" />
-                          </InputGroup>
-                        </TextField>
-                        <TextField
-                          type="password"
-                          value={password}
-                          onChange={setPassword}
-                          variant="secondary"
-                          isRequired
-                        >
-                          <Label>Contraseña</Label>
-                          <InputGroup>
-                            <InputGroup.Input autoComplete="current-password" />
-                          </InputGroup>
-                        </TextField>
-                        <Button
-                          type="submit"
-                          className="min-h-11 bg-accent text-accent-foreground"
-                        >
-                          Conectar
-                        </Button>
-                      </form>
-                    )}
-                  </div>
+                ) : mode === "links" ? (
+                  <LinksPanel
+                    urls={
+                      linksActivity
+                        ? collectUrls(deliverableEpisodes(linksActivity))
+                        : []
+                    }
+                    onCopied={() => {
+                      if (linksActivity) markCopied(linksActivity.id);
+                    }}
+                  />
                 ) : (
-                  <div className="flex flex-col gap-4">
-                    {devices.length > 0 ? (
-                      <>
-                        <p className="text-sm text-muted">
-                          El dispositivo se aplica únicamente a esta operación.
-                        </p>
-                        {devices.map((device) => (
-                          <Button
-                            variant="secondary"
-                            className="justify-between rounded-xl bg-surface text-foreground"
-                            key={device.id}
-                            onPress={() => void sendDevice(device.id)}
-                            isDisabled={deviceDeliveryPending}
-                          >
-                            {device.name}
-                            <Send size={16} />
-                          </Button>
-                        ))}
-                      </>
-                    ) : (
-                      <form className="flex flex-col gap-4" onSubmit={connect}>
-                        <p className="text-sm text-muted">
-                          La contraseña se descarta al derivar la sesión.
-                        </p>
-                        <TextField
-                          type="email"
-                          value={email}
-                          onChange={setEmail}
-                          variant="secondary"
-                          isRequired
-                        >
-                          <Label>Correo</Label>
-                          <InputGroup>
-                            <InputGroup.Input autoComplete="username" />
-                          </InputGroup>
-                        </TextField>
-                        <TextField
-                          type="password"
-                          value={password}
-                          onChange={setPassword}
-                          variant="secondary"
-                          isRequired
-                        >
-                          <Label>Contraseña</Label>
-                          <InputGroup>
-                            <InputGroup.Input autoComplete="current-password" />
-                          </InputGroup>
-                        </TextField>
-                        <Button
-                          type="submit"
-                          className="bg-accent text-accent-foreground"
-                        >
-                          Conectar
-                        </Button>
-                      </form>
-                    )}
-                  </div>
+                  <MyJdPanel
+                    portable={portable}
+                    connected={myJdConnected}
+                    connecting={connecting}
+                    devices={devices}
+                    devicesLoading={devicesLoading}
+                    deviceError={deviceError}
+                    hasTarget={Boolean(pendingRequest || deviceActivity)}
+                    deliveryPending={deviceDeliveryPending}
+                    onConnect={(email, password) =>
+                      void connect(email, password)
+                    }
+                    onRefresh={() => void refreshDevices()}
+                    onReset={() => void resetMyJdConnection()}
+                    onSelectDevice={(deviceId) => void sendDevice(deviceId)}
+                    onCopyInstead={() => chooseAlternative("COPY")}
+                    onUseClickNLoad={() => chooseAlternative("CNL")}
+                  />
                 )}
               </Drawer.Body>
             </Drawer.Dialog>
@@ -1502,114 +1573,107 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   );
 }
 
-function PreferencesPanel({
-  preferences,
-  savePreferences,
-  toggleProvider,
-  portable,
-  selectedDeviceName,
-  openDeviceSettings,
+/**
+ * Bottom stack above the mobile nav: the pending-download button and any
+ * page bar (episode selection) share one flex column, so they never overlap.
+ * Its height is published as --download-dock-height for the toast region and
+ * page padding.
+ */
+function DownloadDock({
+  onSlot,
+  pending,
+  onReopen,
 }: {
-  preferences: DownloadPreferences;
-  savePreferences: (next: DownloadPreferences) => void;
-  toggleProvider: (provider: DownloadProviderId) => void;
-  portable: boolean;
-  selectedDeviceName: string | null;
-  openDeviceSettings: () => void;
+  onSlot: (element: HTMLElement | null) => void;
+  pending: Activity[];
+  onReopen: (id: string) => void;
 }) {
+  const dockRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const dock = dockRef.current;
+    if (!dock || typeof ResizeObserver === "undefined") return;
+    const root = document.documentElement;
+    const observer = new ResizeObserver(() => {
+      const height = dock.getBoundingClientRect().height;
+      root.style.setProperty(
+        "--download-dock-height",
+        height > 0 ? `${Math.ceil(height) + 12}px` : "0px",
+      );
+    });
+    observer.observe(dock);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--download-dock-height");
+    };
+  }, []);
+
+  const first = pending[0];
   return (
-    <div className="flex flex-col gap-6">
-      <fieldset className="border-b border-white/8 pb-5">
-        <legend className="mb-3 text-sm font-semibold text-foreground">
-          Audio preferido
-        </legend>
-        <ToggleButtonGroup
-          selectionMode="single"
-          selectedKeys={new Set([preferences.audio])}
-          onSelectionChange={(keys) => {
-            const audio = Array.from(keys)[0] as "SUB" | "DUB" | undefined;
-            if (audio) savePreferences({ ...preferences, audio });
-          }}
-          className="grid grid-cols-2 gap-2"
+    <div
+      ref={dockRef}
+      className="download-dock pointer-events-none fixed inset-x-0 bottom-[calc(var(--bottom-nav-clearance)+1rem)] z-40 mx-auto flex w-full max-w-[1600px] flex-col items-end gap-3 px-4 sm:px-6"
+    >
+      {first && (
+        <Button
+          className="pointer-events-auto min-h-11 gap-2.5 rounded-full bg-surface-tertiary px-4 text-sm font-semibold text-accent-soft-foreground shadow-[0_16px_40px_rgb(0_0_0/0.4)] outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-focus"
+          onPress={() => onReopen(first.id)}
+          aria-label={
+            pending.length === 1
+              ? `Mostrar descarga: ${describeRequest(first.request)}`
+              : `Mostrar ${plural(pending.length, "descarga pendiente", "descargas pendientes")}`
+          }
         >
-          {(["SUB", "DUB"] as const).map((audio) => (
-            <ToggleButton id={audio} key={audio} className="h-10 rounded-lg">
-              {audio}
-            </ToggleButton>
-          ))}
-        </ToggleButtonGroup>
-        <p className="mt-2 text-xs text-muted">
-          Si no está disponible, se usará el otro audio.
-        </p>
-      </fieldset>
-      <fieldset className="border-b border-white/8 pb-5">
-        <legend className="mb-3 text-sm font-semibold text-foreground">
-          Proveedores
-        </legend>
-        <div className="grid grid-cols-2 gap-3">
-          {(Object.keys(providerLabels) as DownloadProviderId[]).map(
-            (provider) => (
-              <Checkbox
-                key={provider}
-                isSelected={preferences.providers.includes(provider)}
-                onChange={() => toggleProvider(provider)}
-              >
-                <Checkbox.Content>
-                  <Checkbox.Control>
-                    <Checkbox.Indicator />
-                  </Checkbox.Control>
-                  {providerLabels[provider]}
-                </Checkbox.Content>
-              </Checkbox>
-            ),
-          )}
-        </div>
-      </fieldset>
-      <fieldset className="border-b border-white/8 pb-5">
-        <legend className="mb-3 text-sm font-semibold text-foreground">
-          Destino
-        </legend>
-        {portable ? (
-          <div className="flex min-h-14 items-center gap-3 rounded-xl bg-surface px-4 py-2.5">
-            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-surface-tertiary text-link">
-              <Send size={16} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <strong className="block text-sm text-foreground">
-                MyJDownloader
-              </strong>
-              <span className="block truncate text-xs text-muted">
-                {selectedDeviceName ?? "Sin dispositivo elegido"}
-              </span>
-            </span>
-            <Button
-              variant="ghost"
-              className="min-h-10 shrink-0 px-2 text-xs font-semibold text-link"
-              onPress={openDeviceSettings}
-            >
-              {selectedDeviceName ? "Cambiar" : "Configurar"}
-            </Button>
-          </div>
-        ) : (
-          <ToggleButtonGroup
-            selectionMode="single"
-            selectedKeys={new Set([preferences.destination])}
-            onSelectionChange={(keys) => {
-              const destination = Array.from(keys)[0] as
-                "CNL" | "MYJD" | undefined;
-              if (destination) savePreferences({ ...preferences, destination });
-            }}
-            className="grid grid-cols-2 gap-2"
-          >
-            <ToggleButton id="CNL" className="h-11 rounded-lg">
-              Click&apos;n&apos;Load
-            </ToggleButton>
-            <ToggleButton id="MYJD" className="h-11 rounded-lg">
-              MyJDownloader
-            </ToggleButton>
-          </ToggleButtonGroup>
-        )}
-      </fieldset>
+          <DockIcon activity={first} />
+          <span className="max-w-[60vw] truncate">
+            {pending.length > 1
+              ? plural(
+                  pending.length,
+                  "descarga pendiente",
+                  "descargas pendientes",
+                )
+              : dockLabel(first)}
+          </span>
+        </Button>
+      )}
+      <div ref={onSlot} className="flex w-full justify-center empty:hidden" />
     </div>
   );
+}
+
+function dockLabel(activity: Activity) {
+  switch (activity.status) {
+    case "processing":
+      return activity.total > 0
+        ? `Descargando ${activity.current}/${activity.total}`
+        : "Descarga en curso";
+    case "resolving":
+      return "Buscando enlaces";
+    case "sending":
+      return "Enviando enlaces";
+    case "waiting-device":
+      return "Elige un dispositivo";
+    default:
+      return "Descarga pendiente";
+  }
+}
+
+function DockIcon({ activity }: { activity: Activity }) {
+  if (activity.status === "processing" && activity.total > 0) {
+    return (
+      <ProgressCircle
+        aria-label="Progreso"
+        value={activity.current}
+        maxValue={activity.total}
+        size="sm"
+        className="size-5"
+      >
+        <ProgressCircle.Track className="size-5">
+          <ProgressCircle.TrackCircle className="stroke-white/20" />
+          <ProgressCircle.FillCircle className="stroke-brand" />
+        </ProgressCircle.Track>
+      </ProgressCircle>
+    );
+  }
+  return <Download size={16} aria-hidden="true" />;
 }

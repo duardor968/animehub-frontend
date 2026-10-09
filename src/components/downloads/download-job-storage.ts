@@ -1,4 +1,4 @@
-import type { DownloadRequest } from "./download-types";
+import type { DownloadDestination, DownloadRequest } from "./download-types";
 
 export const activeDownloadJobsStorageKey = "animehub.download-jobs.v1";
 
@@ -15,11 +15,14 @@ export interface PersistedDownloadJob {
     accessToken: string;
     expiresAt: string;
   };
-  destination: "CNL" | "MYJD";
+  destination: DownloadDestination;
   createdAt: number;
   current: number;
   total: number;
   deliveryAttempted: boolean;
+  /** Set when a delivery attempt finished before the reload, so a restored
+   *  job doesn't claim the reload interrupted it. */
+  deliveryFailed?: boolean;
 }
 
 interface StorageLike {
@@ -54,7 +57,31 @@ function parseBackgroundRequest(value: unknown): DownloadRequest | null {
   const title = boundedString(value.title, 500);
   if (!slug || !title) return null;
 
-  if (value.all === true) return { slug, title, all: true };
+  if (value.all === true) {
+    const total = nonNegativeInteger(value.total, 100_000);
+    return total
+      ? { slug, title, all: true, total }
+      : { slug, title, all: true };
+  }
+
+  // Explicit episode lists are background jobs only above the resolve limit
+  // (scope EPISODES); smaller lists never have a receipt worth restoring.
+  if (Array.isArray(value.episodeNumbers) && value.episodeNumbers.length > 50) {
+    const numbers = value.episodeNumbers.filter(
+      (entry): entry is number =>
+        typeof entry === "number" &&
+        Number.isFinite(entry) &&
+        entry >= 0 &&
+        entry <= 100_000,
+    );
+    if (
+      numbers.length === 0 ||
+      numbers.length !== value.episodeNumbers.length ||
+      numbers.length > 5_000
+    )
+      return null;
+    return { slug, title, episodeNumbers: numbers };
+  }
 
   const from = nonNegativeInteger(value.from, 100_000);
   const to = nonNegativeInteger(value.to, 100_000);
@@ -76,7 +103,9 @@ function parseJob(value: unknown, now: number): PersistedDownloadJob | null {
   const total = nonNegativeInteger(value.total, 100_000);
   const current = nonNegativeInteger(value.current, 100_000);
   const destination =
-    value.destination === "CNL" || value.destination === "MYJD"
+    value.destination === "CNL" ||
+    value.destination === "MYJD" ||
+    value.destination === "COPY"
       ? value.destination
       : null;
   if (
@@ -114,6 +143,7 @@ function parseJob(value: unknown, now: number): PersistedDownloadJob | null {
     // Older v1 receipts did not record this flag. Missing means no delivery
     // attempt was observed, which keeps existing sessions backwards-compatible.
     deliveryAttempted: value.deliveryAttempted === true,
+    ...(value.deliveryFailed === true ? { deliveryFailed: true } : {}),
   };
 }
 
