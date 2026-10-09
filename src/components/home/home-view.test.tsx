@@ -13,6 +13,7 @@ import { HomePlaceholder, HomeView, mergeHomeSnapshot } from "./home-view";
 
 vi.mock("@/lib/api/home", () => ({ fetchHome: vi.fn() }));
 vi.mock("./featured-hero", () => ({
+  HERO_HEIGHT_CLASS: "min-h-[560px]",
   FeaturedHero: ({ anime }: { anime: { title: string }[] }) => (
     <div>{anime[0].title}</div>
   ),
@@ -23,11 +24,13 @@ vi.mock("./recent-episodes", () => ({
   }: {
     episodes: { episode: { number: number } }[];
   }) => <div>Episode {episodes[0].episode.number}</div>,
+  RecentEpisodesSkeleton: () => <div data-testid="recent-skeleton" />,
 }));
 vi.mock("@/components/poster-grid", () => ({
   PosterGrid: ({ anime }: { anime: { title: string }[] }) => (
     <div>New {anime[0].title}</div>
   ),
+  PosterGridSkeleton: () => <div data-testid="poster-skeleton" />,
 }));
 
 function home(number = 1): HomeResponse {
@@ -102,7 +105,7 @@ describe("automatic home recovery", () => {
     expect(screen.queryByText(/no está disponible temporalmente/i)).toBeNull();
   });
 
-  it("ends cold loading after bounded retries and later recovers without controls", async () => {
+  it("ends cold loading after bounded retries, offers a manual retry and recovers", async () => {
     vi.mocked(fetchHome).mockRejectedValue(new Error("cold"));
     render(<HomeView initialHome={null} />);
     expect(
@@ -115,10 +118,15 @@ describe("automatic home recovery", () => {
         name: "El contenido no está disponible temporalmente",
       }),
     ).toBeVisible();
-    expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByRole("main", { name: "Cargando portada" })).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Ir al catálogo" }),
+    ).toHaveAttribute("href", "/catalogo");
     vi.mocked(fetchHome).mockResolvedValue(home(3));
-    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Reintentar ahora" }));
+    });
+    expect(fetchHome).toHaveBeenCalledTimes(4);
     expect(screen.getByText("Episode 3")).toBeVisible();
   });
 
@@ -166,8 +174,32 @@ describe("automatic home recovery", () => {
   });
 });
 
-it("uses the same portable hero height rule for the initial placeholder", () => {
+it("renders a structured placeholder with the hero height and both sections", () => {
   const { container } = render(<HomePlaceholder />);
-  expect(container.querySelector(".featured-hero")).not.toBeNull();
+  expect(container.querySelector(".featured-hero")).toHaveClass(
+    "min-h-[560px]",
+  );
   expect(container.querySelector(".image-skeleton")).not.toBeNull();
+  expect(
+    screen.getByRole("heading", { name: "Episodios recientes" }),
+  ).toBeVisible();
+  expect(
+    screen.getByRole("heading", { name: "Nuevos en el catálogo" }),
+  ).toBeVisible();
+  expect(screen.getByTestId("recent-skeleton")).toBeInTheDocument();
+  expect(screen.getByTestId("poster-skeleton")).toBeInTheDocument();
+});
+
+it("gives the home one page heading, section links and a skip target", () => {
+  render(<HomeView initialHome={home()} />);
+  expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  expect(screen.getByRole("main")).toHaveAttribute("id", "contenido");
+  expect(screen.getByRole("link", { name: /Ver horario/ })).toHaveAttribute(
+    "href",
+    "/horario",
+  );
+  expect(screen.getByRole("link", { name: /Ver catálogo/ })).toHaveAttribute(
+    "href",
+    "/catalogo",
+  );
 });

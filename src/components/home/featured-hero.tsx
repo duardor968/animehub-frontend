@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@heroui/react";
-import Autoplay from "embla-carousel-autoplay";
 import useEmblaCarousel from "embla-carousel-react";
 import {
   ArrowLeft,
@@ -11,44 +10,174 @@ import {
   Pause,
   Play,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
+  type FocusEvent,
+  type KeyboardEvent,
   useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import type { FeaturedAnime } from "@/lib/api/client";
-import { formatStatus } from "@/lib/format";
+import { formatStatus, plural } from "@/lib/format";
 import { AnimeImage } from "../anime-image";
 
+export const AUTOPLAY_DELAY_MS = 7_000;
+
+/** Hero height, shared with the loading placeholder so nothing jumps. */
+export const HERO_HEIGHT_CLASS =
+  "min-h-[560px] max-lg:min-h-[520px] max-sm:min-h-[clamp(34rem,calc(100svh-3.5rem),40rem)]";
+
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
+
+function subscribeReducedMotion(onChange: () => void) {
+  const query = window.matchMedia(REDUCED_MOTION);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+const getReducedMotion = () => window.matchMedia(REDUCED_MOTION).matches;
+
+function subscribeVisibility(onChange: () => void) {
+  document.addEventListener("visibilitychange", onChange);
+  return () => document.removeEventListener("visibilitychange", onChange);
+}
+const getPageVisible = () => document.visibilityState === "visible";
+
+/**
+ * Pausable countdown to the next slide. It keeps the remaining time across
+ * pauses, exactly like the CSS progress bar it drives (paused with
+ * animation-play-state), so the bar and the real advance never drift.
+ */
+export class SlideTimer {
+  private id: ReturnType<typeof setTimeout> | null = null;
+  private startedAt = 0;
+  private remaining: number;
+  private running = false;
+
+  constructor(
+    private readonly delay: number,
+    private readonly onElapsed: () => void,
+  ) {
+    this.remaining = delay;
+  }
+
+  start() {
+    if (this.running) return;
+    this.running = true;
+    this.schedule();
+  }
+
+  pause() {
+    if (!this.running) return;
+    this.running = false;
+    if (this.id === null) return;
+    clearTimeout(this.id);
+    this.id = null;
+    this.remaining = Math.max(
+      0,
+      this.remaining - (Date.now() - this.startedAt),
+    );
+  }
+
+  /** A new slide is showing: count the full delay again. */
+  restart() {
+    this.remaining = this.delay;
+    if (!this.running) return;
+    if (this.id !== null) clearTimeout(this.id);
+    this.schedule();
+  }
+
+  dispose() {
+    this.running = false;
+    if (this.id !== null) clearTimeout(this.id);
+    this.id = null;
+  }
+
+  private schedule() {
+    this.startedAt = Date.now();
+    this.id = setTimeout(() => {
+      this.id = null;
+      this.remaining = this.delay;
+      this.onElapsed();
+      // onElapsed normally selects a slide, which restarts the timer.
+      if (this.running && this.id === null) this.schedule();
+    }, this.remaining);
+  }
+}
+
+function titleClass(title: string) {
+  if (title.length > 48)
+    return "max-w-[22ch] text-4xl max-lg:text-3xl max-sm:text-[clamp(1.75rem,8vw,2.25rem)]";
+  if (title.length > 24)
+    return "max-w-[18ch] text-5xl max-lg:text-4xl max-sm:text-[clamp(2.1rem,10vw,3rem)]";
+  return "max-w-[13ch] text-6xl max-lg:text-5xl max-sm:text-[clamp(2.6rem,14vw,4.5rem)]";
+}
+
+const controlClass =
+  "h-11 w-11 rounded-full bg-white/10 text-foreground shadow-none backdrop-blur-md hover:bg-white/16";
+
 export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
-  const router = useRouter();
-  const [autoplay] = useState(() =>
-    Autoplay({
-      delay: 7_000,
-      stopOnInteraction: false,
-      stopOnMouseEnter: false,
-    }),
-  );
-  const [viewportRef, embla] = useEmblaCarousel(
-    {
-      loop: true,
-      align: "start",
-    },
-    [autoplay],
-  );
+  const [viewportRef, embla] = useEmblaCarousel({ loop: true, align: "start" });
   const [selected, setSelected] = useState(0);
-  const [playing, setPlaying] = useState(true);
+  const [announcement, setAnnouncement] = useState("");
+  const [userPaused, setUserPaused] = useState(false);
+  const [motionOptIn, setMotionOptIn] = useState(false);
+  const [focusPaused, setFocusPaused] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [warm, setWarm] = useState(false);
+  const reducedMotion = useSyncExternalStore(
+    subscribeReducedMotion,
+    getReducedMotion,
+    () => false,
+  );
+  const pageVisible = useSyncExternalStore(
+    subscribeVisibility,
+    getPageVisible,
+    () => true,
+  );
+
   const itemsRef = useRef(anime);
   const selectedIdRef = useRef(anime[0]?.id);
+  const announceRef = useRef(false);
+  const timerRef = useRef<SlideTimer | null>(null);
+  const advanceRef = useRef(() => {});
+  const sectionRef = useRef<HTMLElement>(null);
+  // Set when a slide change starts while focus is inside the current slide,
+  // which is about to become inert: focus then moves to the new slide.
+  const moveFocusRef = useRef(false);
+
+  const multiple = anime.length > 1;
+  // What the user asked for (the play/pause button)…
+  const autoplayWanted = !userPaused && (!reducedMotion || motionOptIn);
+  // …and whether the countdown actually runs right now. Keyboard focus inside
+  // the carousel, a drag or a hidden tab pause it without changing the intent.
+  const running =
+    Boolean(embla) &&
+    multiple &&
+    autoplayWanted &&
+    !focusPaused &&
+    !dragging &&
+    pageVisible;
+
   const sync = useCallback(() => {
     if (!embla) return;
     const index = embla.selectedScrollSnap();
-    selectedIdRef.current = itemsRef.current[index]?.id;
+    const item = itemsRef.current[index];
+    selectedIdRef.current = item?.id;
     setSelected(index);
+    timerRef.current?.restart();
+    // Only changes the user asked for are announced; autoplay stays silent.
+    if (announceRef.current && item) {
+      announceRef.current = false;
+      setAnnouncement(
+        `${item.title}, destacado ${index + 1} de ${itemsRef.current.length}`,
+      );
+    }
   }, [embla]);
+
   const preserveSelection = useCallback(() => {
     if (!embla) return;
     const index = itemsRef.current.findIndex(
@@ -56,216 +185,327 @@ export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
     );
     embla.scrollTo(Math.max(0, index), true);
     sync();
-    if (
-      !playing ||
-      embla.containerNode().contains(document.activeElement) ||
-      document.visibilityState !== "visible" ||
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    )
-      autoplay.stop();
-  }, [autoplay, embla, playing, sync]);
+  }, [embla, sync]);
+
   useLayoutEffect(() => {
     const orderChanged =
       itemsRef.current.map((item) => item.id).join("\0") !==
       anime.map((item) => item.id).join("\0");
     itemsRef.current = anime;
-    if (embla && orderChanged) {
-      embla.reInit();
-      preserveSelection();
-    }
-  }, [anime, embla, preserveSelection]);
+    if (embla && orderChanged) embla.reInit();
+  }, [anime, embla]);
+
+  useLayoutEffect(() => {
+    advanceRef.current = () => {
+      if (!embla) return;
+      if (embla.canScrollNext()) embla.scrollNext(reducedMotion);
+      else embla.scrollTo(0, reducedMotion);
+    };
+  }, [embla, reducedMotion]);
+
+  useEffect(() => {
+    const timer = new SlideTimer(AUTOPLAY_DELAY_MS, () => advanceRef.current());
+    timerRef.current = timer;
+    return () => timer.dispose();
+  }, []);
+
+  useEffect(() => {
+    if (running) timerRef.current?.start();
+    else timerRef.current?.pause();
+  }, [running]);
+
   useEffect(() => {
     if (!embla) return;
+    const startDrag = () => {
+      announceRef.current = true;
+      setDragging(true);
+    };
+    const endDrag = () => setDragging(false);
+    const settle = () => {
+      announceRef.current = false;
+    };
     embla.on("select", sync);
     embla.on("reInit", preserveSelection);
+    embla.on("pointerDown", startDrag);
+    embla.on("pointerUp", endDrag);
+    embla.on("settle", settle);
     return () => {
       embla.off("select", sync);
       embla.off("reInit", preserveSelection);
+      embla.off("pointerDown", startDrag);
+      embla.off("pointerUp", endDrag);
+      embla.off("settle", settle);
     };
   }, [embla, preserveSelection, sync]);
+
+  // The other slides load once the page is done, so they never compete with
+  // the first slide (the LCP) but are ready before autoplay reaches them.
   useEffect(() => {
-    if (!embla) return;
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const syncAutoplay = () => {
-      if (reducedMotion.matches) {
-        autoplay.stop();
-        setPlaying(false);
-        return;
-      }
-      if (
-        document.visibilityState === "visible" &&
-        playing &&
-        !embla.containerNode().contains(document.activeElement)
-      )
-        autoplay.play();
-      else autoplay.stop();
+    const warmUp = () => setWarm(true);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      timeout = setTimeout(warmUp, 600);
     };
-    syncAutoplay();
-    document.addEventListener("visibilitychange", syncAutoplay);
-    reducedMotion.addEventListener("change", syncAutoplay);
+    if (document.readyState === "complete") schedule();
+    else window.addEventListener("load", schedule, { once: true });
     return () => {
-      document.removeEventListener("visibilitychange", syncAutoplay);
-      reducedMotion.removeEventListener("change", syncAutoplay);
+      window.removeEventListener("load", schedule);
+      if (timeout) clearTimeout(timeout);
     };
-  }, [autoplay, embla, playing]);
+  }, []);
+
+  useEffect(() => {
+    if (!moveFocusRef.current) return;
+    moveFocusRef.current = false;
+    sectionRef.current
+      ?.querySelectorAll<HTMLElement>(".featured-slide")
+      [selected]?.querySelector<HTMLElement>("a[href]")
+      ?.focus();
+  }, [selected]);
+
+  const navigate = (target: "prev" | "next" | number) => {
+    if (!embla) return;
+    moveFocusRef.current = Boolean(
+      document.activeElement?.closest(".featured-slide"),
+    );
+    announceRef.current = true;
+    if (target === "prev") embla.scrollPrev(reducedMotion);
+    else if (target === "next") embla.scrollNext(reducedMotion);
+    else embla.scrollTo(target, reducedMotion);
+    // select fires synchronously; a no-op (same slide) must not leave the
+    // flags set for the next autoplay change.
+    announceRef.current = false;
+    if (embla.selectedScrollSnap() === selected) moveFocusRef.current = false;
+  };
+
+  const toggleAutoplay = () => {
+    if (autoplayWanted) {
+      setUserPaused(true);
+      return;
+    }
+    setUserPaused(false);
+    if (reducedMotion) setMotionOptIn(true);
+    // An explicit "play" wins over the keyboard-focus pause (APG carousel).
+    setFocusPaused(false);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === "ArrowLeft") navigate("prev");
+    else if (event.key === "ArrowRight") navigate("next");
+  };
+
+  const handleFocus = (event: FocusEvent<HTMLElement>) => {
+    const fromOutside = !event.currentTarget.contains(event.relatedTarget);
+    if (fromOutside && event.target.matches(":focus-visible"))
+      setFocusPaused(true);
+  };
+
+  const handleBlur = (event: FocusEvent<HTMLElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget))
+      setFocusPaused(false);
+  };
+
+  const progressPaused = !running;
 
   return (
     <section
-      className="featured-hero group relative min-h-[560px] overflow-hidden bg-background-secondary outline-none max-lg:min-h-[520px] max-sm:min-h-[640px]"
+      ref={sectionRef}
+      className={`featured-hero relative overflow-hidden bg-background-secondary ${HERO_HEIGHT_CLASS}`}
       aria-roledescription="carrusel"
       aria-label="Destacados"
-      onKeyDown={(event) => {
-        if (event.key === "ArrowLeft") embla?.scrollPrev();
-        if (event.key === "ArrowRight") embla?.scrollNext();
-      }}
-      tabIndex={0}
+      onKeyDown={multiple ? handleKeyDown : undefined}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
     >
       <p className="sr-only" aria-live="polite" aria-atomic="true">
-        {anime[selected]?.title}, destacado {selected + 1} de {anime.length}
+        {announcement}
       </p>
       <div className="overflow-hidden" ref={viewportRef}>
         <div className="flex touch-pan-y">
-          {anime.map((item, index) => (
-            <article
-              className="featured-slide relative min-h-[560px] min-w-0 flex-[0_0_100%] max-lg:min-h-[520px] max-sm:min-h-[640px]"
-              key={item.id}
-              aria-label={`${index + 1} de ${anime.length}`}
-            >
-              <div className="absolute inset-0">
-                <AnimeImage
-                  src={item.backdropUrl}
-                  fallbackSrc={item.posterUrl}
-                  alt=""
-                  priority
-                  sizes="100vw"
+          {anime.map((item, index) => {
+            const status =
+              item.status === "UNKNOWN" ? null : formatStatus(item.status);
+            const facts = [
+              status,
+              item.startDate
+                ? String(new Date(item.startDate).getUTCFullYear())
+                : null,
+              item.category?.name ?? null,
+              item.episodeCount
+                ? plural(item.episodeCount, "episodio", "episodios")
+                : null,
+            ].filter((fact): fact is string => Boolean(fact));
+            return (
+              <article
+                className={`featured-slide relative min-w-0 flex-[0_0_100%] ${HERO_HEIGHT_CLASS}`}
+                key={item.id}
+                role="group"
+                aria-roledescription="diapositiva"
+                aria-label={`${index + 1} de ${anime.length}`}
+                inert={index !== selected}
+              >
+                <div className="absolute inset-0">
+                  <AnimeImage
+                    src={item.backdropUrl}
+                    mobileSrc={item.posterUrl}
+                    fallbackSrc={item.posterUrl}
+                    alt=""
+                    priority={index === 0}
+                    loading={warm ? "eager" : "lazy"}
+                    sizes="100vw"
+                    imageClassName="max-sm:object-[50%_22%]"
+                  />
+                </div>
+                <div
+                  className="featured-scrim absolute inset-0"
+                  aria-hidden="true"
                 />
-              </div>
-              <div
-                className="absolute inset-0 bg-[linear-gradient(90deg,#050A11_0%,rgba(5,10,17,.94)_25%,rgba(5,10,17,.46)_56%,rgba(5,10,17,.12)_100%),linear-gradient(0deg,#07101A_0%,transparent_38%)] max-sm:bg-[linear-gradient(0deg,#050A11_8%,rgba(5,10,17,.82)_52%,rgba(5,10,17,.18)_100%)]"
-                aria-hidden="true"
-              />
-              <div className="featured-hero-inner relative z-10 mx-auto flex min-h-[560px] w-full max-w-[1600px] items-center px-6 pb-24 pt-16 max-lg:min-h-[520px] max-sm:min-h-[640px] max-sm:items-end max-sm:px-4 max-sm:pb-28 max-sm:pt-20">
-                <div className="max-w-[610px] animate-[hero-in_.5s_ease-out_both]">
-                  <span className="text-[11px] font-bold uppercase tracking-[.18em] text-link">
-                    Destacados
-                  </span>
-                  <h1 className="mt-3 max-w-[13ch] font-(family-name:--font-display) text-6xl font-bold leading-[.94] tracking-[-.055em] text-foreground text-shadow-lg max-lg:text-5xl max-sm:text-[clamp(2.6rem,14vw,4.5rem)]">
-                    {item.title}
-                  </h1>
-                  <div className="mt-5 flex flex-wrap gap-x-3 gap-y-2 text-sm font-medium text-subtle [&>span:not(:last-child)]:after:ml-3 [&>span:not(:last-child)]:after:text-link [&>span:not(:last-child)]:after:content-['•']">
-                    <span>{formatStatus(item.status)}</span>
-                    {item.startDate && (
-                      <span>{new Date(item.startDate).getUTCFullYear()}</span>
-                    )}
-                    {item.category && <span>{item.category.name}</span>}
-                    {item.episodeCount ? (
-                      <span>{item.episodeCount} episodios</span>
-                    ) : null}
-                  </div>
-                  {item.genres.length > 0 && (
-                    <p className="mt-3 text-sm font-semibold text-link">
-                      {item.genres
-                        .slice(0, 3)
-                        .map((genre) => genre.name)
-                        .join(" · ")}
-                    </p>
-                  )}
-                  <p className="mt-4 line-clamp-3 max-w-[57ch] text-[15px] leading-7 text-subtle max-sm:line-clamp-3 max-sm:text-sm max-sm:leading-6">
-                    {item.synopsis}
-                  </p>
-                  <div className="mt-6 flex flex-wrap gap-3">
-                    <Button
-                      onPress={() => router.push(`/anime/${item.slug}`)}
-                      className="h-11 rounded-full bg-accent px-6 font-semibold text-accent-foreground shadow-[0_12px_34px_rgba(47,129,247,.25)] hover:bg-accent-hover"
+                <div
+                  className={`relative z-10 page-container flex items-center pb-24 pt-16 max-sm:items-end max-sm:pb-28 max-sm:pt-20 ${HERO_HEIGHT_CLASS}`}
+                >
+                  <div className="min-w-0 max-w-[610px]">
+                    <span className="eyebrow">Destacados</span>
+                    <h2
+                      title={item.title}
+                      className={`mt-3 line-clamp-3 font-display font-bold leading-[.98] tracking-[-.05em] text-balance text-foreground text-shadow-lg [overflow-wrap:anywhere] ${titleClass(item.title)}`}
                     >
-                      <Info size={17} /> Ver ficha
-                    </Button>
-                    {item.trailerUrl && (
-                      <Button
-                        onPress={() =>
-                          window.open(
-                            item.trailerUrl!,
-                            "_blank",
-                            "noopener,noreferrer",
-                          )
-                        }
-                        variant="secondary"
-                        className="h-11 rounded-full bg-white/10 px-6 font-semibold text-foreground shadow-none backdrop-blur-md hover:bg-white/16"
-                      >
-                        <Play size={16} /> Tráiler <ExternalLink size={13} />
-                      </Button>
+                      {item.title}
+                    </h2>
+                    {facts.length > 0 && (
+                      <ul className="mt-5 flex flex-wrap gap-x-3 gap-y-1 text-sm font-medium text-subtle [&>li+li]:before:mr-3 [&>li+li]:before:text-link [&>li+li]:before:content-['•']">
+                        {facts.map((fact) => (
+                          <li key={fact}>{fact}</li>
+                        ))}
+                      </ul>
                     )}
+                    {item.genres.length > 0 && (
+                      <p className="mt-3 text-sm font-semibold text-link">
+                        {item.genres
+                          .slice(0, 3)
+                          .map((genre) => genre.name)
+                          .join(" · ")}
+                      </p>
+                    )}
+                    {item.synopsis ? (
+                      <p className="mt-4 line-clamp-3 max-w-[57ch] text-[15px] leading-7 text-subtle max-sm:text-sm max-sm:leading-6">
+                        {item.synopsis}
+                      </p>
+                    ) : null}
+                    <div className="mt-6 flex flex-wrap gap-3">
+                      <Link
+                        href={`/anime/${item.slug}`}
+                        className="inline-flex h-11 items-center gap-2 rounded-full bg-accent px-6 text-sm font-semibold text-accent-foreground shadow-lg shadow-accent/25 outline-none transition-colors hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                      >
+                        <Info aria-hidden="true" size={17} /> Ver ficha
+                        <span className="sr-only">: {item.title}</span>
+                      </Link>
+                      {item.trailerUrl ? (
+                        <a
+                          href={item.trailerUrl}
+                          aria-label={`Tráiler de ${item.title} (se abre en otra pestaña)`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex h-11 items-center gap-2 rounded-full bg-white/10 px-6 text-sm font-semibold text-foreground outline-none backdrop-blur-md transition-colors hover:bg-white/16 focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                        >
+                          <Play aria-hidden="true" size={16} /> Tráiler
+                          <ExternalLink aria-hidden="true" size={13} />
+                        </a>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       </div>
-      {anime.length > 1 && (
-        <div className="featured-controls absolute bottom-6 left-1/2 z-20 flex w-full max-w-[1600px] -translate-x-1/2 items-center gap-3 px-6 max-sm:bottom-5 max-sm:px-4">
-          <Button
-            isIconOnly
-            variant="secondary"
-            aria-label="Destacado anterior"
-            className="h-11 w-11 rounded-full bg-white/10 text-foreground shadow-none backdrop-blur-md hover:bg-white/16"
-            onPress={() => embla?.scrollPrev()}
-          >
-            <ArrowLeft size={20} />
-          </Button>
-          <span className="min-w-14 text-center font-mono text-xs font-semibold tracking-wider text-foreground">
-            {String(selected + 1).padStart(2, "0")} /{" "}
-            {String(anime.length).padStart(2, "0")}
-          </span>
-          <div
-            className="flex items-center gap-1.5"
-            aria-label="Elegir destacado"
-          >
-            {anime.map((item, index) => (
-              <Button
-                key={item.id}
-                variant="ghost"
-                aria-label={`Mostrar ${item.title}`}
-                aria-current={index === selected ? "true" : undefined}
-                onPress={() => embla?.scrollTo(index)}
-                className="relative h-6 w-6 min-w-0 overflow-hidden rounded-full bg-transparent px-0 shadow-none transition-[width] duration-200 aria-[current=true]:w-12"
-              >
-                <span className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted/28">
-                  {index === selected && (
+      {multiple && (
+        <div className="absolute inset-x-0 bottom-6 z-20 max-sm:bottom-5">
+          <div className="page-container flex items-center gap-3 max-sm:gap-1.5">
+            <Button
+              isIconOnly
+              variant="secondary"
+              aria-label="Destacado anterior"
+              className={controlClass}
+              onPress={() => navigate("prev")}
+            >
+              <ArrowLeft aria-hidden="true" size={20} />
+            </Button>
+            <span
+              aria-hidden="true"
+              className="min-w-14 text-center font-mono text-xs font-semibold tracking-wider text-foreground"
+            >
+              {String(selected + 1).padStart(2, "0")} /{" "}
+              {String(anime.length).padStart(2, "0")}
+            </span>
+            <div
+              role="group"
+              aria-label="Elegir destacado"
+              className="flex items-center"
+            >
+              {anime.map((item, index) => {
+                const active = index === selected;
+                return (
+                  <Button
+                    key={item.id}
+                    variant="ghost"
+                    aria-label={`Mostrar ${item.title}`}
+                    aria-current={active ? "true" : undefined}
+                    onPress={() => navigate(index)}
+                    className="h-11 min-w-0 rounded-full bg-transparent px-1.5 shadow-none hover:bg-transparent"
+                  >
                     <span
-                      key={`${selected}-${playing}`}
-                      className="block h-full origin-left rounded-full bg-accent animate-[hero-progress_7000ms_linear_forwards]"
-                      style={{
-                        animationPlayState: playing ? "running" : "paused",
-                      }}
-                    />
-                  )}
-                </span>
-              </Button>
-            ))}
+                      className={`relative block h-1.5 overflow-hidden rounded-full bg-muted/45 transition-[width] duration-200 ${active ? "w-12" : "w-6"}`}
+                    >
+                      {active ? (
+                        <span
+                          key={selected}
+                          data-testid="hero-progress"
+                          data-state={
+                            running
+                              ? "running"
+                              : autoplayWanted
+                                ? "held"
+                                : "paused"
+                          }
+                          className={`block h-full origin-left rounded-full bg-brand animate-[hero-progress_7000ms_linear_forwards] motion-reduce:hidden ${progressPaused && autoplayWanted ? "opacity-50" : ""}`}
+                          style={{
+                            animationPlayState: progressPaused
+                              ? "paused"
+                              : "running",
+                          }}
+                        />
+                      ) : null}
+                    </span>
+                  </Button>
+                );
+              })}
+            </div>
+            <Button
+              isIconOnly
+              variant="ghost"
+              aria-label={
+                autoplayWanted ? "Pausar carrusel" : "Reanudar carrusel"
+              }
+              className="h-11 w-11 rounded-full text-subtle shadow-none hover:bg-white/10"
+              onPress={toggleAutoplay}
+            >
+              {autoplayWanted ? (
+                <Pause aria-hidden="true" size={16} />
+              ) : (
+                <Play aria-hidden="true" size={16} />
+              )}
+            </Button>
+            <Button
+              isIconOnly
+              variant="secondary"
+              aria-label="Destacado siguiente"
+              className={controlClass}
+              onPress={() => navigate("next")}
+            >
+              <ArrowRight aria-hidden="true" size={20} />
+            </Button>
           </div>
-          <Button
-            isIconOnly
-            variant="ghost"
-            aria-label={playing ? "Pausar carrusel" : "Reanudar carrusel"}
-            className="h-9 w-9 rounded-full text-subtle shadow-none hover:bg-white/10"
-            onPress={() => {
-              if (playing) autoplay.stop();
-              else autoplay.play();
-              setPlaying((value) => !value);
-            }}
-          >
-            {playing ? <Pause size={15} /> : <Play size={15} />}
-          </Button>
-          <Button
-            isIconOnly
-            variant="secondary"
-            aria-label="Destacado siguiente"
-            className="h-11 w-11 rounded-full bg-white/10 text-foreground shadow-none backdrop-blur-md hover:bg-white/16"
-            onPress={() => embla?.scrollNext()}
-          >
-            <ArrowRight size={20} />
-          </Button>
         </div>
       )}
     </section>

@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { PosterGrid } from "@/components/poster-grid";
+import { Button } from "@heroui/react";
+import { ArrowRight, RefreshCw } from "lucide-react";
+import Link from "next/link";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { PosterGrid, PosterGridSkeleton } from "@/components/poster-grid";
 import type { HomeResponse } from "@/lib/api/client";
 import { fetchHome } from "@/lib/api/home";
-import { FeaturedHero } from "./featured-hero";
-import { RecentEpisodes } from "./recent-episodes";
+import { MAIN_CONTENT_ID } from "@/lib/navigation";
+import { FeaturedHero, HERO_HEIGHT_CLASS } from "./featured-hero";
+import { RecentEpisodes, RecentEpisodesSkeleton } from "./recent-episodes";
 
 export const HOME_POLL_INTERVAL_MS = 60_000;
 const RECOVERY_DELAYS_MS = [5_000, 10_000];
@@ -65,13 +69,16 @@ export function HomeView({
 }) {
   const [home, setHome] = useState(initialHome);
   const [failures, setFailures] = useState(0);
+  const [retrying, setRetrying] = useState(false);
+  const retryRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   useEffect(() => {
     let disposed = false;
     let latest = initialHome;
     let failureCount = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let active: AbortController | null = null;
+    let active: Promise<void> | null = null;
+    let activeController: AbortController | null = null;
     let lastStartedAt: number | null = null;
 
     const clearTimer = () => {
@@ -83,39 +90,47 @@ export function HomeView({
       if (!disposed && document.visibilityState === "visible")
         timer = setTimeout(() => void load(), delay);
     };
-    async function load() {
-      if (disposed || active || document.visibilityState !== "visible") return;
+    function load(): Promise<void> {
+      if (disposed || document.visibilityState !== "visible")
+        return Promise.resolve();
+      // Concurrent triggers (poll, focus, manual retry) share one request.
+      if (active) return active;
       clearTimer();
       const controller = new AbortController();
-      active = controller;
+      activeController = controller;
       lastStartedAt = Date.now();
-      try {
-        const response = await fetchHome(true, controller.signal);
-        if (disposed || controller.signal.aborted) return;
-        latest = mergeHomeSnapshot(latest, response);
-        setHome(latest);
-        failureCount = isHomeComplete(latest) ? 0 : failureCount + 1;
-        setFailures(failureCount);
-      } catch {
-        if (disposed || controller.signal.aborted) return;
-        failureCount += 1;
-        setFailures(failureCount);
-      } finally {
-        active = null;
-        schedule(
-          controller.signal.aborted
-            ? 0
-            : !isHomeComplete(latest) && failureCount < MAX_LOADING_FAILURES
-              ? (RECOVERY_DELAYS_MS[Math.max(0, failureCount - 1)] ??
-                HOME_POLL_INTERVAL_MS)
-              : HOME_POLL_INTERVAL_MS,
-        );
-      }
+      active = (async () => {
+        try {
+          const response = await fetchHome(true, controller.signal);
+          if (disposed || controller.signal.aborted) return;
+          latest = mergeHomeSnapshot(latest, response);
+          setHome(latest);
+          failureCount = isHomeComplete(latest) ? 0 : failureCount + 1;
+          setFailures(failureCount);
+        } catch {
+          if (disposed || controller.signal.aborted) return;
+          failureCount += 1;
+          setFailures(failureCount);
+        } finally {
+          active = null;
+          activeController = null;
+          schedule(
+            controller.signal.aborted
+              ? 0
+              : !isHomeComplete(latest) && failureCount < MAX_LOADING_FAILURES
+                ? (RECOVERY_DELAYS_MS[Math.max(0, failureCount - 1)] ??
+                  HOME_POLL_INTERVAL_MS)
+                : HOME_POLL_INTERVAL_MS,
+          );
+        }
+      })();
+      return active;
     }
+    retryRef.current = load;
     const revalidate = () => {
       if (document.visibilityState !== "visible") {
         clearTimer();
-        active?.abort();
+        activeController?.abort();
         return;
       }
       if (active) return;
@@ -136,11 +151,16 @@ export function HomeView({
     return () => {
       disposed = true;
       clearTimer();
-      active?.abort();
+      activeController?.abort();
       window.removeEventListener("focus", revalidate);
       document.removeEventListener("visibilitychange", revalidate);
     };
   }, [initialHome]);
+
+  const retry = () => {
+    setRetrying(true);
+    void retryRef.current().finally(() => setRetrying(false));
+  };
 
   const loading = failures < MAX_LOADING_FAILURES;
   const hasContent = Boolean(
@@ -148,61 +168,102 @@ export function HomeView({
     home?.data.recentEpisodes.length ||
     home?.data.recentAnime.length,
   );
-  if (!hasContent) return loading ? <HomePlaceholder /> : <HomeUnavailable />;
+  if (!hasContent)
+    return loading ? (
+      <HomePlaceholder />
+    ) : (
+      <HomeUnavailable retrying={retrying} onRetry={retry} />
+    );
 
   return (
-    <main>
+    <main id={MAIN_CONTENT_ID} tabIndex={-1} className="outline-none">
+      <h1 className="sr-only">AnimeHub: anime destacado y novedades</h1>
       {home!.data.featured.length > 0 && (
         <FeaturedHero anime={home!.data.featured} />
       )}
-      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-16 px-6 py-12 max-sm:gap-12 max-sm:px-4 max-sm:pb-28 max-sm:pt-10">
-        <section>
-          <div className="mb-5 flex items-end justify-between">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-[.18em] text-link">
-                Ahora
-              </span>
-              <h2 className="mt-1 font-(family-name:--font-display) text-3xl font-semibold tracking-tight text-foreground max-sm:text-2xl">
-                Episodios recientes
-              </h2>
-            </div>
-          </div>
+      <div className="page-container flex flex-col gap-16 py-12 max-sm:gap-12 max-sm:pt-10">
+        <HomeSection
+          id="episodios-recientes"
+          eyebrow="Ahora"
+          title="Episodios recientes"
+          link={{ href: "/horario", label: "Ver horario" }}
+        >
           {home!.data.recentEpisodes.length ? (
             <RecentEpisodes episodes={home!.data.recentEpisodes} />
           ) : (
-            <MissingSection loading={loading} />
+            <MissingSection loading={loading}>
+              <RecentEpisodesSkeleton />
+            </MissingSection>
           )}
-        </section>
-        <section className="mx-auto w-full max-w-[1152px]">
-          <div className="mb-5 flex items-end justify-between">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-[.18em] text-link">
-                Descubrir
-              </span>
-              <h2 className="mt-1 font-(family-name:--font-display) text-3xl font-semibold tracking-tight text-foreground max-sm:text-2xl">
-                Nuevos en el catálogo
-              </h2>
-            </div>
-          </div>
+        </HomeSection>
+        <HomeSection
+          id="nuevos-en-el-catalogo"
+          eyebrow="Descubrir"
+          title="Nuevos en el catálogo"
+          link={{ href: "/catalogo", label: "Ver catálogo" }}
+        >
           {home!.data.recentAnime.length ? (
             <PosterGrid anime={home!.data.recentAnime} variant="home" />
           ) : (
-            <MissingSection loading={loading} />
+            <MissingSection loading={loading}>
+              <PosterGridSkeleton variant="home" />
+            </MissingSection>
           )}
-        </section>
+        </HomeSection>
       </div>
     </main>
   );
 }
 
-function MissingSection({ loading }: { loading: boolean }) {
+function HomeSection({
+  id,
+  eyebrow,
+  title,
+  link,
+  children,
+}: {
+  id: string;
+  eyebrow: string;
+  title: string;
+  link: { href: string; label: string };
+  children: ReactNode;
+}) {
+  const headingId = `${id}-titulo`;
+  return (
+    <section aria-labelledby={headingId}>
+      <div className="mb-5 flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <span className="eyebrow">{eyebrow}</span>
+          <h2
+            id={headingId}
+            className="mt-1 font-display text-3xl font-semibold tracking-tight text-foreground max-sm:text-2xl"
+          >
+            {title}
+          </h2>
+        </div>
+        <Link
+          href={link.href}
+          className="-mb-2 inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-1 text-sm font-semibold text-link outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus"
+        >
+          {link.label}
+          <ArrowRight aria-hidden="true" size={16} />
+        </Link>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function MissingSection({
+  loading,
+  children,
+}: {
+  loading: boolean;
+  children: ReactNode;
+}) {
   return loading ? (
-    <div
-      className="relative min-h-56 overflow-hidden rounded-xl"
-      role="status"
-      aria-label="Cargando contenido"
-    >
-      <span className="image-skeleton" aria-hidden="true" />
+    <div role="status" aria-label="Cargando contenido">
+      {children}
     </div>
   ) : (
     <p className="py-10 text-sm text-muted">
@@ -211,29 +272,107 @@ function MissingSection({ loading }: { loading: boolean }) {
   );
 }
 
+function SectionHeaderSkeleton({
+  eyebrow,
+  title,
+}: {
+  eyebrow: string;
+  title: string;
+}) {
+  return (
+    <div className="mb-5">
+      <span className="eyebrow">{eyebrow}</span>
+      <h2 className="mt-1 font-display text-3xl font-semibold tracking-tight text-foreground max-sm:text-2xl">
+        {title}
+      </h2>
+    </div>
+  );
+}
+
 export function HomePlaceholder() {
   return (
-    <main aria-label="Cargando portada" aria-busy="true">
-      <div className="featured-hero relative min-h-[560px] overflow-hidden max-lg:min-h-[520px] max-sm:min-h-[640px]">
+    <main
+      id={MAIN_CONTENT_ID}
+      tabIndex={-1}
+      aria-label="Cargando portada"
+      aria-busy="true"
+      className="outline-none"
+    >
+      <div
+        className={`featured-hero relative overflow-hidden bg-background-secondary ${HERO_HEIGHT_CLASS}`}
+      >
         <span className="image-skeleton" aria-hidden="true" />
+        <div
+          aria-hidden="true"
+          className={`relative page-container flex flex-col justify-center gap-4 pb-24 pt-16 max-sm:justify-end max-sm:pb-28 ${HERO_HEIGHT_CLASS}`}
+        >
+          <span className="h-3 w-24 rounded bg-surface-tertiary" />
+          <span className="h-12 w-[min(28rem,80%)] rounded-lg bg-surface-tertiary" />
+          <span className="h-4 w-[min(20rem,60%)] rounded bg-surface-tertiary/70" />
+          <span className="mt-4 h-11 w-36 rounded-full bg-surface-tertiary" />
+        </div>
       </div>
-      <div className="mx-auto w-full max-w-[1600px] px-6 py-12 max-sm:px-4">
-        <MissingSection loading />
+      <div className="page-container flex flex-col gap-16 py-12 max-sm:gap-12 max-sm:pt-10">
+        <section>
+          <SectionHeaderSkeleton eyebrow="Ahora" title="Episodios recientes" />
+          <RecentEpisodesSkeleton />
+        </section>
+        <section>
+          <SectionHeaderSkeleton
+            eyebrow="Descubrir"
+            title="Nuevos en el catálogo"
+          />
+          <PosterGridSkeleton variant="home" />
+        </section>
       </div>
     </main>
   );
 }
 
-function HomeUnavailable() {
+function HomeUnavailable({
+  retrying,
+  onRetry,
+}: {
+  retrying: boolean;
+  onRetry: () => void;
+}) {
   return (
-    <main className="mx-auto grid min-h-[70vh] w-full max-w-[1600px] place-items-center px-6 py-20 text-center">
+    <main
+      id={MAIN_CONTENT_ID}
+      tabIndex={-1}
+      className="page-container grid min-h-[70vh] place-items-center py-20 text-center outline-none"
+    >
       <div className="max-w-lg">
-        <h1 className="font-(family-name:--font-display) text-4xl font-semibold tracking-tight text-foreground">
+        <span className="eyebrow">Inicio</span>
+        <h1 className="mt-3 font-display text-4xl font-semibold tracking-tight text-balance text-foreground max-sm:text-3xl">
           El contenido no está disponible temporalmente
         </h1>
         <p className="mt-4 text-muted">
-          Aparecerá automáticamente cuando esté disponible.
+          Volveremos a intentarlo automáticamente. Mientras tanto, puedes
+          explorar el catálogo.
         </p>
+        <div className="mt-7 flex flex-wrap justify-center gap-3">
+          <Button
+            className="h-11 rounded-full bg-accent px-6 font-semibold text-accent-foreground shadow-none hover:bg-accent-hover"
+            isPending={retrying}
+            onPress={onRetry}
+          >
+            <RefreshCw
+              aria-hidden="true"
+              size={16}
+              className={
+                retrying ? "animate-spin motion-reduce:animate-none" : ""
+              }
+            />
+            {retrying ? "Reintentando…" : "Reintentar ahora"}
+          </Button>
+          <Link
+            href="/catalogo"
+            className="inline-flex h-11 items-center rounded-full bg-default px-6 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-default-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            Ir al catálogo
+          </Link>
+        </div>
       </div>
     </main>
   );
