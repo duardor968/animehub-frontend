@@ -37,6 +37,7 @@ vi.mock("@/lib/api/client", async (importOriginal) => {
 const downloads = vi.hoisted(() => ({
   openDownload: vi.fn(),
   status: undefined as DownloadActivityStatus | undefined,
+  deviceProfile: "desktop" as "desktop" | "portable",
 }));
 
 vi.mock("../downloads/download-provider", () => ({
@@ -45,6 +46,7 @@ vi.mock("../downloads/download-provider", () => ({
     openDownload: downloads.openDownload,
     getRequestStatus: () => downloads.status,
     preferences: { audio: "SUB", providers: ["MEGA"], destination: "CNL" },
+    deviceProfile: downloads.deviceProfile,
     dockSlot: document.body,
   }),
 }));
@@ -77,6 +79,7 @@ beforeAll(() => {
 beforeEach(() => {
   downloads.openDownload.mockReset();
   downloads.status = undefined;
+  downloads.deviceProfile = "desktop";
   vi.mocked(apiFetch).mockReset();
   window.history.replaceState(null, "", "/anime/otome");
 });
@@ -203,6 +206,39 @@ describe("EpisodeBrowser", () => {
       title: "Otome Kaijuu Caraméliser",
       from: 10,
       to: 15,
+      total: 6,
+    });
+  });
+
+  it("doesn't promise a count when specials or gaps can fall in the range", () => {
+    // 120 episodes numbered 1–119: one of them is a special (e.g. 12.5).
+    renderBrowser({
+      initial: pageOf(1),
+      totalRecords: 120,
+      firstNumber: 1,
+      lastNumber: 119,
+    });
+
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "Episodio inicial" }),
+      {
+        target: { value: "12" },
+      },
+    );
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "Episodio final" }),
+      {
+        target: { value: "13" },
+      },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Descargar episodios 12–13" }),
+    );
+    expect(downloads.openDownload).toHaveBeenCalledWith({
+      slug: "otome",
+      title: "Otome Kaijuu Caraméliser",
+      from: 12,
+      to: 13,
     });
   });
 
@@ -340,5 +376,78 @@ describe("EpisodeBrowser", () => {
     });
     expect(screen.getByText("Aún no hay episodios disponibles")).toBeVisible();
     expect(screen.queryByRole("button", { name: /Descargar/ })).toBeNull();
+  });
+
+  it("names where phones actually send the links", () => {
+    // Click'n'Load is stored, but a phone sends to MyJDownloader.
+    downloads.deviceProfile = "portable";
+    renderBrowser({
+      initial: pageOf(1),
+      totalRecords: 1180,
+      firstNumber: 1,
+      lastNumber: 1180,
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Descargar todo (1.180)" }),
+    );
+    expect(screen.getByRole("alertdialog")).toHaveTextContent(
+      "se enviarán a MyJDownloader",
+    );
+  });
+
+  it("shows the page in the URL after Back restored an older render", async () => {
+    // Next restored the page-1 render while the URL says ?page=2.
+    window.history.replaceState(null, "", "/anime/otome?page=2");
+    vi.mocked(apiFetch).mockResolvedValueOnce({
+      data: pageOf(51),
+      meta: { page: 2, perPage: 50, totalPages: 3, totalRecords: 120 },
+    });
+    renderBrowser({
+      initial: pageOf(1),
+      initialPage: 1,
+      totalRecords: 120,
+      firstNumber: 1,
+      lastNumber: 120,
+    });
+
+    await waitFor(() =>
+      expect(screen.getAllByText("Episodios 51–100 de 120")).toHaveLength(2),
+    );
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/anime/otome/episodes?page=2",
+      {},
+      true,
+    );
+  });
+
+  it("keeps pager controls focusable at the ends and while loading", async () => {
+    renderBrowser({
+      initial: pageOf(1),
+      totalRecords: 120,
+      firstNumber: 1,
+      lastNumber: 120,
+    });
+    const pager = screen.getByRole("navigation", {
+      name: "Páginas de episodios",
+    });
+    const previous = within(pager).getByRole("button", {
+      name: "Página anterior",
+    });
+    expect(previous).toHaveAttribute("aria-disabled", "true");
+    expect(previous).not.toBeDisabled();
+    expect(
+      within(pager).getByRole("button", { name: "Página 1" }),
+    ).toHaveAttribute("aria-current", "page");
+
+    vi.mocked(apiFetch).mockReturnValueOnce(new Promise(() => undefined));
+    const next = within(pager).getByRole("button", {
+      name: "Página siguiente",
+    });
+    next.focus();
+    fireEvent.click(next);
+    // Loading: the pressed control keeps focus (never disabled).
+    expect(next).not.toBeDisabled();
+    expect(document.activeElement).toBe(next);
+    expect(next).toHaveAttribute("aria-busy", "true");
   });
 });

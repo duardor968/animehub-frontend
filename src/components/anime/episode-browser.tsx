@@ -1,15 +1,11 @@
 "use client";
 
-import {
-  AlertDialog,
-  Button,
-  Checkbox,
-  Pagination,
-  Spinner,
-} from "@heroui/react";
+import { AlertDialog, Button, Checkbox, Spinner } from "@heroui/react";
 import {
   AlertTriangle,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Minus,
   Plus,
@@ -40,6 +36,7 @@ import {
 import { AnimeImage } from "../anime-image";
 import { EPISODE_PAGE_SIZE, parseEpisodePage } from "./anime-detail";
 import { MediaCard } from "../media-card";
+import { getEffectiveDestination } from "../downloads/device-profile";
 import { MAX_JOB_EPISODES, useDownloads } from "../downloads/download-provider";
 import { EpisodeDownloadButton } from "../downloads/episode-download-button";
 import { describeApiError } from "../downloads/download-errors";
@@ -47,6 +44,12 @@ import type {
   DownloadActivityStatus,
   DownloadRequest,
 } from "../downloads/download-types";
+import {
+  pagerCurrentClass,
+  pagerLinkClass,
+  pagerSpinnerClass,
+  pagerUnavailableClass,
+} from "../pager-styles";
 
 /** "Descargar todo" asks for confirmation above this many episodes. */
 const CONFIRM_ALL_ABOVE = 24;
@@ -96,8 +99,13 @@ export function EpisodeBrowser({
   isMovie?: boolean;
   nextEpisodeAt?: string | null;
 }) {
-  const { openDownload, getRequestStatus, preferences, dockSlot } =
-    useDownloads();
+  const {
+    openDownload,
+    getRequestStatus,
+    preferences,
+    deviceProfile,
+    dockSlot,
+  } = useDownloads();
   const [episodes, setEpisodes] = useState(initial);
   const [page, setPage] = useState(initialPage);
   const [selected, setSelected] = useState<number[]>([]);
@@ -112,6 +120,10 @@ export function EpisodeBrowser({
   );
   const requestSeq = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const listItemsRef = useRef<HTMLOListElement>(null);
+  // After a page change the user asked for: "list" moves keyboard focus to
+  // the new episodes, "if-lost" only when the focused control went away.
+  const focusAfterLoadRef = useRef<"list" | "if-lost" | null>(null);
   const totalPages = Math.max(1, Math.ceil(totalRecords / EPISODE_PAGE_SIZE));
   const loading = loadingPage !== null;
   const single = totalRecords === 1;
@@ -153,6 +165,11 @@ export function EpisodeBrowser({
   const loadPage = useCallback(
     async (target: number, { scroll }: { scroll: boolean }) => {
       const sequence = ++requestSeq.current;
+      const focusInPager = Boolean(
+        document.activeElement?.closest("[data-episode-pager]"),
+      );
+      // Back/forward (no scroll) never moves focus.
+      focusAfterLoadRef.current = scroll ? "if-lost" : null;
       setLoadingPage(target);
       setPageError(null);
       try {
@@ -181,6 +198,9 @@ export function EpisodeBrowser({
               behavior: prefersReducedMotion() ? "auto" : "smooth",
               block: "start",
             });
+            // Paged from the bottom pager: keyboard focus follows the view
+            // to the new episodes instead of staying below them.
+            if (focusInPager) focusAfterLoadRef.current = "list";
           }
         }
         return true;
@@ -204,6 +224,37 @@ export function EpisodeBrowser({
     const loaded = await loadPage(target, { scroll: true });
     if (loaded) window.history.pushState(null, "", pageHref(target));
   }
+
+  // Once a requested page is shown, focus goes to the new list when asked,
+  // or when the focused control went away (the error alert's "Reintentar").
+  useEffect(() => {
+    const intent = focusAfterLoadRef.current;
+    if (!intent || loadingPage !== null) return;
+    focusAfterLoadRef.current = null;
+    if (pageError !== null) return;
+    const active = document.activeElement;
+    if (intent === "list" || !active || active === document.body)
+      listItemsRef.current?.focus({ preventScroll: true });
+  }, [episodes, loadingPage, pageError]);
+
+  // Back to this page from another one: Next restores the router tree of
+  // the original render (page 1) while the URL keeps ?page=N. Follow the URL.
+  useEffect(() => {
+    const fromUrl = parseEpisodePage(
+      new URL(window.location.href).searchParams.get("page"),
+      totalPages,
+    );
+    if (fromUrl === initialPage) return;
+    let active = true;
+    queueMicrotask(() => {
+      if (active) void loadPage(fromUrl, { scroll: false });
+    });
+    return () => {
+      active = false;
+    };
+    // Mount only: later changes come from changePage/popstate.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Back/forward between episode pages: follow the URL.
   useEffect(() => {
@@ -273,10 +324,16 @@ export function EpisodeBrowser({
   const singleBusy = singleRequest
     ? busyStatuses.has(getRequestStatus(singleRequest))
     : false;
+  // Where they actually go: phones send Click'n'Load downloads to
+  // MyJDownloader (getEffectiveDestination), whatever the stored preference.
+  const destination = getEffectiveDestination(
+    deviceProfile ?? "unknown",
+    preferences.destination,
+  );
   const destinationPhrase =
-    preferences.destination === "COPY"
+    destination === "COPY"
       ? "se copiarán al portapapeles"
-      : preferences.destination === "MYJD"
+      : destination === "MYJD"
         ? "se enviarán a MyJDownloader"
         : "se enviarán a JDownloader";
 
@@ -324,6 +381,7 @@ export function EpisodeBrowser({
           title={title}
           firstNumber={firstNumber}
           lastNumber={lastNumber}
+          totalRecords={totalRecords}
         />
       )}
 
@@ -369,10 +427,10 @@ export function EpisodeBrowser({
         <EpisodePager
           id="episodios-paginas"
           label="Páginas de episodios"
-          page={loadingPage ?? page}
+          page={page}
+          pendingPage={loadingPage}
           totalPages={totalPages}
           totalRecords={totalRecords}
-          loading={loading}
           onPage={(target) => void changePage(target)}
           className="mt-4"
         />
@@ -390,7 +448,7 @@ export function EpisodeBrowser({
           <Button
             size="sm"
             variant="secondary"
-            className="min-h-9 rounded-lg bg-default px-3 font-semibold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-focus [@media(pointer:coarse)]:min-h-11"
+            className="min-h-9 rounded-full bg-default px-3 font-semibold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-focus [@media(pointer:coarse)]:min-h-11"
             onPress={() => void changePage(pageError.page)}
           >
             <RefreshCw size={14} aria-hidden="true" /> Reintentar
@@ -414,12 +472,14 @@ export function EpisodeBrowser({
           )}
         </span>
         <ol
+          ref={listItemsRef}
+          tabIndex={-1}
           aria-label={
             totalPages > 1
-              ? `Episodios, página ${page} de ${totalPages}`
+              ? `Episodios, página ${formatNumber(page)} de ${formatNumber(totalPages)}`
               : "Episodios"
           }
-          className={`grid grid-cols-5 gap-x-4 gap-y-5 transition-opacity max-xl:grid-cols-4 max-lg:grid-cols-3 max-md:grid-cols-2 max-sm:grid-cols-1 max-sm:gap-y-2 ${loading ? "pointer-events-none opacity-45" : ""}`}
+          className={`grid grid-cols-5 outline-none gap-x-4 gap-y-5 transition-opacity max-xl:grid-cols-4 max-lg:grid-cols-3 max-md:grid-cols-2 max-sm:grid-cols-1 max-sm:gap-y-2 ${loading ? "pointer-events-none opacity-45" : ""}`}
         >
           {episodes.map((episode) => (
             <EpisodeItem
@@ -439,10 +499,10 @@ export function EpisodeBrowser({
       {totalPages > 1 && (
         <EpisodePager
           label="Páginas de episodios (final de la lista)"
-          page={loadingPage ?? page}
+          page={page}
+          pendingPage={loadingPage}
           totalPages={totalPages}
           totalRecords={totalRecords}
-          loading={loading}
           onPage={(target) => void changePage(target)}
           className="mt-10"
         />
@@ -490,12 +550,12 @@ export function EpisodeBrowser({
               <Button
                 slot="close"
                 variant="tertiary"
-                className="min-h-11 rounded-xl px-4 font-semibold outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                className="min-h-11 rounded-full px-4 font-semibold outline-none focus-visible:ring-2 focus-visible:ring-focus"
               >
                 Cancelar
               </Button>
               <Button
-                className="min-h-11 rounded-xl bg-accent px-4 font-semibold text-accent-foreground outline-none hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus"
+                className="min-h-11 rounded-full bg-accent px-4 font-semibold text-accent-foreground outline-none hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus"
                 onPress={() => {
                   setConfirmAll(false);
                   openDownload(allRequest);
@@ -630,9 +690,10 @@ function EpisodeItem({
             isSelected={checked}
             onChange={onToggle}
             aria-label={selectLabel}
-            className="checkbox-visible grid size-11 shrink-0 place-items-center sm:hidden"
+            className="checkbox-visible shrink-0 sm:hidden"
           >
-            <Checkbox.Content className="gap-0">
+            {/* The label is the clickable part: it fills the 44px target. */}
+            <Checkbox.Content className="grid size-11 place-items-center gap-0">
               <Checkbox.Control className="size-5">
                 <Checkbox.Indicator />
               </Checkbox.Control>
@@ -702,7 +763,7 @@ function SelectionBar({
         >
           <BusyIcon busy={busy} />
           <span>
-            Descargar <span className="max-sm:hidden">selección</span>
+            Descargar <span className="max-sm:sr-only">selección</span>
           </span>
         </Button>
         <Button
@@ -738,84 +799,106 @@ function pageNumbers(page: number, totalPages: number): (number | "gap")[] {
   return pages;
 }
 
-const pagerTarget =
-  "outline-none focus-visible:ring-2 focus-visible:ring-focus [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11";
-
+/**
+ * Episode pages, styled like the catalog pagination. Buttons (pages load in
+ * place) stay focusable while a page loads and at the ends of the list, so
+ * keyboard focus is never dropped; the page being fetched shows a spinner.
+ */
 function EpisodePager({
   id,
   label,
   page,
+  pendingPage,
   totalPages,
   totalRecords,
-  loading,
   onPage,
   className = "",
 }: {
   id?: string;
   label: string;
   page: number;
+  pendingPage: number | null;
   totalPages: number;
   totalRecords: number;
-  loading: boolean;
   onPage: (page: number) => void;
   className?: string;
 }) {
+  const loading = pendingPage !== null;
   const start = (page - 1) * EPISODE_PAGE_SIZE + 1;
   const end = Math.min(page * EPISODE_PAGE_SIZE, totalRecords);
+  const go = (target: number) => {
+    if (loading || target === page || target < 1 || target > totalPages) return;
+    onPage(target);
+  };
+  const arrow = (direction: "prev" | "next") => {
+    const target = direction === "prev" ? page - 1 : page + 1;
+    const unavailable = target < 1 || target > totalPages;
+    const busy = target === pendingPage;
+    return (
+      <button
+        type="button"
+        aria-label={
+          direction === "prev" ? "Página anterior" : "Página siguiente"
+        }
+        aria-disabled={unavailable || undefined}
+        aria-busy={busy || undefined}
+        className={unavailable ? pagerUnavailableClass : pagerLinkClass}
+        onClick={() => go(target)}
+      >
+        {busy ? (
+          <span aria-hidden="true" className={pagerSpinnerClass} />
+        ) : direction === "prev" ? (
+          <ChevronLeft size={18} aria-hidden="true" />
+        ) : (
+          <ChevronRight size={18} aria-hidden="true" />
+        )}
+      </button>
+    );
+  };
   return (
-    <Pagination
+    <nav
       id={id}
       aria-label={label}
-      className={`w-full gap-y-3 max-sm:flex-col max-sm:items-start ${className}`}
+      data-episode-pager=""
+      className={`flex w-full flex-wrap items-center justify-between gap-x-6 gap-y-3 max-sm:flex-col max-sm:items-start ${className}`}
     >
-      <Pagination.Summary className="text-muted">
+      <p className="text-sm text-muted">
         Episodios {formatNumber(start)}–{formatNumber(end)} de{" "}
         {formatNumber(totalRecords)}
-      </Pagination.Summary>
-      <Pagination.Content className="episode-pager-content">
-        <Pagination.Item>
-          <Pagination.Previous
-            aria-label="Página anterior"
-            className={pagerTarget}
-            isDisabled={page <= 1 || loading}
-            onPress={() => onPage(page - 1)}
-          >
-            <Pagination.PreviousIcon />
-            <span className="max-sm:sr-only">Anterior</span>
-          </Pagination.Previous>
-        </Pagination.Item>
+      </p>
+      <ol className="episode-pager-content flex items-center gap-1.5">
+        <li>{arrow("prev")}</li>
         {pageNumbers(page, totalPages).map((entry, index) =>
           entry === "gap" ? (
-            <Pagination.Item key={`gap-${index}`}>
-              <Pagination.Ellipsis />
-            </Pagination.Item>
+            <li
+              key={`gap-${index}`}
+              aria-hidden="true"
+              className="grid w-7 shrink-0 place-items-center text-sm text-faint"
+            >
+              …
+            </li>
           ) : (
-            <Pagination.Item key={entry}>
-              <Pagination.Link
-                aria-label={`Página ${entry}`}
-                className={pagerTarget}
-                isActive={entry === page}
-                isDisabled={loading}
-                onPress={() => onPage(entry)}
+            <li key={entry}>
+              <button
+                type="button"
+                aria-label={`Página ${formatNumber(entry)}`}
+                aria-current={entry === page ? "page" : undefined}
+                aria-busy={entry === pendingPage || undefined}
+                className={entry === page ? pagerCurrentClass : pagerLinkClass}
+                onClick={() => go(entry)}
               >
-                {entry}
-              </Pagination.Link>
-            </Pagination.Item>
+                {entry === pendingPage ? (
+                  <span aria-hidden="true" className={pagerSpinnerClass} />
+                ) : (
+                  formatNumber(entry)
+                )}
+              </button>
+            </li>
           ),
         )}
-        <Pagination.Item>
-          <Pagination.Next
-            aria-label="Página siguiente"
-            className={pagerTarget}
-            isDisabled={page >= totalPages || loading}
-            onPress={() => onPage(page + 1)}
-          >
-            <span className="max-sm:sr-only">Siguiente</span>
-            <Pagination.NextIcon />
-          </Pagination.Next>
-        </Pagination.Item>
-      </Pagination.Content>
-    </Pagination>
+        <li>{arrow("next")}</li>
+      </ol>
+    </nav>
   );
 }
 
@@ -824,11 +907,13 @@ function RangeDownload({
   title,
   firstNumber,
   lastNumber,
+  totalRecords,
 }: {
   slug: string;
   title: string;
   firstNumber: number;
   lastNumber: number;
+  totalRecords: number;
 }) {
   const { openDownload, getRequestStatus } = useDownloads();
   const min = Math.floor(firstNumber);
@@ -849,9 +934,19 @@ function RangeDownload({
       : from > to
         ? "El episodio inicial debe ser menor o igual que el final."
         : null;
-  const count = !error && from !== null && to !== null ? to - from + 1 : 0;
+  // The API sends every episode between the bounds, specials included
+  // (12.5 in 12–13), and the numbering can have gaps. Only a gapless whole
+  // numbering (as many episodes as numbers) gives an exact count up front.
+  const gapless =
+    Number.isInteger(firstNumber) &&
+    Number.isInteger(lastNumber) &&
+    totalRecords === lastNumber - firstNumber + 1;
+  const count =
+    gapless && !error && from !== null && to !== null ? to - from + 1 : null;
   const request: DownloadRequest | null =
-    !error && from !== null && to !== null ? { slug, title, from, to } : null;
+    !error && from !== null && to !== null
+      ? { slug, title, from, to, ...(count !== null ? { total: count } : {}) }
+      : null;
   const busy = request ? busyStatuses.has(getRequestStatus(request)) : false;
 
   return (
@@ -910,9 +1005,13 @@ function RangeDownload({
               aria-label="Preparando descarga"
             />
           )}
-          {count > 0
+          {count !== null
             ? `Descargar ${plural(count, "episodio", "episodios")}`
-            : "Descargar rango"}
+            : request
+              ? request.from === request.to
+                ? `Descargar episodio ${formatNumber(request.from ?? 0)}`
+                : `Descargar episodios ${formatNumber(request.from ?? 0)}–${formatNumber(request.to ?? 0)}`
+              : "Descargar rango"}
         </Button>
       </div>
       <p
