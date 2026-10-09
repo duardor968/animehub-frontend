@@ -16,7 +16,9 @@ import {
   it,
   vi,
 } from "vitest";
+import { act } from "react";
 import { CatalogFilters } from "./catalog-filters";
+import { useCatalogNavigation } from "./catalog-navigation";
 
 const navigation = vi.hoisted(() => ({
   pathname: "/buscar",
@@ -544,5 +546,63 @@ describe("CatalogFilters interactions", () => {
         String(message).includes("controlled to uncontrolled"),
       ),
     ).toBe(false);
+  });
+
+  it("keeps keyboard focus while results load and lands it on the results", async () => {
+    let finish!: () => void;
+    navigation.push.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    function Pager() {
+      const catalogNavigation = useCatalogNavigation();
+      return (
+        <button
+          type="button"
+          onClick={() =>
+            catalogNavigation?.navigate("/buscar?q=one&page=2", {
+              scroll: true,
+              focusResults: true,
+            })
+          }
+        >
+          Página 2
+        </button>
+      );
+    }
+    render(
+      <CatalogFilters
+        scope="search"
+        categories={categories}
+        genres={genres}
+        years={[1990, 2026]}
+        totalRecords={43}
+        footer={<Pager />}
+      >
+        <div>Resultados</div>
+      </CatalogFilters>,
+    );
+
+    const pager = screen.getByRole("button", { name: "Página 2" });
+    pager.focus();
+    fireEvent.click(pager);
+
+    // While loading, "Filtros" is pending, not disabled (focus may return to
+    // it from the drawer), and the focused control keeps focus.
+    const filters = screen.getByRole("button", { name: /^Filtros/ });
+    await waitFor(() =>
+      expect(filters).toHaveAttribute("aria-disabled", "true"),
+    );
+    expect(filters).not.toBeDisabled();
+    expect(document.activeElement).toBe(pager);
+
+    await act(async () => finish());
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("region", { name: "Resultados de la búsqueda" }),
+      ),
+    );
   });
 });
