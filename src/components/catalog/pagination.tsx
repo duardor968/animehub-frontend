@@ -11,6 +11,12 @@ import {
   type ReactNode,
 } from "react";
 import { formatNumber } from "@/lib/format";
+import {
+  pagerCurrentClass,
+  pagerLinkClass,
+  pagerSpinnerClass,
+  pagerUnavailableClass,
+} from "../pager-styles";
 import { useCatalogNavigation } from "./catalog-navigation";
 
 type PageItem = number | "gap-start" | "gap-end";
@@ -48,9 +54,7 @@ export function paginationItems(
 // Pages beyond this count get the "Ir a la página" field next to the numbers.
 const jumpThreshold = 7;
 
-const itemClass =
-  "grid size-11 place-items-center rounded-xl text-sm font-semibold tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background";
-const linkClass = `${itemClass} border border-white/10 bg-surface text-subtle hover:border-link/45 hover:bg-surface-hover hover:text-foreground`;
+const linkClass = pagerLinkClass;
 
 export function Pagination({
   page,
@@ -83,11 +87,13 @@ export function Pagination({
   const pendingPage =
     isPending && pending?.from === page ? pending.to : undefined;
 
+  // Paging scrolls to the top and moves keyboard focus to the new results:
+  // the clicked link itself becomes the current page (a span).
   const go = (target: number) => {
     const clamped = Math.min(totalPages, Math.max(1, Math.trunc(target)));
-    if (clamped === page || !navigation) return;
+    if (clamped === page || !navigation || navigation.isPending) return;
     setPending({ from: page, to: clamped });
-    navigation.navigate(href(clamped), { scroll: true });
+    navigation.navigate(href(clamped), { scroll: true, focusResults: true });
   };
 
   // Plain links stay crawlable and work without JS; with JS they run inside
@@ -110,6 +116,7 @@ export function Pagination({
   const onJump = (event: FormEvent<HTMLFormElement>) => {
     if (!navigation) return;
     event.preventDefault();
+    if (navigation.isPending) return;
     const target = Number(jumpValue);
     if (!Number.isFinite(target) || jumpValue.trim() === "") return;
     setJumpValue("");
@@ -121,10 +128,7 @@ export function Pagination({
     const isTarget = target === pendingPage;
     if (isCurrent)
       return (
-        <span
-          aria-current="page"
-          className={`${itemClass} bg-accent text-accent-foreground`}
-        >
+        <span aria-current="page" className={pagerCurrentClass}>
           <span className="sr-only">Página </span>
           {formatNumber(target)}
         </span>
@@ -153,10 +157,7 @@ export function Pagination({
       );
     if (target < 1 || target > totalPages)
       return (
-        <span
-          aria-hidden="true"
-          className={`${itemClass} border border-white/6 text-faint opacity-60`}
-        >
+        <span aria-hidden="true" className={pagerUnavailableClass}>
           {icon}
         </span>
       );
@@ -185,11 +186,13 @@ export function Pagination({
         {arrow("prev")}
         <label className="relative">
           <span className="sr-only">Ir a la página</span>
+          {/* 16px text: iOS zooms into smaller form controls. Never disabled
+              while loading (that would drop focus); go() ignores changes. */}
           <select
             value={pendingPage ?? page}
-            disabled={isPending}
+            aria-busy={isPending || undefined}
             onChange={(event) => go(Number(event.target.value))}
-            className="h-11 min-w-40 appearance-none rounded-xl border border-white/10 bg-surface pl-4 pr-10 text-sm font-semibold tabular-nums text-foreground outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-70"
+            className="h-11 min-w-40 appearance-none rounded-xl border border-white/10 bg-surface pl-4 pr-10 text-base font-semibold tabular-nums text-foreground outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-busy:opacity-70 sm:text-sm"
           >
             {Array.from({ length: totalPages }, (_, index) => (
               <option key={index} value={index + 1}>
@@ -253,15 +256,14 @@ export function Pagination({
             onChange={(event) =>
               setJumpValue(event.target.value.replace(/\D/g, "").slice(0, 3))
             }
-            placeholder={String(page)}
             aria-describedby={`${jumpId}-total`}
             className="h-11 w-16 rounded-xl border border-white/10 bg-surface-secondary px-3 text-center text-sm font-semibold tabular-nums text-foreground outline-none placeholder:text-faint focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           />
           <span id={`${jumpId}-total`}>de {formatNumber(totalPages)}</span>
           <button
             type="submit"
-            disabled={isPending}
-            className="h-11 rounded-xl bg-accent-soft px-4 font-semibold text-accent-soft-foreground outline-none transition-colors hover:bg-accent-soft-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-60"
+            aria-disabled={isPending || undefined}
+            className="h-11 rounded-full bg-accent-soft px-4 font-semibold text-accent-soft-foreground outline-none transition-colors hover:bg-accent-soft-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-disabled:opacity-60"
           >
             Ir
           </button>
@@ -272,10 +274,5 @@ export function Pagination({
 }
 
 function Spinner(): ReactNode {
-  return (
-    <span
-      aria-hidden="true"
-      className="size-4 animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none"
-    />
-  );
+  return <span aria-hidden="true" className={pagerSpinnerClass} />;
 }

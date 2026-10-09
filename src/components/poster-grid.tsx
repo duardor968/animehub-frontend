@@ -73,7 +73,7 @@ export function PosterGrid({
           </p>
           {content.action ? (
             <Link
-              className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-lg bg-accent-soft px-4 text-sm font-semibold text-accent-soft-foreground transition-colors hover:bg-accent-soft-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-full bg-accent-soft px-5 text-sm font-semibold text-accent-soft-foreground transition-colors hover:bg-accent-soft-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
               href={content.action.href}
             >
               {content.action.label}
@@ -105,14 +105,21 @@ export function PosterGrid({
               href={`/anime/${item.slug}`}
             >
               <div className="touch-static-media relative aspect-[2/3] overflow-hidden bg-surface [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04] group-has-[a:focus-visible]:[&_.anime-image_img]:scale-[1.04]">
-                {/* Catalog pages: the first two posters are the LCP
-                    candidates (two columns on phones); the rest of the first
-                    desktop row loads eagerly without competing with them. */}
+                {/* Catalog pages: the first two posters are the first row on
+                    phones and the LCP candidates (preloaded, high priority).
+                    The rest of a desktop first row loads eagerly at low
+                    priority: no preload, so phones (where they're below the
+                    fold) don't fetch them ahead of the LCP. */}
                 <AnimeImage
                   src={item.posterUrl}
                   alt=""
                   priority={variant !== "home" && index < 2}
                   loading={variant !== "home" && index < 6 ? "eager" : "lazy"}
+                  fetchPriority={
+                    variant !== "home" && index >= 2 && index < 6
+                      ? "low"
+                      : undefined
+                  }
                   sizes="(max-width: 639px) 50vw, (max-width: 1279px) 25vw, 16vw"
                 />
                 <span className="touch-category-label absolute bottom-0 left-0 rounded-tr-lg bg-surface px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.08em] text-link transition-opacity duration-300 group-hover:opacity-0 group-has-[a:focus-visible]:opacity-0">
@@ -154,8 +161,12 @@ export function PosterGrid({
   );
 }
 
+// 12 placeholders fill whole rows at 2, 3, 4 and 6 columns; the 5-column
+// layout shows 10.
+const SKELETON_TRIM_CLASS = "xl:max-2xl:[&>:nth-child(n+11)]:hidden";
+
 export function PosterGridSkeleton({
-  count = 6,
+  count = 12,
   variant = "catalog",
 }: {
   count?: number;
@@ -164,7 +175,7 @@ export function PosterGridSkeleton({
   return (
     <div
       aria-hidden="true"
-      className={`${POSTER_GRID_CLASS} ${variant === "home" ? HOME_TRIM_CLASS : ""}`}
+      className={`${POSTER_GRID_CLASS} ${SKELETON_TRIM_CLASS} ${variant === "home" ? HOME_TRIM_CLASS : ""}`}
     >
       {Array.from({ length: count }, (_, index) => (
         <div

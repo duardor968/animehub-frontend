@@ -26,6 +26,7 @@ export function AnimeImage({
   alt,
   priority = false,
   loading,
+  fetchPriority,
   sizes = "(max-width: 600px) 50vw, 20vw",
   imageClassName = "",
 }: {
@@ -37,6 +38,11 @@ export function AnimeImage({
   priority?: boolean;
   /** Defaults to eager for priority images and lazy otherwise. */
   loading?: "eager" | "lazy";
+  /** For eager images that are only above the fold on some viewports:
+   *  "low" keeps them from competing with the LCP image (and stops React
+   *  from preloading them in <head>); the browser raises the priority of
+   *  the ones that turn out visible. Priority images are always "high". */
+  fetchPriority?: "high" | "low" | "auto";
   sizes?: string;
   imageClassName?: string;
 }) {
@@ -127,7 +133,7 @@ export function AnimeImage({
       alt={alt}
       fill
       preload={priority && !artDirected}
-      fetchPriority={priority ? "high" : undefined}
+      fetchPriority={priority ? "high" : fetchPriority}
       loading={priority ? "eager" : (loading ?? "lazy")}
       sizes={sizes}
       unoptimized
