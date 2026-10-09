@@ -24,6 +24,8 @@ import { PageHeader, pageMainClass } from "@/components/catalog/page-header";
 import { Pagination } from "@/components/catalog/pagination";
 import { PosterGrid } from "@/components/poster-grid";
 import { SearchBox } from "@/components/search-box";
+import { MAIN_CONTENT_ID } from "@/lib/navigation";
+import { siteName, siteOpenGraph } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 
@@ -52,12 +54,10 @@ export async function generateMetadata({
     alternates: { canonical: "/buscar" },
     robots: q ? { index: false, follow: true } : undefined,
     openGraph: {
-      title: `${title} · AnimeHub`,
+      ...siteOpenGraph,
+      title: `${title} · ${siteName}`,
       description: "Busca anime por título original o alternativo.",
       url: "/buscar",
-      siteName: "AnimeHub",
-      locale: "es_ES",
-      type: "website",
     },
   };
 }
@@ -78,7 +78,7 @@ export default async function SearchPage({
   const { request, q } = readQuery(incoming);
 
   return (
-    <main id="contenido" tabIndex={-1} className={pageMainClass}>
+    <main id={MAIN_CONTENT_ID} tabIndex={-1} className={pageMainClass}>
       <PageHeader
         eyebrow="Encontrar"
         title="Buscar"
