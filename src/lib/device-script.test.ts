@@ -8,6 +8,7 @@ import { deviceProfileScript } from "./device-script";
 afterEach(() => {
   vi.unstubAllGlobals();
   delete document.documentElement.dataset.device;
+  delete document.documentElement.dataset.tz;
 });
 
 const snapshots: DeviceNavigatorSnapshot[] = [
@@ -36,6 +37,13 @@ describe("deviceProfileScript", () => {
     new Function(deviceProfileScript)();
     expect(document.documentElement.dataset.device).toBe(
       detectDeviceProfile(snapshot),
+    );
+  });
+
+  it("records the viewer's time zone for the schedule", () => {
+    new Function(deviceProfileScript)();
+    expect(document.documentElement.dataset.tz).toBe(
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
     );
   });
 });
