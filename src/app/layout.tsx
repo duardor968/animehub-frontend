@@ -2,10 +2,10 @@ import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Manrope } from "next/font/google";
 import type { ReactNode } from "react";
 import { AppHeader, SkipLink } from "@/components/app-header";
+import { DeviceProfileScript } from "@/components/device-profile-script";
 import { MobileNav } from "@/components/mobile-nav";
 import { Providers } from "@/components/providers";
 import { SiteFooter } from "@/components/site-footer";
-import { deviceProfileScript } from "@/lib/device-script";
 import { siteDescription, siteName, siteOpenGraph, siteUrl } from "@/lib/site";
 import "./globals.css";
 
@@ -49,11 +49,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       lang="es"
       className={`dark ${display.variable} ${body.variable}`}
       data-scroll-behavior="smooth"
-      // data-device is set by the inline script below, before hydration.
+      // data-device is set by DeviceProfileScript below, before hydration.
       suppressHydrationWarning
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: deviceProfileScript }} />
+        <DeviceProfileScript />
         {/* Artwork comes from the source CDN: open the connection while the
             HTML streams so the hero image doesn't pay DNS + TLS late. */}
         <link rel="preconnect" href="https://cdn.animeav1.com" />

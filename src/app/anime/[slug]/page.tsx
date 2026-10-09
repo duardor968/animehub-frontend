@@ -260,7 +260,7 @@ export default async function AnimePage({
           </div>
         </div>
       </section>
-      <div className="page-container flex flex-col gap-16 pt-12 pb-[calc(var(--bottom-nav-clearance)+var(--download-dock-height,0px)+3rem)]">
+      <div className="page-container flex flex-col gap-16 pt-12 pb-12">
         {anime.relations.length > 0 && (
           <RelatedAnime
             relations={anime.relations}
