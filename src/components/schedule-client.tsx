@@ -23,11 +23,13 @@ export function LocalTime() {
     () => null,
   );
   return (
-    <span className="inline-flex items-center gap-2 text-sm text-[#93A4B8]">
-      <span className="text-[10px] font-bold uppercase tracking-[.16em] text-[#5C6E82]">
+    <span className="inline-flex items-center gap-2 text-sm text-muted">
+      <span className="text-[10px] font-bold uppercase tracking-[.16em] text-faint">
         Hora local
       </span>
-      <strong className="tabular-nums text-[#F3F8FC]">{time ?? "--:--"}</strong>
+      <strong className="tabular-nums text-foreground">
+        {time ?? "--:--"}
+      </strong>
     </span>
   );
 }

@@ -1257,7 +1257,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       {children}
       {dismissedResumable.length > 0 && (
         <Button
-          className="fixed bottom-6 right-6 z-50 min-h-11 rounded-xl bg-[#16243A] px-4 text-sm font-semibold text-[#E6F0FF] shadow-[0_16px_40px_rgb(0_0_0/0.34)] max-sm:bottom-24 max-sm:right-4"
+          className="fixed bottom-6 right-6 z-50 min-h-11 rounded-xl bg-surface-tertiary px-4 text-sm font-semibold text-accent-soft-foreground shadow-[0_16px_40px_rgb(0_0_0/0.34)] max-sm:bottom-24 max-sm:right-4"
           onPress={() => reopenDismissedActivity(dismissedResumable[0].id)}
           aria-label={
             dismissedResumable.length === 1
@@ -1288,12 +1288,12 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
             className="download-drawer-content z-[70]"
           >
             <Drawer.Dialog
-              className="download-drawer-dialog !w-full !max-w-md border-l border-white/10 bg-[#07101A] text-[#F3F8FC]"
+              className="download-drawer-dialog !w-full !max-w-md border-l border-white/10 bg-background-secondary text-foreground"
               aria-label="Descargas"
             >
               <Drawer.Header className="mobile-drawer-header flex items-center justify-between border-b border-white/8 px-5 py-4">
                 <div>
-                  <span className="text-[10px] font-bold uppercase tracking-[.18em] text-[#2F81F7]">
+                  <span className="text-[10px] font-bold uppercase tracking-[.18em] text-link">
                     Descargas
                   </span>
                   <h2>
@@ -1305,7 +1305,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                   </h2>
                 </div>
                 <Drawer.CloseTrigger
-                  className="grid size-10 place-items-center rounded-lg text-[#8FA3B4] hover:bg-[#102130]"
+                  className="grid size-10 place-items-center rounded-lg text-muted hover:bg-surface-hover"
                   aria-label="Cerrar"
                 >
                   <X size={18} />
@@ -1329,7 +1329,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                   <div className="flex flex-col gap-4">
                     {deviceError && (
                       <div
-                        className="rounded-xl border border-[#FB7185]/25 bg-[#FB7185]/8 px-4 py-3 text-sm text-[#FCA5B4]"
+                        className="rounded-xl border border-danger/25 bg-danger/8 px-4 py-3 text-sm text-danger-soft-foreground"
                         role="alert"
                       >
                         {deviceError}
@@ -1339,7 +1339,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                       <>
                         {devicesLoading ? (
                           <div
-                            className="flex min-h-24 items-center justify-center gap-2 text-sm text-[#8FA3B4]"
+                            className="flex min-h-24 items-center justify-center gap-2 text-sm text-muted"
                             role="status"
                           >
                             <RefreshCw className="size-4 animate-spin" />
@@ -1347,7 +1347,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                           </div>
                         ) : devices.length > 0 ? (
                           <>
-                            <p className="text-sm text-[#8FA3B4]">
+                            <p className="text-sm text-muted">
                               {pendingRequest
                                 ? "Elige dónde enviar esta descarga."
                                 : "El dispositivo elegido se usará durante esta sesión."}
@@ -1355,7 +1355,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                             {devices.map((device) => (
                               <Button
                                 variant="secondary"
-                                className="min-h-12 justify-between rounded-xl bg-[#0B1621] text-[#F3F8FC]"
+                                className="min-h-12 justify-between rounded-xl bg-surface text-foreground"
                                 key={device.id}
                                 onPress={() => void sendDevice(device.id)}
                                 isDisabled={deviceDeliveryPending}
@@ -1368,11 +1368,11 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                             ))}
                           </>
                         ) : (
-                          <div className="rounded-xl bg-[#0B1621] p-4">
-                            <strong className="text-sm text-[#F3F8FC]">
+                          <div className="rounded-xl bg-surface p-4">
+                            <strong className="text-sm text-foreground">
                               No hay dispositivos disponibles
                             </strong>
-                            <p className="mt-1 text-xs leading-5 text-[#8FA3B4]">
+                            <p className="mt-1 text-xs leading-5 text-muted">
                               Abre JDownloader en el equipo de destino y vuelve
                               a buscar.
                             </p>
@@ -1381,14 +1381,14 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                         <div className="flex flex-wrap gap-2">
                           <Button
                             variant="secondary"
-                            className="min-h-11 rounded-xl bg-[#151E2E] text-[#F3F8FC]"
+                            className="min-h-11 rounded-xl bg-default text-foreground"
                             onPress={() => void refreshDevices()}
                           >
                             <RefreshCw size={15} /> Actualizar
                           </Button>
                           <Button
                             variant="ghost"
-                            className="min-h-11 text-[#8FA3B4]"
+                            className="min-h-11 text-muted"
                             onPress={() => void resetMyJdConnection()}
                           >
                             Usar otra cuenta
@@ -1397,7 +1397,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                       </>
                     ) : (
                       <form className="flex flex-col gap-4" onSubmit={connect}>
-                        <p className="text-sm text-[#8FA3B4]">
+                        <p className="text-sm text-muted">
                           Conecta tu cuenta para elegir el JDownloader de
                           destino. La contraseña no se guarda.
                         </p>
@@ -1427,7 +1427,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                         </TextField>
                         <Button
                           type="submit"
-                          className="min-h-11 bg-[#2F81F7] text-white"
+                          className="min-h-11 bg-accent text-accent-foreground"
                         >
                           Conectar
                         </Button>
@@ -1438,13 +1438,13 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                   <div className="flex flex-col gap-4">
                     {devices.length > 0 ? (
                       <>
-                        <p className="text-sm text-[#8FA3B4]">
+                        <p className="text-sm text-muted">
                           El dispositivo se aplica únicamente a esta operación.
                         </p>
                         {devices.map((device) => (
                           <Button
                             variant="secondary"
-                            className="justify-between rounded-xl bg-[#0B1621] text-[#F3F8FC]"
+                            className="justify-between rounded-xl bg-surface text-foreground"
                             key={device.id}
                             onPress={() => void sendDevice(device.id)}
                             isDisabled={deviceDeliveryPending}
@@ -1456,7 +1456,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                       </>
                     ) : (
                       <form className="flex flex-col gap-4" onSubmit={connect}>
-                        <p className="text-sm text-[#8FA3B4]">
+                        <p className="text-sm text-muted">
                           La contraseña se descarta al derivar la sesión.
                         </p>
                         <TextField
@@ -1485,7 +1485,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                         </TextField>
                         <Button
                           type="submit"
-                          className="bg-[#2F81F7] text-white"
+                          className="bg-accent text-accent-foreground"
                         >
                           Conectar
                         </Button>
@@ -1520,7 +1520,7 @@ function PreferencesPanel({
   return (
     <div className="flex flex-col gap-6">
       <fieldset className="border-b border-white/8 pb-5">
-        <legend className="mb-3 text-sm font-semibold text-[#F3F8FC]">
+        <legend className="mb-3 text-sm font-semibold text-foreground">
           Audio preferido
         </legend>
         <ToggleButtonGroup
@@ -1538,12 +1538,12 @@ function PreferencesPanel({
             </ToggleButton>
           ))}
         </ToggleButtonGroup>
-        <p className="mt-2 text-xs text-[#8FA3B4]">
+        <p className="mt-2 text-xs text-muted">
           Si no está disponible, se usará el otro audio.
         </p>
       </fieldset>
       <fieldset className="border-b border-white/8 pb-5">
-        <legend className="mb-3 text-sm font-semibold text-[#F3F8FC]">
+        <legend className="mb-3 text-sm font-semibold text-foreground">
           Proveedores
         </legend>
         <div className="grid grid-cols-2 gap-3">
@@ -1566,25 +1566,25 @@ function PreferencesPanel({
         </div>
       </fieldset>
       <fieldset className="border-b border-white/8 pb-5">
-        <legend className="mb-3 text-sm font-semibold text-[#F3F8FC]">
+        <legend className="mb-3 text-sm font-semibold text-foreground">
           Destino
         </legend>
         {portable ? (
-          <div className="flex min-h-14 items-center gap-3 rounded-xl bg-[#0B1621] px-4 py-2.5">
-            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#16243A] text-[#69A7FF]">
+          <div className="flex min-h-14 items-center gap-3 rounded-xl bg-surface px-4 py-2.5">
+            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-surface-tertiary text-link">
               <Send size={16} />
             </span>
             <span className="min-w-0 flex-1">
-              <strong className="block text-sm text-[#F3F8FC]">
+              <strong className="block text-sm text-foreground">
                 MyJDownloader
               </strong>
-              <span className="block truncate text-xs text-[#8FA3B4]">
+              <span className="block truncate text-xs text-muted">
                 {selectedDeviceName ?? "Sin dispositivo elegido"}
               </span>
             </span>
             <Button
               variant="ghost"
-              className="min-h-10 shrink-0 px-2 text-xs font-semibold text-[#69A7FF]"
+              className="min-h-10 shrink-0 px-2 text-xs font-semibold text-link"
               onPress={openDeviceSettings}
             >
               {selectedDeviceName ? "Cambiar" : "Configurar"}

@@ -258,14 +258,14 @@ export function CatalogFilters({
 
   return (
     <div className="min-w-0" aria-busy={isNavigationPending}>
-      <div className="mb-6 rounded-2xl border border-white/8 bg-[#08111E] px-3 py-3 shadow-[0_18px_45px_rgb(0_0_0/0.12)] sm:px-4">
+      <div className="mb-6 rounded-2xl border border-white/8 bg-surface px-3 py-3 shadow-[0_18px_45px_rgb(0_0_0/0.12)] sm:px-4">
         <div className="flex flex-wrap items-center gap-3">
           <Button
             onPress={() => {
               openFilters();
               drawer.open();
             }}
-            className="min-h-11 rounded-xl bg-[#2F81F7] px-4 text-sm font-semibold text-white shadow-none transition-colors hover:bg-[#4A91F8]"
+            className="min-h-11 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-foreground shadow-none transition-colors hover:bg-accent-hover"
             isDisabled={isNavigationPending}
           >
             <SlidersHorizontal size={17} aria-hidden="true" />
@@ -288,10 +288,10 @@ export function CatalogFilters({
                 placement="left"
                 className="mobile-drawer-content z-[70]"
               >
-                <Drawer.Dialog className="mobile-drawer-dialog !w-[min(100vw,27rem)] !max-w-[27rem] overflow-hidden border-r border-white/10 bg-[#07101A] !p-0 text-[#F3F8FC] shadow-[24px_0_70px_rgb(0_0_0/0.36)]">
+                <Drawer.Dialog className="mobile-drawer-dialog !w-[min(100vw,27rem)] !max-w-[27rem] overflow-hidden border-r border-white/10 bg-background-secondary !p-0 text-foreground shadow-[24px_0_70px_rgb(0_0_0/0.36)]">
                   <Drawer.Header className="mobile-drawer-header flex shrink-0 items-start justify-between border-b border-white/8 px-5 py-5 sm:px-6">
                     <div>
-                      <span className="text-[10px] font-bold uppercase tracking-[.18em] text-[#5FA8FF]">
+                      <span className="text-[10px] font-bold uppercase tracking-[.18em] text-link">
                         Catálogo
                       </span>
                       <Drawer.Heading className="mt-1 text-xl font-semibold tracking-[-.02em]">
@@ -299,7 +299,7 @@ export function CatalogFilters({
                       </Drawer.Heading>
                     </div>
                     <Drawer.CloseTrigger
-                      className="grid size-11 shrink-0 place-items-center rounded-xl text-[#8FA3B4] outline-none transition-colors hover:bg-[#102130] hover:text-white focus-visible:ring-2 focus-visible:ring-[#5FA8FF]"
+                      className="grid size-11 shrink-0 place-items-center rounded-xl text-muted outline-none transition-colors hover:bg-surface-hover hover:text-white focus-visible:ring-2 focus-visible:ring-focus"
                       aria-label="Cerrar filtros"
                     >
                       <X size={18} aria-hidden="true" />
@@ -319,19 +319,19 @@ export function CatalogFilters({
                       yearError={yearError}
                     />
                   </Drawer.Body>
-                  <Drawer.Footer className="mobile-drawer-footer sticky bottom-0 z-10 grid shrink-0 grid-cols-[minmax(0,.8fr)_minmax(0,1.35fr)] gap-3 border-t border-white/8 bg-[#07101A] px-5 py-4 sm:px-6">
+                  <Drawer.Footer className="mobile-drawer-footer sticky bottom-0 z-10 grid shrink-0 grid-cols-[minmax(0,.8fr)_minmax(0,1.35fr)] gap-3 border-t border-white/8 bg-background-secondary px-5 py-4 sm:px-6">
                     {preview.key === draftKey &&
                       preview.status === "failed" &&
                       !draftMatchesApplied && (
                         <div
-                          className="col-span-2 flex min-h-9 items-center justify-between gap-3 rounded-lg bg-[#271824] px-3 text-xs text-[#F5A3B2]"
+                          className="col-span-2 flex min-h-9 items-center justify-between gap-3 rounded-lg bg-danger-soft px-3 text-xs text-danger-soft-foreground"
                           role="alert"
                         >
                           <span>No se pudo calcular el total.</span>
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="min-h-8 shrink-0 px-2 text-xs font-semibold text-[#FFB4C0]"
+                            className="min-h-8 shrink-0 px-2 text-xs font-semibold text-danger-soft-foreground"
                             onPress={() =>
                               setPreviewAttempt((attempt) => attempt + 1)
                             }
@@ -342,7 +342,7 @@ export function CatalogFilters({
                       )}
                     <Button
                       variant="secondary"
-                      className="h-11 items-center justify-center rounded-xl border border-white/10 bg-[#0B1621] px-3 text-sm font-semibold leading-none text-[#DDE7EE] shadow-none"
+                      className="h-11 items-center justify-center rounded-xl border border-white/10 bg-surface px-3 text-sm font-semibold leading-none text-subtle shadow-none"
                       onPress={() =>
                         setDraft((params) =>
                           clearCatalogFilters(params, bounds),
@@ -355,7 +355,7 @@ export function CatalogFilters({
                       Limpiar filtros
                     </Button>
                     <Button
-                      className="h-11 items-center justify-center rounded-xl bg-[#2F81F7] px-3 text-sm font-semibold leading-none text-white shadow-none"
+                      className="h-11 items-center justify-center rounded-xl bg-accent px-3 text-sm font-semibold leading-none text-accent-foreground shadow-none"
                       onPress={applyFilters}
                       isDisabled={Boolean(yearError) || isNavigationPending}
                     >
@@ -372,8 +372,8 @@ export function CatalogFilters({
             </Drawer.Backdrop>
           </Drawer>
 
-          <p className="text-sm text-[#8FA3B4]" aria-live="polite">
-            <strong className="font-semibold text-[#DDE7EE]">
+          <p className="text-sm text-muted" aria-live="polite">
+            <strong className="font-semibold text-subtle">
               {totalRecords.toLocaleString("es")}
             </strong>{" "}
             {totalRecords === 1 ? "obra" : "obras"}
@@ -395,7 +395,7 @@ export function CatalogFilters({
             variant="secondary"
             isDisabled={isNavigationPending}
           >
-            <Select.Trigger className="h-11 items-center rounded-xl border border-white/8 bg-[#101A2A] text-sm text-[#F3F8FC] shadow-none">
+            <Select.Trigger className="h-11 items-center rounded-xl border border-white/8 bg-surface-secondary text-sm text-foreground shadow-none">
               <Select.Value />
               <Select.Indicator />
             </Select.Trigger>
@@ -434,7 +434,7 @@ export function CatalogFilters({
                     id={entry.id}
                     key={entry.id}
                     variant="surface"
-                    className="min-h-9 rounded-xl border border-white/8 bg-[#102130] px-3 text-xs font-medium text-[#DDE7EE]"
+                    className="min-h-9 rounded-xl border border-white/8 bg-surface-hover px-3 text-xs font-medium text-subtle"
                   >
                     {entry.label}
                     <Tag.RemoveButton aria-label="Quitar">
@@ -447,7 +447,7 @@ export function CatalogFilters({
             <Button
               size="sm"
               variant="ghost"
-              className="min-h-9 px-2 text-xs font-semibold text-[#66A3FF]"
+              className="min-h-9 px-2 text-xs font-semibold text-link"
               onPress={clearApplied}
               isDisabled={isNavigationPending}
             >
@@ -543,9 +543,9 @@ function FilterPanel({
             <Radio
               key={value || "any"}
               value={value}
-              className="group/radio !mt-0 min-h-11 w-full justify-center rounded-lg px-2.5 transition-colors hover:bg-white/[.035] data-[selected]:bg-[#10213A]"
+              className="group/radio !mt-0 min-h-11 w-full justify-center rounded-lg px-2.5 transition-colors hover:bg-white/[.035] data-[selected]:bg-accent-soft"
             >
-              <Radio.Content className="flex h-11 w-full items-center gap-2.5 text-left text-sm leading-5 text-[#C4D2DE] data-[focus-visible=true]:ring-2 data-[focus-visible=true]:ring-[#5FA8FF] data-[focus-visible=true]:ring-offset-1 data-[focus-visible=true]:ring-offset-[#07101A]">
+              <Radio.Content className="flex h-11 w-full items-center gap-2.5 text-left text-sm leading-5 text-subtle data-[focus-visible=true]:ring-2 data-[focus-visible=true]:ring-focus data-[focus-visible=true]:ring-offset-1 data-[focus-visible=true]:ring-offset-background-secondary">
                 <Radio.Control className="shrink-0">
                   <Radio.Indicator />
                 </Radio.Control>
@@ -560,7 +560,7 @@ function FilterPanel({
         title="Año"
         count={Number(params.has("minYear") || params.has("maxYear"))}
       >
-        <div className="rounded-xl bg-[#0B1621] px-3.5 py-3">
+        <div className="rounded-xl bg-surface px-3.5 py-3">
           <Slider
             value={yearRange}
             minValue={bounds.min}
@@ -572,36 +572,36 @@ function FilterPanel({
             }}
             className="gap-y-3"
           >
-            <Label className="text-xs font-medium text-[#8FA3B4]">
+            <Label className="text-xs font-medium text-muted">
               Rango de años
             </Label>
-            <Slider.Output className="text-sm font-semibold tabular-nums text-[#F3F8FC]">
+            <Slider.Output className="text-sm font-semibold tabular-nums text-foreground">
               {`${yearRange[0]} – ${yearRange[1]}`}
             </Slider.Output>
-            <Slider.Track className="!h-6 !rounded-full !border-x-[10px] !border-x-transparent !bg-[#101A2A]">
-              <Slider.Fill className="rounded-full bg-[#2F81F7]" />
+            <Slider.Track className="!h-6 !rounded-full !border-x-[10px] !border-x-transparent !bg-surface-secondary">
+              <Slider.Fill className="rounded-full bg-accent" />
               <Slider.Thumb
                 index={0}
                 aria-label="Año inicial"
-                className="!size-7 !w-7 !rounded-full !bg-transparent after:!size-4 after:!rounded-full after:!bg-[#F3F8FC]"
+                className="!size-7 !w-7 !rounded-full !bg-transparent after:!size-4 after:!rounded-full after:!bg-foreground"
               />
               <Slider.Thumb
                 index={1}
                 aria-label="Año final"
-                className="!size-7 !w-7 !rounded-full !bg-transparent after:!size-4 after:!rounded-full after:!bg-[#F3F8FC]"
+                className="!size-7 !w-7 !rounded-full !bg-transparent after:!size-4 after:!rounded-full after:!bg-foreground"
               />
             </Slider.Track>
           </Slider>
           <div
             aria-hidden="true"
-            className="mt-1 flex justify-between px-0.5 text-[10px] tabular-nums text-[#5F7487]"
+            className="mt-1 flex justify-between px-0.5 text-[10px] tabular-nums text-faint"
           >
             <span>{bounds.min}</span>
             <span>{bounds.max}</span>
           </div>
         </div>
         {yearError && (
-          <p className="mt-2 text-xs font-medium text-[#FB7185]" role="alert">
+          <p className="mt-2 text-xs font-medium text-danger" role="alert">
             {yearError}
           </p>
         )}
@@ -609,7 +609,7 @@ function FilterPanel({
           <Button
             size="sm"
             variant="ghost"
-            className="mt-2 h-9 items-center justify-start px-1 text-xs font-semibold leading-none text-[#66A3FF]"
+            className="mt-2 h-9 items-center justify-start px-1 text-xs font-semibold leading-none text-link"
             onPress={() => setYearRange([bounds.min, bounds.max])}
           >
             Cualquier año
@@ -625,7 +625,7 @@ function FilterPanel({
           className="w-full"
           variant="secondary"
         >
-          <SearchField.Group className="h-11 rounded-xl border border-white/8 bg-[#101A2A] shadow-none">
+          <SearchField.Group className="h-11 rounded-xl border border-white/8 bg-surface-secondary shadow-none">
             <SearchField.SearchIcon>
               <Search size={16} aria-hidden="true" />
             </SearchField.SearchIcon>
@@ -648,10 +648,10 @@ function FilterPanel({
           <div className="py-8 text-center">
             <ListFilter
               size={20}
-              className="mx-auto text-[#5F7487]"
+              className="mx-auto text-faint"
               aria-hidden="true"
             />
-            <p className="mt-2 text-sm text-[#8FA3B4]">
+            <p className="mt-2 text-sm text-muted">
               No hay géneros que coincidan.
             </p>
           </div>
@@ -665,9 +665,9 @@ function FilterCheckbox({ label, value }: { label: string; value: string }) {
   return (
     <Checkbox
       value={value}
-      className="group/filter !mt-0 min-h-11 w-full justify-center rounded-lg px-2.5 transition-colors hover:bg-white/[.035] data-[selected=true]:bg-[#10213A]"
+      className="group/filter !mt-0 min-h-11 w-full justify-center rounded-lg px-2.5 transition-colors hover:bg-white/[.035] data-[selected=true]:bg-accent-soft"
     >
-      <Checkbox.Content className="flex h-11 w-full min-w-0 items-center gap-2.5 text-left text-sm leading-5 text-[#C4D2DE] data-[focus-visible=true]:ring-2 data-[focus-visible=true]:ring-[#5FA8FF] data-[focus-visible=true]:ring-offset-1 data-[focus-visible=true]:ring-offset-[#07101A]">
+      <Checkbox.Content className="flex h-11 w-full min-w-0 items-center gap-2.5 text-left text-sm leading-5 text-subtle data-[focus-visible=true]:ring-2 data-[focus-visible=true]:ring-focus data-[focus-visible=true]:ring-offset-1 data-[focus-visible=true]:ring-offset-background-secondary">
         <Checkbox.Control className="shrink-0">
           <Checkbox.Indicator />
         </Checkbox.Control>
@@ -691,14 +691,14 @@ function FilterDisclosure({
   return (
     <Disclosure defaultExpanded className={`py-5 ${className}`}>
       <Disclosure.Heading>
-        <Disclosure.Trigger className="flex min-h-10 w-full items-center gap-2 rounded-lg text-sm font-semibold text-[#F3F8FC] outline-none focus-visible:ring-2 focus-visible:ring-[#5FA8FF]">
+        <Disclosure.Trigger className="flex min-h-10 w-full items-center gap-2 rounded-lg text-sm font-semibold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-focus">
           <span>{title}</span>
           {count > 0 && (
-            <span className="rounded-full bg-[#16243A] px-2 py-0.5 text-[10px] tabular-nums text-[#7DB6FF]">
+            <span className="rounded-full bg-surface-tertiary px-2 py-0.5 text-[10px] tabular-nums text-link">
               {count}
             </span>
           )}
-          <Disclosure.Indicator className="ml-auto size-4 text-[#8FA3B4]">
+          <Disclosure.Indicator className="ml-auto size-4 text-muted">
             <ChevronDown size={16} aria-hidden="true" />
           </Disclosure.Indicator>
         </Disclosure.Trigger>

@@ -1,39 +1,72 @@
 @import "tailwindcss";
 @import "@heroui/styles";
 
+/* Design tokens. Components use the semantic utilities (text-muted, bg-surface,
+   bg-accent, ring-focus…) instead of raw hex values so the palette lives here. */
 :root {
   color-scheme: dark;
   --background: #030711;
-  --background-secondary: #060b16;
+  --background-secondary: #07101a;
   --background-tertiary: #0a1220;
   --foreground: #f3f8fc;
+  /* Text ramp: foreground > subtle > muted > faint (faint is the AA floor). */
+  --subtle: #c4d2de;
+  --muted: #8fa3b4;
+  --faint: #7a8ea0;
   --surface: #0a1220;
   --surface-foreground: #f3f8fc;
   --surface-secondary: #111a2a;
   --surface-secondary-foreground: #f3f8fc;
-  --surface-tertiary: #182235;
+  --surface-tertiary: #16243a;
   --surface-tertiary-foreground: #f3f8fc;
+  --surface-hover: #12223a;
   --overlay: #0d1524;
   --overlay-foreground: #f3f8fc;
   --default: #151e2e;
+  --default-hover: #1c2940;
   --default-foreground: #f3f8fc;
-  --accent: #2f81f7;
+  /* Brand blue for decorative indicators (underlines, dots, progress). Filled
+     surfaces with text use --accent, which keeps white text above 4.5:1. */
+  --brand: #2f81f7;
+  --accent: #1f6feb;
+  --accent-hover: #1a62d4;
   --accent-foreground: #ffffff;
+  --accent-soft: #152439;
+  --accent-soft-hover: #1b304a;
+  --accent-soft-foreground: #dceaff;
   --success: #30c8b0;
   --success-foreground: #04110e;
   --danger: #fb7185;
   --danger-foreground: #fff1f2;
+  --danger-soft: #271824;
+  --danger-soft-foreground: #fca5b4;
   --warning: #fbbf24;
   --warning-foreground: #1c1300;
-  --muted: #93a4b8;
   --border: rgb(173 190 211 / 9%);
   --separator: rgb(173 190 211 / 8%);
   --focus: #5b9cff;
   --link: #66a3ff;
   --field-background: #0d1625;
   --field-foreground: #f3f8fc;
-  --field-placeholder: #718596;
+  --field-placeholder: #7a8ea0;
   --field-border: rgb(143 163 180 / 18%);
+
+  /* Layout. The bottom navigation shows below the lg breakpoint (64rem); every
+     fixed bottom element and page end clears it through this one variable. */
+  --header-height: 4rem;
+  --bottom-nav-clearance: 0px;
+}
+
+@media (width < 64rem) {
+  :root {
+    --bottom-nav-clearance: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (width < 40rem) {
+  :root {
+    --header-height: 3.5rem;
+  }
 }
 
 @theme inline {
@@ -41,16 +74,54 @@
   --color-background-secondary: var(--background-secondary);
   --color-background-tertiary: var(--background-tertiary);
   --color-foreground: var(--foreground);
-  --color-surface: var(--surface);
-  --color-border: var(--border);
+  --color-subtle: var(--subtle);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-surface: var(--surface);
+  --color-surface-secondary: var(--surface-secondary);
+  --color-surface-tertiary: var(--surface-tertiary);
+  --color-surface-hover: var(--surface-hover);
+  --color-default: var(--default);
+  --color-default-hover: var(--default-hover);
+  --color-border: var(--border);
+  --color-brand: var(--brand);
   --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
   --color-accent-foreground: var(--accent-foreground);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-hover: var(--accent-soft-hover);
+  --color-accent-soft-foreground: var(--accent-soft-foreground);
+  --color-link: var(--link);
+  --color-focus: var(--focus);
   --color-success: var(--success);
   --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-soft-foreground: var(--danger-soft-foreground);
   --color-warning: var(--warning);
   --font-sans: var(--font-body);
   --font-display: var(--font-display);
+}
+
+/* Shared page width: header, footer and every page align to the same edges. */
+@utility page-container {
+  margin-inline: auto;
+  width: 100%;
+  max-width: 1600px;
+  padding-inline: 1.5rem;
+
+  @media (width < 40rem) {
+    padding-inline: 1rem;
+  }
+}
+
+/* Small uppercase label above section titles. */
+@utility eyebrow {
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--link);
 }
 
 @layer base {
@@ -62,6 +133,7 @@
     min-width: 320px;
     background: var(--background);
     scroll-behavior: smooth;
+    scroll-padding-top: calc(var(--header-height) + 1rem);
   }
 
   body {
@@ -121,17 +193,35 @@
     opacity: 1;
   }
 
+  /* Shimmer animates a transform only, so it stays on the compositor. */
   .image-skeleton {
     position: absolute;
     inset: 0;
-    background: linear-gradient(105deg, #0a1220 20%, #182235 42%, #0a1220 64%);
-    background-size: 240% 100%;
+    overflow: hidden;
+    background: var(--surface);
+  }
+
+  .image-skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      105deg,
+      transparent 20%,
+      var(--surface-tertiary) 42%,
+      transparent 64%
+    );
+    transform: translateX(-100%);
     animation: image-loading 1.4s ease-in-out infinite;
   }
 
   .anime-image.is-loaded .image-skeleton {
     opacity: 0;
     pointer-events: none;
+  }
+
+  .anime-image.is-loaded .image-skeleton::after {
+    animation: none;
   }
 
   .status-success {
@@ -302,11 +392,8 @@
 }
 
 @keyframes image-loading {
-  from {
-    background-position: 100% 0;
-  }
   to {
-    background-position: -100% 0;
+    transform: translateX(100%);
   }
 }
 

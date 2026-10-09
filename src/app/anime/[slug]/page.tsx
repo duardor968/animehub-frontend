@@ -74,13 +74,13 @@ export default async function AnimePage({
           __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c"),
         }}
       />
-      <section className="relative overflow-hidden border-b border-white/6 bg-[#050A11]">
+      <section className="relative overflow-hidden border-b border-white/6 bg-background">
         <div
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_78%_18%,rgba(47,129,247,.11),transparent_34%)]"
           aria-hidden="true"
         />
         <div className="relative mx-auto grid w-full max-w-[1500px] grid-cols-[minmax(270px,330px)_minmax(0,1fr)] items-start gap-[clamp(2.5rem,6vw,6.5rem)] px-6 py-14 max-lg:grid-cols-[240px_minmax(0,1fr)] max-lg:gap-10 max-md:grid-cols-[190px_minmax(0,1fr)] max-md:gap-6 max-md:py-10 max-sm:block max-sm:px-4 max-sm:py-8">
-          <div className="relative aspect-[2/3] overflow-hidden rounded-[1.35rem] bg-[#0A1220] shadow-[0_28px_84px_rgba(0,0,0,.48)] max-sm:mb-7 max-sm:w-[min(58vw,220px)]">
+          <div className="relative aspect-[2/3] overflow-hidden rounded-[1.35rem] bg-surface shadow-[0_28px_84px_rgba(0,0,0,.48)] max-sm:mb-7 max-sm:w-[min(58vw,220px)]">
             <AnimeImage
               src={anime.posterUrl}
               alt={`Póster de ${anime.title}`}
@@ -89,26 +89,26 @@ export default async function AnimePage({
             />
           </div>
           <div className="min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-[.2em] text-[#69A7FF]">
+            <span className="text-[10px] font-bold uppercase tracking-[.2em] text-link">
               Ficha de anime
             </span>
-            <h1 className="mt-3 max-w-[1020px] font-(family-name:--font-display) text-[clamp(2.65rem,5vw,5.2rem)] font-semibold leading-[.98] tracking-[-.055em] text-[#F3F8FC] max-md:text-[clamp(2.25rem,5.8vw,3.7rem)]">
+            <h1 className="mt-3 max-w-[1020px] font-(family-name:--font-display) text-[clamp(2.65rem,5vw,5.2rem)] font-semibold leading-[.98] tracking-[-.055em] text-foreground max-md:text-[clamp(2.25rem,5.8vw,3.7rem)]">
               {anime.title}
             </h1>
             {anime.alternativeTitle && (
-              <p className="mt-3 max-w-[900px] text-sm italic leading-6 text-[#91A8BC]">
+              <p className="mt-3 max-w-[900px] text-sm italic leading-6 text-muted">
                 {anime.alternativeTitle}
               </p>
             )}
-            <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3 border-y border-white/8 py-3.5 text-xs font-medium text-[#C4D2DE] [&>span]:inline-flex [&>span]:items-center [&>span]:gap-1.5">
+            <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3 border-y border-white/8 py-3.5 text-xs font-medium text-subtle [&>span]:inline-flex [&>span]:items-center [&>span]:gap-1.5">
               <span>
                 {anime.status === "AIRING" && (
                   <i
                     className="relative mr-1 inline-flex size-2.5 items-center justify-center"
                     aria-hidden="true"
                   >
-                    <i className="absolute inset-0 animate-ping rounded-full bg-[#35D39B]/45" />
-                    <i className="relative inline-flex size-1.5 rounded-full bg-[#35D39B] shadow-[0_0_10px_rgba(53,211,155,.72)]" />
+                    <i className="absolute inset-0 animate-ping rounded-full bg-success/45" />
+                    <i className="relative inline-flex size-1.5 rounded-full bg-success shadow-[0_0_10px_rgba(53,211,155,.72)]" />
                   </i>
                 )}
                 {formatStatus(anime.status)}
@@ -118,7 +118,7 @@ export default async function AnimePage({
                   <Star size={14} fill="currentColor" />{" "}
                   {anime.score.toFixed(2)}
                   {anime.votes ? (
-                    <small className="text-[#8FA3B4]">
+                    <small className="text-muted">
                       {anime.votes.toLocaleString("es")} votos
                     </small>
                   ) : null}
@@ -148,7 +148,7 @@ export default async function AnimePage({
               <div className="mt-3 flex flex-wrap gap-2" aria-label="Géneros">
                 {anime.genres.map((genre) => (
                   <Link
-                    className="rounded-full bg-[#151E2E]/82 px-3 py-1.5 text-xs font-medium text-[#C4D2DE] transition-colors hover:bg-[#1C2940] hover:text-[#81B3FA]"
+                    className="rounded-full bg-default/82 px-3 py-1.5 text-xs font-medium text-subtle transition-colors hover:bg-default-hover hover:text-link"
                     href={`/catalogo?genre=${genre.slug}`}
                     key={genre.id}
                   >
@@ -157,13 +157,13 @@ export default async function AnimePage({
                 ))}
               </div>
             )}
-            <p className="mt-5 max-w-[920px] text-[15px] leading-7 text-[#C4D2DE]">
+            <p className="mt-5 max-w-[920px] text-[15px] leading-7 text-subtle">
               {anime.synopsis}
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               {anime.trailerUrl && (
                 <a
-                  className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[#2F81F7] px-6 text-sm font-semibold text-white shadow-[0_12px_34px_rgba(47,129,247,.25)] transition-colors hover:bg-[#4B93F7]"
+                  className="inline-flex min-h-11 items-center gap-2 rounded-full bg-accent px-6 text-sm font-semibold text-accent-foreground shadow-[0_12px_34px_rgba(47,129,247,.25)] transition-colors hover:bg-accent-hover"
                   href={anime.trailerUrl}
                   target="_blank"
                   rel="noreferrer"
@@ -172,7 +172,7 @@ export default async function AnimePage({
                 </a>
               )}
               <a
-                className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white/10 px-6 text-sm font-semibold text-[#F3F8FC] backdrop-blur-md transition-colors hover:bg-white/16"
+                className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white/10 px-6 text-sm font-semibold text-foreground backdrop-blur-md transition-colors hover:bg-white/16"
                 href={anime.sourceUrl}
                 target="_blank"
                 rel="noreferrer"
@@ -236,7 +236,7 @@ function RelatedAnime({
 
   return (
     <section>
-      <h2 className="mb-6 font-(family-name:--font-display) text-3xl font-semibold tracking-tight text-[#F3F8FC]">
+      <h2 className="mb-6 font-(family-name:--font-display) text-3xl font-semibold tracking-tight text-foreground">
         Relacionados
       </h2>
       <div className="-mx-1 overflow-x-auto px-1 pb-3 [scrollbar-width:thin]">
@@ -246,7 +246,7 @@ function RelatedAnime({
               {/* Year marker + axis line running right, nearly reaching the next
                   year, to read as one continuous timeline. */}
               <div className="flex items-center gap-2.5">
-                <span className="font-(family-name:--font-display) text-lg font-semibold tabular-nums text-[#9FB3C6]">
+                <span className="font-(family-name:--font-display) text-lg font-semibold tabular-nums text-muted">
                   {year ?? "Sin fecha"}
                 </span>
                 <span className="h-px flex-1 bg-white/12" aria-hidden="true" />
@@ -274,29 +274,29 @@ function RelatedCard({
 }) {
   const label = RELATION_LABELS[relation.kind] ?? relation.kind;
   return (
-    <MediaCard className="touch-card group w-[152px] min-w-0 shrink-0 gap-0 rounded-xl bg-[#0A1424] p-0 transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]">
+    <MediaCard className="touch-card group w-[152px] min-w-0 shrink-0 gap-0 rounded-xl bg-surface p-0 transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]">
       <Link
         href={`/anime/${relation.anime.slug}`}
         aria-label={`Ver ${relation.anime.title}`}
-        className="block outline-none focus-visible:ring-2 focus-visible:ring-[#5B9CFF] focus-visible:ring-inset"
+        className="block outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset"
       >
-        <div className="touch-static-media relative aspect-[2/3] overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04] group-has-[:focus-visible]:[&_.anime-image_img]:scale-[1.04]">
+        <div className="touch-static-media relative aspect-[2/3] overflow-hidden bg-surface [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04] group-has-[:focus-visible]:[&_.anime-image_img]:scale-[1.04]">
           <AnimeImage src={relation.anime.posterUrl} alt="" sizes="152px" />
-          <span className="touch-category-label absolute bottom-0 left-0 rounded-tr-lg bg-[#0A1424] px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[.08em] text-[#8AB8FA] transition-opacity duration-300 group-hover:opacity-0 group-has-[:focus-visible]:opacity-0">
+          <span className="touch-category-label absolute bottom-0 left-0 rounded-tr-lg bg-surface px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[.08em] text-link transition-opacity duration-300 group-hover:opacity-0 group-has-[:focus-visible]:opacity-0">
             {label}
           </span>
           <div
             aria-hidden="true"
-            className="touch-hover-panel absolute inset-0 flex flex-col justify-end bg-[#07101D]/92 p-3 opacity-0 transition-opacity duration-250 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100"
+            className="touch-hover-panel absolute inset-0 flex flex-col justify-end bg-background-secondary/92 p-3 opacity-0 transition-opacity duration-250 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100"
           >
-            <span className="text-[9px] font-bold uppercase tracking-[.14em] text-[#69A7FF]">
+            <span className="text-[9px] font-bold uppercase tracking-[.14em] text-link">
               {label}
             </span>
-            <strong className="mt-1.5 line-clamp-2 text-xs font-semibold leading-4 text-[#F3F8FC]">
+            <strong className="mt-1.5 line-clamp-2 text-xs font-semibold leading-4 text-foreground">
               {relation.anime.title}
             </strong>
             {relation.anime.synopsis?.trim() ? (
-              <p className="mt-1.5 line-clamp-5 text-[11px] leading-4 text-[#B8C6D4]">
+              <p className="mt-1.5 line-clamp-5 text-[11px] leading-4 text-subtle">
                 {relation.anime.synopsis}
               </p>
             ) : null}
@@ -305,10 +305,10 @@ function RelatedCard({
         <Card.Content className="gap-0.5 px-3 py-3">
           {/* Reserve two lines so every card is the same height regardless of
               how long the title is (aligns the row like the catalog grid). */}
-          <Card.Title className="line-clamp-2 min-h-8 text-xs font-semibold leading-4 text-[#F3F8FC]">
+          <Card.Title className="line-clamp-2 min-h-8 text-xs font-semibold leading-4 text-foreground">
             {relation.anime.title}
           </Card.Title>
-          <Card.Description className="text-[11px] leading-4 text-[#93A4B8]">
+          <Card.Description className="text-[11px] leading-4 text-muted">
             {label}
           </Card.Description>
         </Card.Content>

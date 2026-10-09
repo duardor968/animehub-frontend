@@ -36,7 +36,7 @@ function Highlighted({ label, query }: { label: string; query: string }) {
   return (
     <>
       {label.slice(0, index)}
-      <span className="font-semibold text-[#F3F8FC]">
+      <span className="font-semibold text-foreground">
         {label.slice(index, index + q.length)}
       </span>
       {label.slice(index + q.length)}
@@ -221,7 +221,7 @@ function SearchBoxState({
       }
     >
       <div className="relative min-w-0 flex-1">
-        <div className="flex w-full overflow-visible rounded-xl border border-white/10 bg-[#0B1621] transition-[background-color,box-shadow] duration-200 focus-within:border-[#2F81F7]/45 focus-within:bg-[#0E1B2B] focus-within:shadow-[0_0_0_2px_rgba(91,156,255,.3)]">
+        <div className="flex w-full overflow-visible rounded-xl border border-white/10 bg-surface transition-[background-color,box-shadow] duration-200 focus-within:border-accent/45 focus-within:bg-surface-secondary focus-within:shadow-[0_0_0_2px_rgba(91,156,255,.3)]">
           <SearchField
             aria-label="Buscar anime"
             className="w-full min-w-0 flex-1"
@@ -253,25 +253,25 @@ function SearchBoxState({
                 aria-controls={isSuggestionsOpen ? listboxId : undefined}
                 aria-activedescendant={activeOptionId}
                 placeholder="Buscar anime"
-                className="min-w-0 flex-1 px-4 py-0 text-sm text-[#F3F8FC] placeholder:text-[#718596]"
+                className="min-w-0 flex-1 px-4 py-0 text-sm text-foreground placeholder:text-faint"
                 onKeyDown={handleInputKeyDown}
               />
               {!query && !isSearchFocused && (
-                <kbd className="pointer-events-none mr-1.5 hidden shrink-0 select-none items-center gap-1 rounded-md border border-white/10 bg-[#111C2C] px-1.5 py-0.5 font-mono text-[10px] text-[#7F93A8] md:flex">
+                <kbd className="pointer-events-none mr-1.5 hidden shrink-0 select-none items-center gap-1 rounded-md border border-white/10 bg-surface-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted md:flex">
                   <span>Ctrl</span>
                   <span>K</span>
                 </kbd>
               )}
               <SearchField.ClearButton
                 aria-label="Limpiar búsqueda"
-                className="mr-[9.5px] text-[#8FA3B4] hover:text-[#F3F8FC]"
+                className="mr-[9.5px] text-muted hover:text-foreground"
               />
               <Button
                 aria-label="Buscar"
                 isIconOnly
                 size="sm"
                 variant="tertiary"
-                className="h-full min-w-11 rounded-none rounded-r-xl border-l border-white/10 px-0 text-[#8FB0DD] shadow-none hover:bg-[#152439] hover:text-[#F3F8FC]"
+                className="h-full min-w-11 rounded-none rounded-r-xl border-l border-white/10 px-0 text-muted shadow-none hover:bg-accent-soft hover:text-foreground"
                 onPress={() => submitSearch()}
               >
                 <Search className="size-4" />
@@ -281,7 +281,7 @@ function SearchBoxState({
 
           {isSuggestionsOpen ? (
             <div
-              className="search-suggestions absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden rounded-xl border border-white/10 bg-[#0B1621] shadow-[0_22px_70px_rgba(0,0,0,.5)]"
+              className="search-suggestions absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden rounded-xl border border-white/10 bg-surface shadow-[0_22px_70px_rgba(0,0,0,.5)]"
               onMouseDown={(event) => event.preventDefault()}
             >
               <div
@@ -297,7 +297,7 @@ function SearchBoxState({
                     return (
                       <button
                         aria-selected={isActive}
-                        className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left text-sm text-[#C4D2DE] outline-none transition-colors hover:bg-[#102130] aria-selected:bg-[#102130]"
+                        className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left text-sm text-subtle outline-none transition-colors hover:bg-surface-hover aria-selected:bg-surface-hover"
                         id={optionId}
                         key={option.id}
                         role="option"
@@ -306,12 +306,12 @@ function SearchBoxState({
                         onClick={() => openOption(option)}
                         onMouseEnter={() => setActiveOptionIndex(index)}
                       >
-                        <span className="grid size-9 shrink-0 place-items-center rounded-md bg-[#111E31] text-[#69A7FF]">
+                        <span className="grid size-9 shrink-0 place-items-center rounded-md bg-surface-secondary text-link">
                           <Search className="size-4" />
                         </span>
                         <span className="min-w-0 truncate">
                           Buscar{" "}
-                          <span className="font-semibold text-[#F3F8FC]">
+                          <span className="font-semibold text-foreground">
                             “{option.label}”
                           </span>
                         </span>
@@ -321,7 +321,7 @@ function SearchBoxState({
                   return (
                     <button
                       aria-selected={isActive}
-                      className="flex w-full min-w-0 items-center gap-3 rounded-lg px-2.5 py-2 text-left outline-none transition-colors hover:bg-[#102130] aria-selected:bg-[#102130]"
+                      className="flex w-full min-w-0 items-center gap-3 rounded-lg px-2.5 py-2 text-left outline-none transition-colors hover:bg-surface-hover aria-selected:bg-surface-hover"
                       id={optionId}
                       key={option.id}
                       role="option"
@@ -330,7 +330,7 @@ function SearchBoxState({
                       onClick={() => openOption(option)}
                       onMouseEnter={() => setActiveOptionIndex(index)}
                     >
-                      <span className="relative block h-12 w-9 shrink-0 overflow-hidden rounded-md bg-[#0A1220]">
+                      <span className="relative block h-12 w-9 shrink-0 overflow-hidden rounded-md bg-surface">
                         <AnimeImage
                           src={option.posterUrl}
                           alt=""
@@ -338,13 +338,13 @@ function SearchBoxState({
                         />
                       </span>
                       <span className="min-w-0">
-                        <span className="block truncate text-sm text-[#F3F8FC]">
+                        <span className="block truncate text-sm text-foreground">
                           <Highlighted
                             label={option.label}
                             query={normalizedQuery}
                           />
                         </span>
-                        <span className="block truncate text-xs text-[#8FA3B4]">
+                        <span className="block truncate text-xs text-muted">
                           {option.meta}
                         </span>
                       </span>
@@ -352,10 +352,7 @@ function SearchBoxState({
                   );
                 })}
                 {isLoadingSuggestions ? (
-                  <div
-                    className="px-3 py-2 text-xs text-[#8FA3B4]"
-                    role="status"
-                  >
+                  <div className="px-3 py-2 text-xs text-muted" role="status">
                     Cargando sugerencias…
                   </div>
                 ) : null}

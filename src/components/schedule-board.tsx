@@ -57,7 +57,7 @@ function ScheduleBoardPlaceholder() {
       <div className="mb-7 flex min-h-11 gap-1 overflow-hidden border-b border-white/8">
         {weekOrder.map((index) => (
           <span
-            className="flex min-h-11 min-w-16 items-center justify-center rounded-lg text-sm capitalize text-[#5C6E82]"
+            className="flex min-h-11 min-w-16 items-center justify-center rounded-lg text-sm capitalize text-faint"
             key={daysShort[index]}
           >
             {daysShort[index]}
@@ -68,7 +68,7 @@ function ScheduleBoardPlaceholder() {
       <div className="grid grid-cols-5 gap-x-4 gap-y-7 max-xl:grid-cols-4 max-lg:grid-cols-3 max-sm:grid-cols-2">
         {Array.from({ length: 5 }, (_, index) => (
           <div
-            className="aspect-[2/3] animate-pulse rounded-xl bg-[#0A1424] motion-reduce:animate-none"
+            className="aspect-[2/3] animate-pulse rounded-xl bg-surface motion-reduce:animate-none"
             key={index}
           />
         ))}
@@ -182,20 +182,18 @@ function HydratedScheduleBoard({
                 id={String(index)}
                 key={day}
                 aria-label={`${day}, ${count} ${count === 1 ? "lanzamiento" : "lanzamientos"}`}
-                className="flex min-h-11 items-center gap-2 px-3 text-sm text-[#8FA3B4] shadow-none transition-colors data-[hovered=true]:text-[#C4D2DE] data-[selected=true]:font-semibold data-[selected=true]:text-[#F3F8FC]"
+                className="flex min-h-11 items-center gap-2 px-3 text-sm text-muted shadow-none transition-colors data-[hovered=true]:text-subtle data-[selected=true]:font-semibold data-[selected=true]:text-foreground"
               >
                 <span className="capitalize">{daysShort[index]}</span>
-                <span className="text-xs tabular-nums text-[#5C6E82]">
-                  {count}
-                </span>
+                <span className="text-xs tabular-nums text-faint">{count}</span>
                 {index === todayIndex && (
                   <span
                     aria-hidden="true"
-                    className="size-1.5 rounded-full bg-[#30C8B0]"
+                    className="size-1.5 rounded-full bg-success"
                     title="hoy"
                   />
                 )}
-                <Tabs.Indicator className="bg-[#2F81F7]" />
+                <Tabs.Indicator className="bg-accent" />
               </Tabs.Tab>
             );
           })}
@@ -207,18 +205,18 @@ function HydratedScheduleBoard({
         return (
           <Tabs.Panel id={String(index)} key={day}>
             <div className="mb-4 flex items-baseline gap-2.5">
-              <h2 className="font-(family-name:--font-display) text-xl font-semibold capitalize text-[#F3F8FC]">
+              <h2 className="font-(family-name:--font-display) text-xl font-semibold capitalize text-foreground">
                 {day}
               </h2>
-              <span className="text-xs text-[#8FA3B4]">
+              <span className="text-xs text-muted">
                 {grouped[index].length}{" "}
                 {grouped[index].length === 1 ? "lanzamiento" : "lanzamientos"}
               </span>
             </div>
 
             {grouped[index].length === 0 ? (
-              <div className="rounded-xl border border-dashed border-white/10 bg-[#080F1B] py-16 text-center">
-                <p className="text-sm text-[#8FA3B4]">
+              <div className="rounded-xl border border-dashed border-white/10 bg-surface py-16 text-center">
+                <p className="text-sm text-muted">
                   No hay emisiones programadas para este día.
                 </p>
               </div>
@@ -229,11 +227,11 @@ function HydratedScheduleBoard({
                   return (
                     <Link
                       href={`/anime/${entry.anime.slug}`}
-                      className="group block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#5B9CFF] focus-visible:ring-inset"
+                      className="group block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset"
                       key={entry.anime.id}
                     >
-                      <MediaCard className="touch-card relative min-w-0 gap-0 rounded-xl bg-[#0A1424] p-0 transition-shadow duration-300 group-hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]">
-                        <div className="touch-static-media relative aspect-[2/3] overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04]">
+                      <MediaCard className="touch-card relative min-w-0 gap-0 rounded-xl bg-surface p-0 transition-shadow duration-300 group-hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]">
+                        <div className="touch-static-media relative aspect-[2/3] overflow-hidden bg-surface [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04]">
                           <AnimeImage
                             src={entry.anime.posterUrl}
                             fallbackSrc={entry.anime.backdropUrl}
@@ -242,24 +240,24 @@ function HydratedScheduleBoard({
                             sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 18vw"
                           />
                           <time
-                            className="absolute left-2 top-2 rounded-lg bg-[#050B15]/85 px-2 py-1 font-mono text-[11px] font-bold text-[#5FA8FF] backdrop-blur-sm"
+                            className="absolute left-2 top-2 rounded-lg bg-background-secondary/85 px-2 py-1 font-mono text-[11px] font-bold text-link backdrop-blur-sm"
                             dateTime={entry.basisPublishedAt}
                           >
                             {timeFormatter.format(
                               new Date(entry.basisPublishedAt),
                             )}
                           </time>
-                          <div className="absolute bottom-0 left-0 flex h-6 items-center rounded-tr-lg bg-[#0A1424] px-2.5 text-[10px] font-bold">
-                            <span className="tracking-[.12em] text-[#69A7FF]">
+                          <div className="absolute bottom-0 left-0 flex h-6 items-center rounded-tr-lg bg-surface px-2.5 text-[10px] font-bold">
+                            <span className="tracking-[.12em] text-link">
                               EP
                             </span>
-                            <strong className="ml-1 tabular-nums text-[#F3F8FC]">
+                            <strong className="ml-1 tabular-nums text-foreground">
                               {number}
                             </strong>
                           </div>
                         </div>
                         <Card.Content className="flex flex-col gap-2 px-3.5 py-3">
-                          <strong className="truncate text-sm font-semibold text-[#F3F8FC]">
+                          <strong className="truncate text-sm font-semibold text-foreground">
                             {entry.anime.title}
                           </strong>
                           {status === "delayed" ? (
