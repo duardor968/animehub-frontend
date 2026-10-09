@@ -1,114 +1,160 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { CatalogFilters } from "@/components/catalog/catalog-filters";
 import {
   catalogApiYearBounds,
+  catalogHref,
   clearCatalogFilters,
   countCatalogFilters,
+  getSelectedFilters,
   getYearBounds,
+  isCatalogCapped,
   normalizeCatalogParams,
-  resetCatalogPage,
+  toCatalogApiParams,
 } from "@/components/catalog/catalog-filter-params";
+import {
+  loadCatalog,
+  outOfRangeParams,
+  sameSearchParams,
+  toSearchParams,
+  type PageSearchParams,
+} from "@/components/catalog/catalog-query";
+import { PageHeader, pageMainClass } from "@/components/catalog/page-header";
 import { Pagination } from "@/components/catalog/pagination";
 import { PosterGrid } from "@/components/poster-grid";
-import { apiFetch, type CatalogResponse } from "@/lib/api/client";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = {
-  title: "Catálogo",
-  description: "Explora el catálogo completo de AnimeHub.",
-  alternates: { canonical: "/catalogo" },
-  openGraph: {
-    title: "Catálogo de anime · AnimeHub",
-    description:
-      "Explora obras, géneros, formatos y temporadas desde un único catálogo.",
-    url: "/catalogo",
-  },
-};
 
-export default async function CatalogPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const values = await searchParams;
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(values))
-    (Array.isArray(value) ? value : value ? [value] : []).forEach((entry) =>
-      params.append(key, entry),
-    );
-  const requestParams = normalizeCatalogParams(params, catalogApiYearBounds, {
+const description =
+  "Explora el catálogo por formato, estado, año, género o inicial.";
+
+async function resolveCatalog(incoming: URLSearchParams) {
+  const request = normalizeCatalogParams(incoming, catalogApiYearBounds, {
     keepPage: true,
   });
-  const apiParams = new URLSearchParams(requestParams);
-  apiParams.delete("q");
-  if (!apiParams.has("page")) apiParams.set("page", "1");
-  const response = await apiFetch<CatalogResponse>(`/catalog?${apiParams}`);
+  const page = Number(request.get("page") ?? 1);
+  const response = await loadCatalog(
+    toCatalogApiParams(request, "catalog", { page }).toString(),
+  );
   const bounds = getYearBounds(response.meta.years);
-  const normalizedParams = normalizeCatalogParams(requestParams, bounds, {
+  const params = normalizeCatalogParams(request, bounds, {
     keepPage: true,
     allowedCategories: new Set(
       response.meta.categories.map((category) => category.slug),
     ),
     allowedGenres: new Set(response.meta.genres.map((genre) => genre.slug)),
   });
-  const hasActiveFilters = countCatalogFilters(normalizedParams) > 0;
-  const pageOutOfRange =
-    response.meta.totalPages > 0 &&
-    response.meta.page > response.meta.totalPages;
-  const clearParams = clearCatalogFilters(normalizedParams, bounds);
-  const firstPageParams = resetCatalogPage(normalizedParams, bounds);
-  const actionParams = pageOutOfRange ? firstPageParams : clearParams;
-  const actionHref = `/catalogo${actionParams.size ? `?${actionParams}` : ""}`;
+  return { params, response, bounds, page };
+}
+
+/** /catalogo?q=… is a search: send it (with its filters) to /buscar. */
+function searchRedirectTarget(incoming: URLSearchParams) {
+  if (!incoming.get("q")?.trim()) return null;
+  return catalogHref(
+    "/buscar",
+    normalizeCatalogParams(incoming, catalogApiYearBounds),
+  );
+}
+
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<PageSearchParams>;
+}): Promise<Metadata> {
+  const incoming = toSearchParams(await searchParams);
+  if (searchRedirectTarget(incoming)) return { title: "Catálogo" };
+  const { params, response, bounds, page } = await resolveCatalog(incoming);
+  const labels = getSelectedFilters(
+    params,
+    response.meta.categories,
+    response.meta.genres,
+    bounds,
+  ).map((filter) => filter.label);
+  // Filter and sort combinations are endless; only the plain paginated
+  // catalog is indexable, each page with its own canonical URL.
+  const isFiltered = labels.length > 0 || params.has("order");
+  const canonical =
+    !isFiltered && page > 1 ? `/catalogo?page=${page}` : "/catalogo";
+  const title = `${labels.length ? `Catálogo: ${labels.join(", ")}` : "Catálogo"}${page > 1 ? ` (página ${page})` : ""}`;
+  return {
+    title,
+    description,
+    alternates: { canonical },
+    robots: isFiltered ? { index: false, follow: true } : undefined,
+    openGraph: {
+      title: "Catálogo de anime · AnimeHub",
+      description,
+      url: canonical,
+      siteName: "AnimeHub",
+      locale: "es_ES",
+      type: "website",
+    },
+  };
+}
+
+export default async function CatalogPage({
+  searchParams,
+}: {
+  searchParams: Promise<PageSearchParams>;
+}) {
+  const incoming = toSearchParams(await searchParams);
+  const searchTarget = searchRedirectTarget(incoming);
+  if (searchTarget) redirect(searchTarget);
+
+  const { params, response, bounds } = await resolveCatalog(incoming);
+  // Past the last page (the source stops at 50): go to the last real page.
+  const lastPageParams = outOfRangeParams(params, response.meta.totalPages);
+  if (lastPageParams) redirect(catalogHref("/catalogo", lastPageParams));
+  // Legacy or hand-edited URLs (several genres, reversed years, unknown
+  // values…) settle on their canonical form before anything renders.
+  if (!sameSearchParams(incoming, params))
+    redirect(catalogHref("/catalogo", params));
+
+  const hasActiveFilters = countCatalogFilters(params) > 0;
+  const clearHref = catalogHref(
+    "/catalogo",
+    clearCatalogFilters(params, bounds),
+  );
+
   return (
-    <main className="mx-auto w-full max-w-[1200px] px-6 py-12 max-sm:px-4 max-sm:pb-28 max-sm:pt-9">
-      <div className="mb-10">
-        <div>
-          <span className="text-[10px] font-bold uppercase tracking-[.18em] text-link">
-            Directorio
-          </span>
-          <h1 className="mt-2 font-(family-name:--font-display) text-5xl font-semibold tracking-[-.04em] text-foreground max-sm:text-4xl">
-            Catálogo
-          </h1>
-          <p className="mt-3 text-sm text-muted">
-            {response.meta.totalRecords} obras disponibles.
-          </p>
-        </div>
-      </div>
+    <main id="contenido" tabIndex={-1} className={pageMainClass}>
+      <PageHeader
+        eyebrow="Directorio"
+        title="Catálogo"
+        description={description}
+      />
       <CatalogFilters
+        scope="catalog"
         categories={response.meta.categories}
         genres={response.meta.genres}
         years={response.meta.years}
         totalRecords={response.meta.totalRecords}
+        capped={isCatalogCapped(response.meta)}
         footer={
           <Pagination
             page={response.meta.page}
             totalPages={response.meta.totalPages}
-            params={normalizedParams}
+            query={params.toString()}
           />
         }
       >
+        <h2 className="sr-only">Obras</h2>
         <PosterGrid
           anime={response.data}
-          emptyState={{
-            title: hasActiveFilters
-              ? pageOutOfRange
-                ? "Esta página no tiene resultados"
-                : "Ninguna obra coincide"
-              : "Esta página no tiene resultados",
-            description: pageOutOfRange
-              ? "Vuelve al inicio de estos resultados para seguir explorando."
-              : hasActiveFilters
-                ? "Prueba con una combinación más amplia de formato, estado, año o género."
-                : "Vuelve al inicio del catálogo para seguir explorando las obras disponibles.",
-            action: {
-              href: actionHref,
-              label: pageOutOfRange
-                ? "Volver a los resultados"
-                : hasActiveFilters
-                  ? "Limpiar filtros"
-                  : "Volver al catálogo",
-            },
-          }}
+          emptyState={
+            hasActiveFilters
+              ? {
+                  title: "Ninguna obra coincide",
+                  description:
+                    "Prueba con una combinación más amplia de formato, estado, año, género o inicial.",
+                  action: { href: clearHref, label: "Limpiar filtros" },
+                }
+              : {
+                  title: "No hay obras para mostrar",
+                  description:
+                    "El catálogo no devolvió resultados. Vuelve a intentarlo en unos minutos.",
+                }
+          }
         />
       </CatalogFilters>
     </main>

@@ -1,3 +1,5 @@
+import { plural } from "@/lib/format";
+
 const filterKeys = [
   "category",
   "genre",
@@ -15,7 +17,23 @@ const supportedOrder = new Set([
   "latest_released",
 ]);
 
+/** Highest page the catalog API accepts; anything above is clamped to it. */
+export const maxCatalogPage = 500;
+
+/** Initials the source can filter by: A–Z plus "#" for digits and symbols. */
+export const catalogLetters = [
+  ..."abcdefghijklmnopqrstuvwxyz".split(""),
+  "#",
+] as const;
+const supportedLetters = new Set<string>(catalogLetters);
+
 export const catalogApiYearBounds = { min: 1900, max: 2200 } as const;
+
+/**
+ * Where the filters run. The catalog defaults to "Últimos agregados"; search
+ * keeps the source's own relevance order (exact title first, then newest).
+ */
+export type CatalogScope = "catalog" | "search";
 
 export type YearBounds = {
   min: number;
@@ -50,32 +68,38 @@ function normalizeText(value: string | null): string | null {
 function normalizeYear(
   value: string | null,
   bounds: YearBounds,
-): string | null {
+): number | null {
   if (!value || !/^\d{4}$/.test(value)) return null;
   const year = Number(value);
   if (!Number.isSafeInteger(year) || year < bounds.min || year > bounds.max)
     return null;
-  return String(year);
+  return year;
+}
+
+function isTaxonomyValue(value: string, allowed?: ReadonlySet<string>) {
+  return (
+    Boolean(value) && value.length <= 80 && (!allowed || allowed.has(value))
+  );
 }
 
 function appendUniqueSorted(
   target: URLSearchParams,
   source: URLSearchParams,
-  key: "category" | "genre",
+  key: "category",
   allowed?: ReadonlySet<string>,
 ) {
   const values = [...new Set(source.getAll(key).map((value) => value.trim()))]
-    .filter(
-      (value) =>
-        Boolean(value) &&
-        value.length <= 80 &&
-        (!allowed || allowed.has(value)),
-    )
+    .filter((value) => isTaxonomyValue(value, allowed))
     .slice(0, 20)
     .sort((a, b) => a.localeCompare(b, "es"));
   values.forEach((value) => target.append(key, value));
 }
 
+/**
+ * Canonical, shareable form of the catalog/search query. Genres are
+ * single-select (the source ignores the other filters when it receives two or
+ * more), so legacy multi-genre URLs keep only their first valid genre.
+ */
 export function normalizeCatalogParams(
   source: URLSearchParams,
   bounds: YearBounds,
@@ -92,24 +116,31 @@ export function normalizeCatalogParams(
   const normalized = new URLSearchParams();
   const q = normalizeText(source.get("q"))?.slice(0, 100) ?? null;
   const order = normalizeText(source.get("order"));
-  const letter = normalizeText(source.get("letter"));
+  const letter = normalizeText(source.get("letter"))?.toLocaleLowerCase("es");
   const status = normalizeText(source.get("status"));
-  const minYear = normalizeYear(source.get("minYear"), bounds);
-  const maxYear = normalizeYear(source.get("maxYear"), bounds);
+  const genre = source
+    .getAll("genre")
+    .map((value) => value.trim())
+    .find((value) => isTaxonomyValue(value, allowedGenres));
+  let minYear = normalizeYear(source.get("minYear"), bounds);
+  let maxYear = normalizeYear(source.get("maxYear"), bounds);
+  // A hand-edited reversed interval means the same range; never show "2020–2010".
+  if (minYear !== null && maxYear !== null && minYear > maxYear)
+    [minYear, maxYear] = [maxYear, minYear];
 
   if (q) normalized.set("q", q);
   appendUniqueSorted(normalized, source, "category", allowedCategories);
-  appendUniqueSorted(normalized, source, "genre", allowedGenres);
+  if (genre) normalized.set("genre", genre);
   if (status && supportedStatus.has(status)) normalized.set("status", status);
-  if (minYear) normalized.set("minYear", minYear);
-  if (maxYear) normalized.set("maxYear", maxYear);
-  if (letter) normalized.set("letter", letter.slice(0, 1));
+  if (minYear !== null) normalized.set("minYear", String(minYear));
+  if (maxYear !== null) normalized.set("maxYear", String(maxYear));
+  if (letter && supportedLetters.has(letter)) normalized.set("letter", letter);
   if (order && supportedOrder.has(order)) normalized.set("order", order);
 
   if (keepPage) {
     const page = Number(source.get("page"));
-    if (Number.isSafeInteger(page) && page > 1 && page <= 500)
-      normalized.set("page", String(page));
+    if (Number.isSafeInteger(page) && page > 1)
+      normalized.set("page", String(Math.min(page, maxCatalogPage)));
   }
 
   return normalized;
@@ -136,7 +167,7 @@ export function clearCatalogFilters(
 
 export function toggleCatalogParam(
   source: URLSearchParams,
-  key: "category" | "genre",
+  key: "category",
   value: string,
   bounds: YearBounds,
 ): URLSearchParams {
@@ -155,7 +186,7 @@ export function toggleCatalogParam(
 
 export function setCatalogMulti(
   source: URLSearchParams,
-  key: "category" | "genre",
+  key: "category",
   values: readonly string[],
   bounds: YearBounds,
 ): URLSearchParams {
@@ -167,7 +198,7 @@ export function setCatalogMulti(
 
 export function setCatalogParam(
   source: URLSearchParams,
-  key: "status" | "order" | "minYear" | "maxYear",
+  key: "genre" | "status" | "letter" | "order" | "minYear" | "maxYear",
   value: string,
   bounds: YearBounds,
 ): URLSearchParams {
@@ -214,37 +245,137 @@ export function setCatalogYearRange(
   return normalizeCatalogParams(next, bounds);
 }
 
-export function validateYearRange(params: URLSearchParams): string | null {
-  const minYear = Number(params.get("minYear"));
-  const maxYear = Number(params.get("maxYear"));
-  if (
-    params.has("minYear") &&
-    params.has("maxYear") &&
-    Number.isFinite(minYear) &&
-    Number.isFinite(maxYear) &&
-    minYear > maxYear
-  ) {
-    return "El año inicial no puede ser posterior al año final.";
-  }
-  return null;
-}
-
 export function countCatalogFilters(params: URLSearchParams): number {
   return (
     params.getAll("category").length +
-    params.getAll("genre").length +
+    Number(params.has("genre")) +
     Number(params.has("status")) +
     Number(params.has("minYear") || params.has("maxYear")) +
     Number(params.has("letter"))
   );
 }
 
-export function toCatalogApiParams(params: URLSearchParams): URLSearchParams {
+/**
+ * Translates canonical UI params into the catalog API query. The page and the
+ * drawer preview share it, so a preview warms exactly the snapshot the page
+ * requests after "Mostrar N obras".
+ */
+export function toCatalogApiParams(
+  params: URLSearchParams,
+  scope: CatalogScope,
+  { page = 1 }: { page?: number } = {},
+): URLSearchParams {
   const apiParams = new URLSearchParams(params);
   const q = apiParams.get("q");
   apiParams.delete("q");
   apiParams.delete("page");
-  if (q) apiParams.set("search", q);
-  apiParams.set("page", "1");
+  if (scope === "search" && q) apiParams.set("search", q);
+  // The source's implicit order isn't "latest added" (it lags and sorts by
+  // release), so the catalog asks for the order its sort menu promises.
+  if (scope === "catalog" && !apiParams.has("order"))
+    apiParams.set("order", "latest_added");
+  apiParams.set("page", String(page));
   return apiParams;
+}
+
+export function catalogHref(pathname: string, params: URLSearchParams) {
+  return `${pathname}${params.size ? `?${params}` : ""}`;
+}
+
+type CatalogMetaLike = {
+  totalRecords: number;
+  capped?: boolean;
+};
+
+/**
+ * True when the source truncated the result set (it serves at most 1,000
+ * records / 50 pages). Reads the API's `meta.capped`; older API builds don't
+ * send it, in which case the total is shown as is.
+ */
+export function isCatalogCapped(meta: CatalogMetaLike): boolean {
+  return meta.capped === true;
+}
+
+/** "1 obra", "23 obras", or "Más de 1.000 obras" for a capped result set. */
+export function formatCatalogCount(totalRecords: number, capped: boolean) {
+  const count = plural(totalRecords, "obra", "obras");
+  return capped ? `Más de ${count}` : count;
+}
+
+export const catalogStatusOptions = [
+  ["", "Cualquier estado"],
+  ["emision", "En emisión"],
+  ["finalizado", "Finalizado"],
+  ["proximamente", "Próximamente"],
+] as const;
+
+export function letterLabel(letter: string) {
+  return letter === "#" ? "#" : letter.toLocaleUpperCase("es");
+}
+
+type Taxonomy = { slug: string; name: string };
+
+export type SelectedFilter = {
+  id: string;
+  key: "category" | "genre" | "status" | "years" | "letter";
+  value: string;
+  label: string;
+};
+
+/** Applied filters as labelled chips (also used for page titles). */
+export function getSelectedFilters(
+  params: URLSearchParams,
+  categories: readonly Taxonomy[],
+  genres: readonly Taxonomy[],
+  bounds: YearBounds,
+): SelectedFilter[] {
+  const entries: SelectedFilter[] = [];
+  for (const value of params.getAll("category")) {
+    const item = categories.find((entry) => entry.slug === value);
+    if (item)
+      entries.push({
+        id: `category:${value}`,
+        key: "category",
+        value,
+        label: item.name,
+      });
+  }
+  const genre = genres.find((entry) => entry.slug === params.get("genre"));
+  if (genre)
+    entries.push({
+      id: `genre:${genre.slug}`,
+      key: "genre",
+      value: genre.slug,
+      label: genre.name,
+    });
+
+  const status = catalogStatusOptions.find(
+    ([value]) => value && value === params.get("status"),
+  );
+  if (status)
+    entries.push({
+      id: `status:${status[0]}`,
+      key: "status",
+      value: status[0],
+      label: status[1],
+    });
+  if (params.has("minYear") || params.has("maxYear")) {
+    const min = params.get("minYear") ?? String(bounds.min);
+    const max = params.get("maxYear") ?? String(bounds.max);
+    entries.push({
+      id: "years:",
+      key: "years",
+      value: "",
+      label: min === max ? min : `${min}–${max}`,
+    });
+  }
+  const letter = params.get("letter");
+  if (letter)
+    entries.push({
+      id: `letter:${letter}`,
+      key: "letter",
+      value: letter,
+      label: `Inicial: ${letterLabel(letter)}`,
+    });
+  return entries;
 }

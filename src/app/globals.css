@@ -288,8 +288,7 @@
     padding: 0.5rem;
   }
 
-  html[data-device="portable"] .download-drawer-backdrop,
-  html[data-device="portable"] .mobile-drawer-backdrop {
+  html[data-device="portable"] .download-drawer-backdrop {
     background: rgb(3 7 17 / 76%) !important;
     backdrop-filter: none !important;
   }
@@ -318,15 +317,6 @@
 
   html[data-device="portable"] .search-suggestions [role="listbox"] {
     max-height: min(70dvh, 26rem);
-  }
-
-  html[data-device="portable"] .schedule-tabs-list {
-    overscroll-behavior-inline: contain;
-    scrollbar-width: none;
-  }
-
-  html[data-device="portable"] .schedule-tabs-list::-webkit-scrollbar {
-    display: none;
   }
 
   @media (max-width: 800px) {

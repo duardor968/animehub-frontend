@@ -1,51 +1,121 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
-import { Pagination } from "./pagination";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CatalogNavigationContext } from "./catalog-navigation";
+import { Pagination, paginationItems } from "./pagination";
+
+vi.mock("next/navigation", () => ({ usePathname: () => "/catalogo" }));
 
 afterEach(cleanup);
+
+describe("paginationItems", () => {
+  it("lists every page when they fit", () => {
+    expect(paginationItems(3, 7)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it("keeps the first and last page with a constant-size window", () => {
+    expect(paginationItems(1, 50)).toEqual([1, 2, 3, 4, 5, "gap-end", 50]);
+    expect(paginationItems(7, 50)).toEqual([
+      1,
+      "gap-start",
+      6,
+      7,
+      8,
+      "gap-end",
+      50,
+    ]);
+    expect(paginationItems(50, 50)).toEqual([
+      1,
+      "gap-start",
+      46,
+      47,
+      48,
+      49,
+      50,
+    ]);
+  });
+});
 
 describe("Pagination", () => {
   it.each([0, 1])(
     "does not render controls when there are %s pages",
     (totalPages) => {
-      render(
-        <Pagination
-          page={1}
-          totalPages={totalPages}
-          params={new URLSearchParams("page=1")}
-        />,
-      );
+      render(<Pagination page={1} totalPages={totalPages} query="" />);
 
       expect(screen.queryByRole("navigation")).toBeNull();
     },
   );
 
   it("does not render contradictory controls for an out-of-range page", () => {
-    render(
-      <Pagination
-        page={51}
-        totalPages={50}
-        params={new URLSearchParams("page=51")}
-      />,
-    );
+    render(<Pagination page={51} totalPages={50} query="page=51" />);
 
     expect(screen.queryByRole("navigation")).toBeNull();
   });
 
-  it("renders only valid navigation when another page exists", () => {
-    render(
-      <Pagination
-        page={1}
-        totalPages={2}
-        params={new URLSearchParams("genre=accion&page=1")}
-      />,
-    );
+  it("renders numbered, crawlable links with the current page marked", () => {
+    render(<Pagination page={7} totalPages={50} query="genre=accion&page=7" />);
 
-    expect(screen.getByRole("navigation", { name: "Paginación" })).toBeTruthy();
+    const nav = screen.getByRole("navigation", { name: "Paginación" });
+    const list = within(nav).getByRole("list");
     expect(
-      screen.getByRole("link", { name: "Página siguiente" }),
-    ).toHaveAttribute("href", "?genre=accion&page=2");
+      within(list).getByText("7").closest("[aria-current]"),
+    ).toHaveAttribute("aria-current", "page");
+    expect(
+      within(list).getByRole("link", { name: "Página 1" }),
+    ).toHaveAttribute("href", "/catalogo?genre=accion");
+    expect(
+      within(list).getByRole("link", { name: "Página 50" }),
+    ).toHaveAttribute("href", "/catalogo?genre=accion&page=50");
+    expect(
+      within(list).getByRole("link", { name: "Página siguiente" }),
+    ).toHaveAttribute("href", "/catalogo?genre=accion&page=8");
+    expect(
+      within(nav).getByRole("textbox", { name: "Ir a la página" }),
+    ).toBeTruthy();
+  });
+
+  it("has no jump field when every page is listed", () => {
+    render(<Pagination page={1} totalPages={2} query="" />);
+
+    expect(
+      screen.getAllByRole("link", { name: "Página siguiente" })[0],
+    ).toHaveAttribute("href", "/catalogo?page=2");
     expect(screen.queryByRole("link", { name: "Página anterior" })).toBeNull();
+    expect(
+      screen.queryByRole("textbox", { name: "Ir a la página" }),
+    ).toBeNull();
+  });
+
+  it("navigates inside the catalog transition and clamps jumps", () => {
+    const navigate = vi.fn();
+    render(
+      <CatalogNavigationContext value={{ navigate, isPending: false }}>
+        <Pagination page={2} totalPages={50} query="page=2" />
+      </CatalogNavigationContext>,
+    );
+    const list = screen.getByRole("list");
+
+    fireEvent.click(within(list).getByRole("link", { name: "Página 3" }));
+    expect(navigate).toHaveBeenLastCalledWith("/catalogo?page=3", {
+      scroll: true,
+    });
+
+    const field = screen.getByRole("textbox", { name: "Ir a la página" });
+    fireEvent.change(field, { target: { value: "120" } });
+    fireEvent.submit(field.closest("form")!);
+    expect(navigate).toHaveBeenLastCalledWith("/catalogo?page=50", {
+      scroll: true,
+    });
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Ir a la página" }), {
+      target: { value: "1" },
+    });
+    expect(navigate).toHaveBeenLastCalledWith("/catalogo", { scroll: true });
   });
 });
