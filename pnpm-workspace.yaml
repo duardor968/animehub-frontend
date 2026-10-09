@@ -2,7 +2,6 @@ publicHoistPattern:
   - "*@heroui/*"
 
 strictPeerDependencies: false
-confirmModulesPurge: false
 
 allowBuilds:
   sharp: true
