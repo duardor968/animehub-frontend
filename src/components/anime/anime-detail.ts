@@ -3,6 +3,8 @@
 
 /** Episodes per page of GET /anime/{slug}/episodes. */
 export const EPISODE_PAGE_SIZE = 50;
+/** Highest `page` GET /anime/{slug}/episodes accepts (400 above it). */
+export const MAX_EPISODE_PAGE = 1000;
 
 /** Reads ?page=, falling back to 1 and clamping to the available pages. */
 export function parseEpisodePage(

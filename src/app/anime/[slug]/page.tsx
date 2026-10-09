@@ -15,6 +15,7 @@ import { MediaCard } from "@/components/media-card";
 import { EpisodeBrowser } from "@/components/anime/episode-browser";
 import {
   isSameTitle,
+  MAX_EPISODE_PAGE,
   parseEpisodePage,
   summarize,
 } from "@/components/anime/anime-detail";
@@ -22,6 +23,7 @@ import { ExpandableSynopsis } from "@/components/anime/expandable-synopsis";
 import { RelatedScroller } from "@/components/anime/related-scroller";
 import { loadAnime } from "@/lib/api/anime";
 import {
+  ApiResponseError,
   apiFetch,
   isApiNotFoundError,
   type AnimeResponse,
@@ -41,6 +43,15 @@ const getAnime = cache((slug: string) => loadAnime(slug));
 
 const isMovie = (anime: Pick<AnimeDetail, "category">) =>
   anime.category?.slug === "pelicula";
+
+/** Phones show the whole title beside the poster (never clamped): long
+ *  titles get a smaller size instead, like the home hero. */
+function phoneTitleClass(title: string) {
+  if (title.length > 72) return "max-sm:text-lg max-sm:leading-[1.2]";
+  if (title.length > 48) return "max-sm:text-xl max-sm:leading-[1.15]";
+  if (title.length > 24) return "max-sm:text-2xl max-sm:leading-[1.1]";
+  return "max-sm:text-[1.75rem] max-sm:leading-[1.05]";
+}
 
 export async function generateMetadata({
   params,
@@ -84,14 +95,23 @@ export default async function AnimePage({
   if (!response) notFound();
   const anime = response.data;
   const rawPage = (await searchParams).page;
+  // Clamped to the API's maximum: a larger page is past the end of any anime
+  // and redirects to the last page below (the API would answer 400).
   const requestedPage = parseEpisodePage(
     Array.isArray(rawPage) ? rawPage[0] : rawPage,
-    Number.MAX_SAFE_INTEGER,
+    MAX_EPISODE_PAGE,
   );
   const episodes = await apiFetch<EpisodePageResponse>(
     `/anime/${encodeURIComponent(slug)}/episodes?page=${requestedPage}`,
   ).catch((error: unknown) => {
     if (isApiNotFoundError(error)) notFound();
+    // Any other rejected page number: the list from the start, never a 500.
+    if (
+      error instanceof ApiResponseError &&
+      error.status === 400 &&
+      requestedPage > 1
+    )
+      redirect(`/anime/${anime.slug}#episodios`);
     throw error;
   });
   const { totalRecords, totalPages } = episodes.meta;
@@ -149,7 +169,9 @@ export default async function AnimePage({
             <span className="eyebrow">
               {movie ? "Película" : "Ficha de anime"}
             </span>
-            <h1 className="mt-3 max-w-[1020px] font-display text-[clamp(2.65rem,5vw,5.2rem)] font-semibold leading-[.98] tracking-[-.055em] text-foreground [overflow-wrap:anywhere] max-md:text-[clamp(2.25rem,5.8vw,3.7rem)] max-sm:mt-1.5 max-sm:line-clamp-4 max-sm:text-[1.75rem] max-sm:leading-[1.05] max-sm:tracking-[-.04em]">
+            <h1
+              className={`mt-3 max-w-[1020px] font-display text-[clamp(2.65rem,5vw,5.2rem)] font-semibold leading-[.98] tracking-[-.055em] text-foreground [overflow-wrap:anywhere] max-md:text-[clamp(2.25rem,5.8vw,3.7rem)] max-sm:mt-1.5 max-sm:tracking-[-.03em] ${phoneTitleClass(anime.title)}`}
+            >
               {anime.title}
             </h1>
             {showAlternative && (
