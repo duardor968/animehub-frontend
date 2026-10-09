@@ -318,7 +318,7 @@ const destinationHelp: Record<DownloadDestination, string> = {
 };
 
 const toggleClass =
-  "min-h-11 w-full rounded-lg px-3 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-focus";
+  "min-h-11 w-full rounded-lg px-3 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-focus data-[selected=true]:bg-accent-soft data-[selected=true]:text-accent-soft-foreground data-[selected=true]:shadow-[inset_0_0_0_1px_var(--brand)]";
 
 export function PreferencesPanel({
   preferences,
