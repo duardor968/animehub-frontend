@@ -1,4 +1,4 @@
-import type { DeviceProfile } from "./device-profile";
+import { getEffectiveDestination, type DeviceProfile } from "./device-profile";
 import type { DownloadDestination } from "./download-types";
 
 export type DownloadDispatchPlan =
@@ -20,8 +20,9 @@ export function planDownloadDispatch({
   myJdConnected: boolean;
   selectedDeviceId: string | null;
 }): DownloadDispatchPlan {
-  if (profile !== "portable") {
-    return { action: "start", destination: storedDestination };
+  const destination = getEffectiveDestination(profile, storedDestination);
+  if (profile !== "portable" || destination !== "MYJD") {
+    return { action: "start", destination };
   }
   if (!myJdConnected || !selectedDeviceId) {
     return { action: "configure-myjd" };

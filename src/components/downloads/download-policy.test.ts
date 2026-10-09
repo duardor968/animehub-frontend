@@ -58,6 +58,19 @@ describe("planDownloadDispatch", () => {
   });
 });
 
+describe("planDownloadDispatch with the copy destination", () => {
+  it("lets phones without MyJDownloader copy the links", () => {
+    expect(
+      planDownloadDispatch({
+        profile: "portable",
+        storedDestination: "COPY",
+        myJdConnected: false,
+        selectedDeviceId: null,
+      }),
+    ).toEqual({ action: "start", destination: "COPY" });
+  });
+});
+
 describe("isRememberedDeviceAvailable", () => {
   it("detects an offline or removed remembered device", () => {
     expect(isRememberedDeviceAvailable("a", ["a", "b"])).toBe(true);
