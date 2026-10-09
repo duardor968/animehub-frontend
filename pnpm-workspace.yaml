@@ -6,3 +6,13 @@ strictPeerDependencies: false
 allowBuilds:
   sharp: true
   unrs-resolver: true
+
+# Latest releases that have not declared support for ESLint 10 / TypeScript 6
+# yet. Verified working: eslint-config-next rules report as expected under
+# ESLint 10, and openapi-typescript generates identical types with TS 6.0.
+peerDependencyRules:
+  allowedVersions:
+    eslint-plugin-import>eslint: "10"
+    eslint-plugin-jsx-a11y>eslint: "10"
+    eslint-plugin-react>eslint: "10"
+    openapi-typescript>typescript: "6"
