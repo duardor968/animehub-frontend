@@ -80,55 +80,10 @@ const genres = [
 ];
 
 describe("CatalogFilters interactions", () => {
-  it("removes unknown taxonomy values instead of creating invisible filters", async () => {
-    navigation.params = "q=one&genre=__invalid__&category=unknown";
-    render(
-      <CatalogFilters
-        categories={categories}
-        genres={genres}
-        years={[1990, 2026]}
-        totalRecords={43}
-        footer={<div>Pie</div>}
-      >
-        <div>Resultados</div>
-      </CatalogFilters>,
-    );
-
-    await waitFor(() =>
-      expect(navigation.replace).toHaveBeenCalledWith("/buscar?q=one", {
-        scroll: false,
-      }),
-    );
-    expect(screen.getByRole("button", { name: "Filtros" })).toBeTruthy();
-    expect(
-      screen.queryByRole("grid", { name: "Filtros aplicados" }),
-    ).toBeNull();
-  });
-
-  it("canonicalizes the source default and redundant page values out of the URL", async () => {
-    navigation.params = "q=one&order=latest_added&page=1";
-    render(
-      <CatalogFilters
-        categories={categories}
-        genres={genres}
-        years={[1990, 2026]}
-        totalRecords={43}
-        footer={<div>Pie</div>}
-      >
-        <div>Resultados</div>
-      </CatalogFilters>,
-    );
-
-    await waitFor(() =>
-      expect(navigation.replace).toHaveBeenCalledWith("/buscar?q=one", {
-        scroll: false,
-      }),
-    );
-  });
-
   it("exposes concise names for sorting, chips, and both year thumbs", async () => {
     render(
       <CatalogFilters
+        scope="search"
         categories={categories}
         genres={genres}
         years={[1990, 2026]}
@@ -141,12 +96,12 @@ describe("CatalogFilters interactions", () => {
 
     expect(
       screen.getByRole("button", {
-        name: "Título A–Z Ordenar catálogo",
+        name: "Título A–Z Ordenar resultados",
       }),
     ).toBeTruthy();
     expect(
       screen.queryByRole("button", {
-        name: /Ordenar catálogo Ordenar/,
+        name: /Ordenar resultados Ordenar/,
       }),
     ).toBeNull();
     expect(screen.getByRole("button", { name: "Quitar Acción" })).toBeTruthy();
@@ -172,6 +127,7 @@ describe("CatalogFilters interactions", () => {
   it("composes HeroUI groups with each control before its label", async () => {
     render(
       <CatalogFilters
+        scope="search"
         categories={categories}
         genres={genres}
         years={[1990, 2026]}
@@ -227,6 +183,7 @@ describe("CatalogFilters interactions", () => {
   it("navigates with the source-backed key when the sort changes", async () => {
     render(
       <CatalogFilters
+        scope="search"
         categories={categories}
         genres={genres}
         years={[1990, 2026]}
@@ -238,7 +195,7 @@ describe("CatalogFilters interactions", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Título A–Z Ordenar catálogo" }),
+      screen.getByRole("button", { name: "Título A–Z Ordenar resultados" }),
     );
     fireEvent.click(
       await screen.findByRole("option", { name: "Mejor puntuación" }),
@@ -255,6 +212,7 @@ describe("CatalogFilters interactions", () => {
   it("removes an applied chip without dropping search or order", () => {
     render(
       <CatalogFilters
+        scope="search"
         categories={categories}
         genres={genres}
         years={[1990, 2026]}
@@ -272,9 +230,10 @@ describe("CatalogFilters interactions", () => {
     });
   });
 
-  it("restores the applied draft whenever the drawer is reopened", async () => {
+  it("keeps the draft when the drawer is dismissed and reopened", async () => {
     render(
       <CatalogFilters
+        scope="search"
         categories={categories}
         genres={genres}
         years={[1990, 2026]}
@@ -289,9 +248,9 @@ describe("CatalogFilters interactions", () => {
     let dialog = await screen.findByRole("dialog", {
       name: "Filtrar resultados",
     });
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Aventura" }));
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Aventura" }));
     expect(
-      within(dialog).getByRole("checkbox", { name: "Aventura" }),
+      within(dialog).getByRole("radio", { name: "Aventura" }),
     ).toBeChecked();
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Cerrar filtros" }),
@@ -302,16 +261,141 @@ describe("CatalogFilters interactions", () => {
       name: "Filtrar resultados",
     });
     expect(
-      within(dialog).getByRole("checkbox", { name: "Aventura" }),
-    ).not.toBeChecked();
-    expect(
-      within(dialog).getByRole("checkbox", { name: "Acción" }),
+      within(dialog).getByRole("radio", { name: "Aventura" }),
     ).toBeChecked();
+    expect(
+      within(dialog).getByRole("radio", { name: "Acción" }),
+    ).not.toBeChecked();
+    expect(navigation.push).not.toHaveBeenCalled();
+  });
+
+  it("rebases the draft once the applied filters change", async () => {
+    const { rerender } = render(
+      <CatalogFilters
+        scope="search"
+        categories={categories}
+        genres={genres}
+        years={[1990, 2026]}
+        totalRecords={43}
+        footer={<div>Pie</div>}
+      >
+        <div>Resultados</div>
+      </CatalogFilters>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Filtros/ }));
+    let dialog = await screen.findByRole("dialog", {
+      name: "Filtrar resultados",
+    });
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Aventura" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Cerrar filtros" }),
+    );
+
+    navigation.params = "q=one&order=title";
+    rerender(
+      <CatalogFilters
+        scope="search"
+        categories={categories}
+        genres={genres}
+        years={[1990, 2026]}
+        totalRecords={50}
+        footer={<div>Pie</div>}
+      >
+        <div>Resultados</div>
+      </CatalogFilters>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Filtros/ }));
+    dialog = await screen.findByRole("dialog", {
+      name: "Filtrar resultados",
+    });
+    expect(
+      within(dialog).getByRole("radio", { name: "Cualquier género" }),
+    ).toBeChecked();
+  });
+
+  it("filters by initial, including numbers and symbols", async () => {
+    render(
+      <CatalogFilters
+        scope="catalog"
+        categories={categories}
+        genres={genres}
+        years={[1990, 2026]}
+        totalRecords={43}
+        footer={<div>Pie</div>}
+      >
+        <div>Resultados</div>
+      </CatalogFilters>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Filtros/ }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Filtrar resultados",
+    });
+    const initials = within(dialog).getByRole("radiogroup", {
+      name: "Inicial del título",
+    });
+    expect(within(initials).getAllByRole("radio")).toHaveLength(28);
+    fireEvent.click(
+      within(initials).getByRole("radio", { name: "Números y símbolos" }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: /Mostrar|Calculando|Aplicar/,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(navigation.push).toHaveBeenCalledWith(
+        "/buscar?q=one&genre=accion&letter=%23&order=title",
+        { scroll: false },
+      ),
+    );
+  });
+
+  it("names the filter button with its active count and hides sorting without results", () => {
+    render(
+      <CatalogFilters
+        scope="search"
+        categories={categories}
+        genres={genres}
+        years={[1990, 2026]}
+        totalRecords={0}
+        footer={<div>Pie</div>}
+      >
+        <div>Resultados</div>
+      </CatalogFilters>,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /^Filtros\s?, 1 activo$/ }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Ordenar/ })).toBeNull();
+  });
+
+  it("shows a capped total once, with a hint to refine", () => {
+    render(
+      <CatalogFilters
+        scope="catalog"
+        categories={categories}
+        genres={genres}
+        years={[1990, 2026]}
+        totalRecords={1000}
+        capped
+        footer={<div>Pie</div>}
+      >
+        <div>Resultados</div>
+      </CatalogFilters>,
+    );
+
+    expect(screen.getByText(/Más de/).textContent).toBe("Más de 1.000 obras");
+    expect(screen.getByText(/Solo se pueden recorrer/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "inicial" })).toBeTruthy();
   });
 
   it("keeps changes in a draft and preserves q/order when clearing and applying", async () => {
     render(
       <CatalogFilters
+        scope="search"
         categories={categories}
         genres={genres}
         years={[1990, 2026]}
@@ -327,7 +411,7 @@ describe("CatalogFilters interactions", () => {
       name: "Filtrar resultados",
     });
 
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Aventura" }));
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Aventura" }));
     expect(navigation.push).not.toHaveBeenCalled();
 
     fireEvent.click(
@@ -353,6 +437,7 @@ describe("CatalogFilters interactions", () => {
   it("updates the result count without navigating while the drawer is edited", async () => {
     render(
       <CatalogFilters
+        scope="search"
         categories={categories}
         genres={genres}
         years={[1990, 2026]}
@@ -367,7 +452,7 @@ describe("CatalogFilters interactions", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "Filtrar resultados",
     });
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Aventura" }));
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Aventura" }));
 
     expect(
       await within(dialog).findByRole("button", { name: "Mostrar 12 obras" }),
@@ -387,6 +472,7 @@ describe("CatalogFilters interactions", () => {
       );
     render(
       <CatalogFilters
+        scope="search"
         categories={categories}
         genres={genres}
         years={[1990, 2026]}
@@ -401,7 +487,7 @@ describe("CatalogFilters interactions", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "Filtrar resultados",
     });
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Aventura" }));
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Aventura" }));
 
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(
       "No se pudo calcular el total.",
@@ -421,6 +507,7 @@ describe("CatalogFilters interactions", () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     render(
       <CatalogFilters
+        scope="search"
         categories={categories}
         genres={genres}
         years={[1990, 2026]}
