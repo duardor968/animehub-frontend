@@ -14,7 +14,6 @@ import { AnimeImage } from "@/components/anime-image";
 import { MediaCard } from "@/components/media-card";
 import { EpisodeBrowser } from "@/components/anime/episode-browser";
 import {
-  episodeBounds,
   isSameTitle,
   parseEpisodePage,
   summarize,
@@ -24,6 +23,7 @@ import { RelatedScroller } from "@/components/anime/related-scroller";
 import { loadAnime } from "@/lib/api/anime";
 import {
   apiFetch,
+  isApiNotFoundError,
   type AnimeResponse,
   type EpisodePageResponse,
 } from "@/lib/api/client";
@@ -89,7 +89,10 @@ export default async function AnimePage({
   );
   const episodes = await apiFetch<EpisodePageResponse>(
     `/anime/${encodeURIComponent(slug)}/episodes?page=${requestedPage}`,
-  );
+  ).catch((error: unknown) => {
+    if (isApiNotFoundError(error)) notFound();
+    throw error;
+  });
   const { totalRecords, totalPages } = episodes.meta;
   if (requestedPage > 1 && requestedPage > totalPages) {
     redirect(
@@ -98,7 +101,9 @@ export default async function AnimePage({
         : `/anime/${anime.slug}#episodios`,
     );
   }
-  const bounds = episodeBounds(episodes.data, requestedPage, totalRecords);
+  // Range limits come from the whole anime (a movie can be episode 0).
+  const firstNumber = episodes.meta.firstNumber ?? 1;
+  const lastNumber = episodes.meta.lastNumber ?? firstNumber;
   const movie = isMovie(anime);
   const jsonLd = {
     "@context": "https://schema.org",
@@ -111,9 +116,8 @@ export default async function AnimePage({
   const year = anime.startDate
     ? new Date(anime.startDate).getUTCFullYear()
     : null;
-  const genres = [...anime.genres].sort((left, right) =>
-    left.name.localeCompare(right.name, "es"),
-  );
+  // The API returns genres sorted by name.
+  const genres = anime.genres;
   const showAlternative =
     anime.alternativeTitle && !isSameTitle(anime.alternativeTitle, anime.title);
   const rated = typeof anime.score === "number" && anime.score > 0;
@@ -270,8 +274,8 @@ export default async function AnimePage({
           initial={episodes.data}
           initialPage={requestedPage}
           totalRecords={totalRecords}
-          firstNumber={bounds.first}
-          lastNumber={bounds.last}
+          firstNumber={firstNumber}
+          lastNumber={lastNumber}
           isMovie={movie}
           nextEpisodeAt={anime.nextEpisodeAt}
         />
@@ -284,10 +288,14 @@ const RELATION_LABELS: Record<Relation["kind"], string | null> = {
   PREQUEL: "Precuela",
   SEQUEL: "Secuela",
   MAIN_STORY: "Historia principal",
+  FULL_STORY: "Historia completa",
   SIDE_STORY: "Historia paralela",
+  SPIN_OFF: "Spin-off",
   SUMMARY: "Resumen",
   ALTERNATIVE: "Versión alternativa",
-  // "Other" carries no information: the card shows no relation label.
+  ALTERNATIVE_SETTING: "Ambientación alternativa",
+  // "Otro" is the source's generic link (One Piece has 22): repeating it on
+  // every card adds noise, so those cards show no relation label.
   OTHER: null,
 };
 

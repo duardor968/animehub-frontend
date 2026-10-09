@@ -40,8 +40,7 @@ const downloads = vi.hoisted(() => ({
 }));
 
 vi.mock("../downloads/download-provider", () => ({
-  MAX_QUICK_EPISODES: 50,
-  SUPPORTS_EPISODES_SCOPE: false,
+  MAX_JOB_EPISODES: 5000,
   useDownloads: () => ({
     openDownload: downloads.openDownload,
     getRequestStatus: () => downloads.status,
@@ -234,7 +233,7 @@ describe("EpisodeBrowser", () => {
     });
   });
 
-  it("blocks selections the API can't send as a list yet", () => {
+  it("sends selections above 50 episodes as one list", () => {
     renderBrowser({
       initial: pageOf(1, 51),
       totalRecords: 51,
@@ -245,13 +244,13 @@ describe("EpisodeBrowser", () => {
     fireEvent.click(
       screen.getByRole("checkbox", { name: /Seleccionar esta página/ }),
     );
-
-    expect(
-      screen.getByText(/Puedes enviar hasta 50 episodios seleccionados/),
-    ).toBeVisible();
-    expect(
+    fireEvent.click(
       screen.getByRole("button", { name: "Descargar selección" }),
-    ).toBeDisabled();
+    );
+
+    const request = downloads.openDownload.mock.calls[0][0] as DownloadRequest;
+    expect(request.episodeNumbers).toHaveLength(51);
+    expect(request.from).toBeUndefined();
   });
 
   it("clears the selection once it was delivered", () => {

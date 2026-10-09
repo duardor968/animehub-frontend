@@ -3,6 +3,7 @@ import { plural } from "@/lib/format";
 import {
   describeAudioFallback,
   describeFailed,
+  describeMissing,
   describeLinks,
   describeRequest,
   failedEpisodeNumbers,
@@ -64,6 +65,8 @@ export interface Activity {
   onlyEpisodes?: number[];
   /** The resolve finished but no provider had links. */
   noLinks?: boolean;
+  /** Requested numbers the anime doesn't have (skipped by the job). */
+  missingNumbers?: number[];
 }
 
 export type ActivityAction =
@@ -185,7 +188,7 @@ export function presentActivity(
             : "Buscando enlaces",
         detail: activity.reconnecting
           ? "Se perdió la conexión con AnimeHub; seguimos intentándolo."
-          : undefined,
+          : describeMissing(activity.missingNumbers) || undefined,
         variant: "accent",
         isLoading: true,
         timeout: 0,
@@ -296,7 +299,12 @@ export function presentActivity(
           activity.deliveredVia === "COPY"
             ? "Enlaces copiados"
             : `Enviado a ${destinationNames[activity.deliveredVia ?? "CNL"]}`,
-        detail: [sentSentence(activity, episodes), fallback, hint]
+        detail: [
+          sentSentence(activity, episodes),
+          fallback,
+          describeMissing(activity.missingNumbers),
+          hint,
+        ]
           .filter(Boolean)
           .join(" "),
         variant: "success",
@@ -311,8 +319,9 @@ export function presentActivity(
         title: "Entrega parcial",
         detail: [
           sentSentence(activity, delivered),
-          describeFailed(failed, activity.failedCount),
+          describeFailed(failed, activity.failedCount, episodes),
           describeAudioFallback(delivered, activity.preferredAudio),
+          describeMissing(activity.missingNumbers),
         ]
           .filter(Boolean)
           .join(" "),

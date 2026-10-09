@@ -101,19 +101,50 @@ export function failedEpisodeNumbers(episodes: ResolvedEpisodeLike[]) {
     .map((episode) => episode.episodeNumber);
 }
 
-/** "Fallaron los episodios 1–7." with the numbers, or a count when long. */
-export function describeFailed(numbers: number[], fallbackCount = 0): string {
+/** "Sin enlaces: episodios 1–7." with the numbers, or a count when long.
+ *  When the source itself failed (SOURCE_UNAVAILABLE) it says so, since a
+ *  retry may then work. */
+export function describeFailed(
+  numbers: number[],
+  fallbackCount = 0,
+  episodes: ResolvedEpisodeLike[] = [],
+): string {
   if (numbers.length === 0) {
     return fallbackCount > 0
       ? `${plural(fallbackCount, "episodio", "episodios")} sin enlaces.`
       : "";
   }
+  const failed = new Set(numbers);
+  const sourceDown =
+    episodes.length > 0 &&
+    episodes
+      .filter((episode) => failed.has(episode.episodeNumber))
+      .every((episode) => episode.errorCode === "SOURCE_UNAVAILABLE");
   const ranges = formatEpisodeRanges(numbers);
+  const label =
+    ranges.split(", ").length > 4
+      ? plural(numbers.length, "episodio", "episodios")
+      : numbers.length === 1
+        ? `el episodio ${ranges}`
+        : `los episodios ${ranges}`;
+  if (sourceDown)
+    return `AnimeAV1 no respondió para ${label}; puedes reintentarlo.`;
   if (ranges.split(", ").length > 4)
     return `${plural(numbers.length, "episodio", "episodios")} sin enlaces.`;
   return numbers.length === 1
     ? `El episodio ${ranges} no tiene enlaces.`
     : `Sin enlaces: episodios ${ranges}.`;
+}
+
+/** Explains episode numbers a job skipped because the anime lacks them. */
+export function describeMissing(numbers: number[] | undefined): string {
+  if (!numbers?.length) return "";
+  const ranges = formatEpisodeRanges(numbers);
+  if (ranges.split(", ").length > 4)
+    return `Se omitieron ${plural(numbers.length, "episodio que no existe", "episodios que no existen")}.`;
+  return numbers.length === 1
+    ? `Se omitió el episodio ${ranges}: no existe.`
+    : `Se omitieron los episodios ${ranges}: no existen.`;
 }
 
 const audioNames: Record<AudioPreference, string> = {
