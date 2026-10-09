@@ -49,8 +49,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const response = await getAnime(slug);
-  if (!response)
-    return { title: "Anime no encontrado", robots: { index: false } };
+  // Unknown slug: the page answers 404 and Next adds the noindex itself.
+  if (!response) return { title: "Anime no encontrado" };
   const anime = response.data;
   const description = anime.synopsis?.trim()
     ? summarize(anime.synopsis)
