@@ -24,7 +24,7 @@ export function Pagination({
     >
       {page > 1 ? (
         <Link
-          className="grid size-11 place-items-center rounded-lg border border-white/10 bg-[#0B1621] text-[#F3F8FC] transition-colors hover:border-[#5FA8FF]/45 hover:bg-[#102130]"
+          className="grid size-11 place-items-center rounded-lg border border-white/10 bg-surface text-foreground transition-colors hover:border-link/45 hover:bg-surface-hover"
           href={href(page - 1)}
           aria-label="Página anterior"
         >
@@ -33,13 +33,13 @@ export function Pagination({
       ) : (
         <span />
       )}
-      <p className="min-w-20 text-center text-sm text-[#8FA3B4]">
+      <p className="min-w-20 text-center text-sm text-muted">
         <strong>{page}</strong>
         <span> / {totalPages}</span>
       </p>
       {page < totalPages ? (
         <Link
-          className="grid size-11 place-items-center rounded-lg border border-white/10 bg-[#0B1621] text-[#F3F8FC] transition-colors hover:border-[#5FA8FF]/45 hover:bg-[#102130]"
+          className="grid size-11 place-items-center rounded-lg border border-white/10 bg-surface text-foreground transition-colors hover:border-link/45 hover:bg-surface-hover"
           href={href(page + 1)}
           aria-label="Página siguiente"
         >

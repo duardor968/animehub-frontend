@@ -6,8 +6,8 @@ export function Brand({ compact = false }: { compact?: boolean }) {
     <Link
       className={
         compact
-          ? "flex h-11 w-11 shrink-0 items-center overflow-hidden rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5FA8FF]"
-          : "flex h-11 w-[148px] shrink-0 items-center overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5FA8FF] max-sm:w-[132px]"
+          ? "flex h-11 w-11 shrink-0 items-center overflow-hidden rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          : "flex h-11 w-[148px] shrink-0 items-center overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus max-sm:w-[132px]"
       }
       href="/"
       aria-label="AnimeHub, inicio"

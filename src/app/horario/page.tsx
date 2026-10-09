@@ -22,7 +22,7 @@ export default async function SchedulePage() {
     <main className="mx-auto min-h-[70vh] w-full max-w-[1200px] px-6 py-12 max-sm:px-4 max-sm:pb-28 max-sm:pt-9">
       <ScheduleNotice />
       <div className="mb-8 flex items-end justify-between gap-4">
-        <h1 className="font-(family-name:--font-display) text-5xl font-semibold tracking-[-.04em] text-[#F3F8FC] max-sm:text-4xl">
+        <h1 className="font-(family-name:--font-display) text-5xl font-semibold tracking-[-.04em] text-foreground max-sm:text-4xl">
           Horario
         </h1>
         <LocalTime />

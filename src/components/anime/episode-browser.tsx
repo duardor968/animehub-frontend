@@ -94,31 +94,31 @@ export function EpisodeBrowser({
     <section id="episodios">
       <div className="flex items-end justify-between gap-6 border-b border-white/8 pb-5 max-sm:items-start max-sm:flex-col">
         <div>
-          <span className="text-[10px] font-bold uppercase tracking-[.18em] text-[#69A7FF]">
+          <span className="text-[10px] font-bold uppercase tracking-[.18em] text-link">
             Episodios
           </span>
-          <h2 className="mt-1 font-(family-name:--font-display) text-3xl font-semibold tracking-tight text-[#F3F8FC]">
+          <h2 className="mt-1 font-(family-name:--font-display) text-3xl font-semibold tracking-tight text-foreground">
             {totalRecords} disponibles
           </h2>
-          <p className="mt-2 text-sm text-[#8FA3B4]">
+          <p className="mt-2 text-sm text-muted">
             Selecciona episodios o envía uno directamente.
           </p>
         </div>
         <Button
           variant="secondary"
-          className="h-11 rounded-full bg-[#151E2E] px-5 text-[#F3F8FC] shadow-none hover:bg-[#1C2940]"
+          className="h-11 rounded-full bg-default px-5 text-foreground shadow-none hover:bg-default-hover"
           onPress={() => openDownload({ slug, title, all: true })}
         >
           <Download size={15} /> Descargar todo
         </Button>
       </div>
 
-      <Surface className="mt-5 flex flex-wrap items-end gap-3 rounded-2xl bg-[#091321] px-4 py-3 shadow-none">
+      <Surface className="mt-5 flex flex-wrap items-end gap-3 rounded-2xl bg-surface px-4 py-3 shadow-none">
         <div className="mr-auto min-w-[12rem] self-center">
-          <strong className="block text-sm text-[#F3F8FC]">
+          <strong className="block text-sm text-foreground">
             Descargar un rango
           </strong>
-          <span className="mt-0.5 block text-xs text-[#8FA3B4]">
+          <span className="mt-0.5 block text-xs text-muted">
             Indica el primer y el último episodio.
           </span>
         </div>
@@ -129,7 +129,7 @@ export function EpisodeBrowser({
             setValue={setFrom}
             max={totalRecords}
           />
-          <span className="pb-3 text-[#718596]">—</span>
+          <span className="pb-3 text-faint">—</span>
           <EpisodeNumberField
             label="Hasta"
             value={to}
@@ -138,7 +138,7 @@ export function EpisodeBrowser({
           />
         </div>
         <Button
-          className="h-11 rounded-full bg-[#2F81F7] px-5 font-semibold text-white shadow-none hover:bg-[#4B93F7] max-sm:w-full"
+          className="h-11 rounded-full bg-accent px-5 font-semibold text-accent-foreground shadow-none hover:bg-accent-hover max-sm:w-full"
           onPress={openRange}
         >
           Descargar rango
@@ -167,7 +167,7 @@ export function EpisodeBrowser({
                 : current.filter((number) => !visibleNumbers.includes(number)),
             )
           }
-          className="text-sm text-[#C4D2DE]"
+          className="text-sm text-subtle"
         >
           <Checkbox.Content className="gap-2.5">
             <Checkbox.Control>
@@ -176,11 +176,11 @@ export function EpisodeBrowser({
             Seleccionar todo
           </Checkbox.Content>
         </Checkbox>
-        <span className="text-xs text-[#718596] max-sm:hidden">
+        <span className="text-xs text-faint max-sm:hidden">
           {visibleNumbers.length} episodios en esta página
         </span>
         {selected.length > 0 && (
-          <span className="ml-auto text-xs text-[#69A7FF]">
+          <span className="ml-auto text-xs text-link">
             {selected.length} seleccionado{selected.length === 1 ? "" : "s"}
           </span>
         )}
@@ -208,9 +208,9 @@ export function EpisodeBrowser({
               key={episode.id}
             >
               <MediaCard
-                className={`touch-card relative min-w-0 gap-0 rounded-2xl p-0 transition-colors duration-300 ${checked ? "bg-[#111E34]" : "bg-[#0A1220]"}`}
+                className={`touch-card relative min-w-0 gap-0 rounded-2xl p-0 transition-colors duration-300 ${checked ? "bg-surface-secondary" : "bg-surface"}`}
               >
-                <div className="touch-static-media relative aspect-video overflow-hidden bg-[#0A1220] [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04]">
+                <div className="touch-static-media relative aspect-video overflow-hidden bg-surface [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04]">
                   <AnimeImage
                     src={episode.imageUrl}
                     fallbackSrc={backdropUrl ?? posterUrl}
@@ -218,10 +218,10 @@ export function EpisodeBrowser({
                     sizes="(max-width: 680px) 90vw, (max-width: 1100px) 42vw, 18vw"
                   />
                   <div
-                    className={`absolute bottom-0 left-0 flex h-7 items-center rounded-tr-lg px-3 text-[10px] font-bold ${checked ? "bg-[#111E34]" : "bg-[#0A1220]"}`}
+                    className={`absolute bottom-0 left-0 flex h-7 items-center rounded-tr-lg px-3 text-[10px] font-bold ${checked ? "bg-surface-secondary" : "bg-surface"}`}
                   >
-                    <span className="tracking-[.14em] text-[#69A7FF]">EP</span>
-                    <strong className="ml-1.5 tabular-nums text-[#F3F8FC]">
+                    <span className="tracking-[.14em] text-link">EP</span>
+                    <strong className="ml-1.5 tabular-nums text-foreground">
                       {formatEpisodeNumber(episode.number)}
                     </strong>
                   </div>
@@ -244,7 +244,7 @@ export function EpisodeBrowser({
                   className={`pointer-events-auto absolute right-[-2px] top-[-2px] z-30 block h-[54px] w-[54px] rounded-none transition-opacity duration-300 ${checked ? "opacity-100" : "opacity-0 group-hover:opacity-100 has-[:focus-visible]:opacity-100 [@media(hover:none)]:opacity-100"}`}
                 >
                   <Checkbox.Content
-                    className={`relative block h-full w-full gap-0 rounded-none p-0 text-[#F3F8FC] shadow-none [clip-path:polygon(0_0,100%_0,100%_100%)] transition-colors duration-300 ${checked ? "bg-[#2F81F7]" : "bg-[#182235] hover:bg-[#202D44]"}`}
+                    className={`relative block h-full w-full gap-0 rounded-none p-0 text-foreground shadow-none [clip-path:polygon(0_0,100%_0,100%_100%)] transition-colors duration-300 ${checked ? "bg-accent" : "bg-surface-tertiary hover:bg-default-hover"}`}
                   >
                     <span className="pointer-events-none absolute right-[11px] top-[11px] grid size-4 place-items-center">
                       {checked ? (
@@ -274,7 +274,7 @@ export function EpisodeBrowser({
 
       {selected.length > 0 && (
         <div
-          className="episode-selection-bar fixed inset-x-1/2 bottom-5 z-40 flex w-[min(92vw,620px)] -translate-x-1/2 items-center gap-4 rounded-2xl bg-[#111A2A]/96 p-3 pl-5 shadow-[0_24px_80px_rgba(0,0,0,.62)] backdrop-blur-xl max-md:bottom-24 max-sm:gap-2 max-sm:p-2.5 max-sm:pl-3"
+          className="episode-selection-bar fixed inset-x-1/2 bottom-5 z-40 flex w-[min(92vw,620px)] -translate-x-1/2 items-center gap-4 rounded-2xl bg-surface-secondary/96 p-3 pl-5 shadow-[0_24px_80px_rgba(0,0,0,.62)] backdrop-blur-xl max-md:bottom-24 max-sm:gap-2 max-sm:p-2.5 max-sm:pl-3"
           role="status"
         >
           <span className="max-sm:text-xs">
@@ -282,7 +282,7 @@ export function EpisodeBrowser({
             {selected.length === 1 ? "" : "s"}
           </span>
           <Button
-            className="ml-auto rounded-full bg-[#2F81F7] px-5 font-semibold text-white shadow-none hover:bg-[#4B93F7] max-sm:px-3 max-sm:text-xs"
+            className="ml-auto rounded-full bg-accent px-5 font-semibold text-accent-foreground shadow-none hover:bg-accent-hover max-sm:px-3 max-sm:text-xs"
             onPress={() =>
               openDownload({ slug, title, episodeNumbers: selected })
             }
@@ -291,7 +291,7 @@ export function EpisodeBrowser({
           </Button>
           <Button
             variant="ghost"
-            className="min-h-10 px-2 text-xs font-semibold text-[#8FA3B4] shadow-none hover:text-[#F3F8FC] max-sm:px-1"
+            className="min-h-10 px-2 text-xs font-semibold text-muted shadow-none hover:text-foreground max-sm:px-1"
             onPress={() => setSelected([])}
           >
             Limpiar
@@ -338,7 +338,7 @@ function EpisodePager({
   const end = Math.min(page * PAGE_SIZE, totalRecords);
   return (
     <Pagination className={`w-full ${className}`}>
-      <Pagination.Summary className="text-[#8FA3B4]">
+      <Pagination.Summary className="text-muted">
         Episodios {start}–{end} de {totalRecords}
       </Pagination.Summary>
       <Pagination.Content className="episode-pager-content">
@@ -401,16 +401,16 @@ function EpisodeNumberField({
   const clamp = (next: number) => Math.max(1, Math.min(max, next));
   return (
     <div className="w-28 max-sm:w-full">
-      <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[.14em] text-[#8FA3B4]">
+      <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[.14em] text-muted">
         {label}
       </span>
-      <div className="flex h-11 items-center overflow-hidden rounded-xl bg-[#111A2A]">
+      <div className="flex h-11 items-center overflow-hidden rounded-xl bg-surface-secondary">
         <Button
           variant="tertiary"
           aria-label={`Reducir ${label.toLowerCase()}`}
           isDisabled={value <= 1}
           onPress={() => setValue((current) => clamp(current - 1))}
-          className="h-full min-h-0 w-9 rounded-none bg-transparent px-0 text-[#8FA3B4] shadow-none hover:bg-transparent hover:text-[#F3F8FC]"
+          className="h-full min-h-0 w-9 rounded-none bg-transparent px-0 text-muted shadow-none hover:bg-transparent hover:text-foreground"
         >
           <Minus size={13} />
         </Button>
@@ -423,14 +423,14 @@ function EpisodeNumberField({
             const digits = event.target.value.replace(/\D/g, "");
             setValue(digits ? clamp(Number.parseInt(digits, 10)) : 1);
           }}
-          className="min-w-0 flex-1 bg-transparent text-center text-sm tabular-nums text-[#F3F8FC] outline-none"
+          className="min-w-0 flex-1 bg-transparent text-center text-sm tabular-nums text-foreground outline-none"
         />
         <Button
           variant="tertiary"
           aria-label={`Aumentar ${label.toLowerCase()}`}
           isDisabled={value >= max}
           onPress={() => setValue((current) => clamp(current + 1))}
-          className="h-full min-h-0 w-9 rounded-none bg-transparent px-0 text-[#8FA3B4] shadow-none hover:bg-transparent hover:text-[#F3F8FC]"
+          className="h-full min-h-0 w-9 rounded-none bg-transparent px-0 text-muted shadow-none hover:bg-transparent hover:text-foreground"
         >
           <Plus size={13} />
         </Button>

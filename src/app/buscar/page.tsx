@@ -66,13 +66,13 @@ export default async function SearchPage({
     <main className="mx-auto min-h-[70vh] w-full max-w-[1200px] px-6 py-12 max-sm:px-4 max-sm:pb-28 max-sm:pt-9">
       <div className="mb-8">
         <div>
-          <span className="text-[10px] font-bold uppercase tracking-[.18em] text-[#2F81F7]">
+          <span className="text-[10px] font-bold uppercase tracking-[.18em] text-link">
             Encontrar
           </span>
-          <h1 className="mt-2 font-(family-name:--font-display) text-5xl font-semibold tracking-[-.04em] text-[#F3F8FC] max-sm:text-4xl">
+          <h1 className="mt-2 font-(family-name:--font-display) text-5xl font-semibold tracking-[-.04em] text-foreground max-sm:text-4xl">
             Buscar
           </h1>
-          <p className="mt-3 text-sm text-[#8FA3B4]">
+          <p className="mt-3 text-sm text-muted">
             Por título original o alternativo.
           </p>
         </div>

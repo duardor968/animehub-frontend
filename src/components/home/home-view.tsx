@@ -159,10 +159,10 @@ export function HomeView({
         <section>
           <div className="mb-5 flex items-end justify-between">
             <div>
-              <span className="text-[10px] font-bold uppercase tracking-[.18em] text-[#69A7FF]">
+              <span className="text-[10px] font-bold uppercase tracking-[.18em] text-link">
                 Ahora
               </span>
-              <h2 className="mt-1 font-(family-name:--font-display) text-3xl font-semibold tracking-tight text-[#F3F8FC] max-sm:text-2xl">
+              <h2 className="mt-1 font-(family-name:--font-display) text-3xl font-semibold tracking-tight text-foreground max-sm:text-2xl">
                 Episodios recientes
               </h2>
             </div>
@@ -176,10 +176,10 @@ export function HomeView({
         <section className="mx-auto w-full max-w-[1152px]">
           <div className="mb-5 flex items-end justify-between">
             <div>
-              <span className="text-[10px] font-bold uppercase tracking-[.18em] text-[#69A7FF]">
+              <span className="text-[10px] font-bold uppercase tracking-[.18em] text-link">
                 Descubrir
               </span>
-              <h2 className="mt-1 font-(family-name:--font-display) text-3xl font-semibold tracking-tight text-[#F3F8FC] max-sm:text-2xl">
+              <h2 className="mt-1 font-(family-name:--font-display) text-3xl font-semibold tracking-tight text-foreground max-sm:text-2xl">
                 Nuevos en el catálogo
               </h2>
             </div>
@@ -205,7 +205,7 @@ function MissingSection({ loading }: { loading: boolean }) {
       <span className="image-skeleton" aria-hidden="true" />
     </div>
   ) : (
-    <p className="py-10 text-sm text-[#8FA3B4]">
+    <p className="py-10 text-sm text-muted">
       Este contenido no está disponible temporalmente.
     </p>
   );
@@ -228,10 +228,10 @@ function HomeUnavailable() {
   return (
     <main className="mx-auto grid min-h-[70vh] w-full max-w-[1600px] place-items-center px-6 py-20 text-center">
       <div className="max-w-lg">
-        <h1 className="font-(family-name:--font-display) text-4xl font-semibold tracking-tight text-[#F3F8FC]">
+        <h1 className="font-(family-name:--font-display) text-4xl font-semibold tracking-tight text-foreground">
           El contenido no está disponible temporalmente
         </h1>
-        <p className="mt-4 text-[#8FA3B4]">
+        <p className="mt-4 text-muted">
           Aparecerá automáticamente cuando esté disponible.
         </p>
       </div>
