@@ -3,7 +3,7 @@ import type { components } from "@/lib/api/generated";
 type ScheduleEntry = components["schemas"]["ScheduleEntryDto"];
 
 export type ScheduleStatus =
-  "aired" | "upcoming" | "delayed" | "paused" | "finished" | "unknown";
+  "aired" | "upcoming" | "due" | "delayed" | "final" | "unknown";
 
 /** Cookie holding the viewer's IANA time zone, so the server can render the
  * week the way the viewer will see it. */
@@ -11,6 +11,9 @@ export const TIME_ZONE_COOKIE = "tz";
 
 /** Once the expected hour passes, wait this long before calling it late. */
 export const DELAY_GRACE_MINUTES = 3 * 60;
+
+/** Same cut-off as the API: older entries no longer describe a weekly slot. */
+export const SCHEDULE_MAX_AGE_MS = 21 * 24 * 60 * 60_000;
 
 const MINUTES_PER_DAY = 24 * 60;
 const partsFormatters = new Map<string, Intl.DateTimeFormat>();
@@ -75,47 +78,51 @@ export type ScheduleClock = {
 
 /**
  * What a weekly slot shows this calendar week (Monday–Sunday, the order of the
- * tabs), with the same meaning on every day:
- * - the slot's episode was published this week → that episode, "Emitido";
- * - otherwise the next episode (latest + 1) is expected on this week's slot:
- *   "Próximo" until its hour (+ grace) passes, then "Retrasado";
- * - two or more weekly slots missed → "En pausa" (no fresh guess at a date).
- * Finales are kept only on their local publication date.
+ * tabs), with the same meaning on every day. The API's latestEpisode N was
+ * published at P; P's weekday and wall-clock time define the slot O, and N+1
+ * is expected at P + 7 days:
+ * - P falls in this week (on or after O's day) → "EP N · Emitido"
+ *   ("EP N · Final" when N completes the series);
+ * - otherwise, before O → "EP N+1 · Próximo"; from O until O + grace →
+ *   "EP N+1 · Ahora"; later → "EP N+1 · Retrasado".
+ * A finale from an earlier week has no slot left, and entries older than 21
+ * days are dropped (the API omits them too).
  */
 export function deriveScheduleEntry(
   entry: ScheduleEntry,
   { now, timeZone, stale = false }: ScheduleClock,
 ): { number: number; status: ScheduleStatus } | null {
   const published = new Date(entry.basisPublishedAt);
-  if (!Number.isFinite(published.getTime()) || published > now) return null;
+  if (
+    !Number.isFinite(published.getTime()) ||
+    published > now ||
+    now.getTime() - published.getTime() > SCHEDULE_MAX_AGE_MS
+  )
+    return null;
   const number = entry.latestEpisode.number;
   const slot = zonedMoment(published, timeZone);
   const today = zonedMoment(now, timeZone);
+  const weekStart = today.dayNumber - weekPosition(today.weekday);
+  const airedThisWeek = slot.dayNumber >= weekStart;
 
   if (entry.isFinalEpisode)
-    return slot.dayNumber === today.dayNumber
-      ? { number, status: "finished" }
-      : null;
+    return airedThisWeek ? { number, status: "final" } : null;
   // A cached penultimate episode of a finished series is not a weekly slot.
   if (entry.anime.status === "FINISHED") return null;
-
-  const weekStart = today.dayNumber - weekPosition(today.weekday);
-  if (slot.dayNumber >= weekStart) return { number, status: "aired" };
+  if (airedThisWeek) return { number, status: "aired" };
   // Without fresh data or a whole next number, don't predict anything.
   if (stale || !Number.isInteger(number)) return { number, status: "unknown" };
 
+  // Wall-clock minutes keep the thresholds on the hour the card shows, across
+  // daylight-saving changes.
   const slotDay = weekStart + weekPosition(slot.weekday);
-  const weeksSince = Math.round((slotDay - slot.dayNumber) / 7);
-  // Wall-clock comparison keeps the threshold on the hour the card shows,
-  // across daylight-saving changes.
-  const passed =
-    today.dayNumber * MINUTES_PER_DAY + today.minutes >
-    slotDay * MINUTES_PER_DAY + slot.minutes + DELAY_GRACE_MINUTES;
-  const missedSlots = weeksSince - 1 + Number(passed);
+  const nowMinutes = today.dayNumber * MINUTES_PER_DAY + today.minutes;
+  const slotMinutes = slotDay * MINUTES_PER_DAY + slot.minutes;
   const next = number + 1;
-  if (missedSlots >= 2) return { number: next, status: "paused" };
-  if (passed) return { number: next, status: "delayed" };
-  return { number: next, status: "upcoming" };
+  if (nowMinutes < slotMinutes) return { number: next, status: "upcoming" };
+  if (nowMinutes <= slotMinutes + DELAY_GRACE_MINUTES)
+    return { number: next, status: "due" };
+  return { number: next, status: "delayed" };
 }
 
 const timeFormatters = new Map<string, Intl.DateTimeFormat>();

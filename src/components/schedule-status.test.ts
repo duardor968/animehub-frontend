@@ -51,10 +51,13 @@ describe("weekly slot status, the same on every day of the week", () => {
       deriveScheduleEntry(entry(), at(utc("2026-09-28", "13:00"))),
     ).toEqual({ number: 12, status: "upcoming" });
   });
-  it("waits a grace period after the estimated hour before calling it late", () => {
+  it("shows the slot as happening now until the grace period ends, then late", () => {
+    expect(
+      deriveScheduleEntry(entry(), at(utc("2026-09-28", "14:00"))),
+    ).toEqual({ number: 12, status: "due" });
     expect(
       deriveScheduleEntry(entry(), at(utc("2026-09-28", "16:59"))),
-    ).toEqual({ number: 12, status: "upcoming" });
+    ).toEqual({ number: 12, status: "due" });
     expect(
       deriveScheduleEntry(entry(), at(utc("2026-09-28", "17:01"))),
     ).toEqual({ number: 12, status: "delayed" });
@@ -93,7 +96,7 @@ describe("weekly slot status, the same on every day of the week", () => {
       ),
     ).toEqual({ number: 4, status: "upcoming" });
   });
-  it("puts a series on hold after two missed weekly slots", () => {
+  it("expects the next episode after a skipped week and drops entries past 21 days", () => {
     // Last aired 2026-09-14: last week's slot was missed, this one is pending.
     const twoWeeks = entry(utc("2026-09-14"));
     expect(
@@ -101,11 +104,14 @@ describe("weekly slot status, the same on every day of the week", () => {
     ).toEqual({ number: 12, status: "upcoming" });
     expect(
       deriveScheduleEntry(twoWeeks, at(utc("2026-09-28", "18:00"))),
-    ).toEqual({ number: 12, status: "paused" });
-    // Eleven months without an episode is never "Retrasado".
+    ).toEqual({ number: 12, status: "delayed" });
+    // Eleven months (or 22 days) without an episode is not a weekly slot.
     expect(
       deriveScheduleEntry(entry(utc("2025-11-11")), at(utc("2026-10-09"))),
-    ).toEqual({ number: 12, status: "paused" });
+    ).toBeNull();
+    expect(
+      deriveScheduleEntry(entry(utc("2026-09-06")), at(utc("2026-09-28"))),
+    ).toBeNull();
   });
   it("compares wall-clock hours across the autumn DST change", () => {
     // Madrid leaves summer time on 2026-10-25: 14:00 local is 12:00Z, then 13:00Z.
@@ -116,7 +122,7 @@ describe("weekly slot status, the same on every day of the week", () => {
         entry(last),
         at(new Date("2026-10-26T15:30:00Z"), madrid),
       ),
-    ).toEqual({ number: 12, status: "upcoming" });
+    ).toEqual({ number: 12, status: "due" });
     expect(
       deriveScheduleEntry(
         entry(last),
@@ -124,7 +130,7 @@ describe("weekly slot status, the same on every day of the week", () => {
       ),
     ).toEqual({ number: 12, status: "delayed" });
   });
-  it("keeps a published finale on its local date then removes it from every tab", () => {
+  it("keeps a finale as the final episode for the rest of its week", () => {
     const final = entry(utc("2026-09-28", "23:59"), {
       isFinalEpisode: true,
       anime: { ...entry().anime, status: "FINISHED" },
@@ -132,12 +138,16 @@ describe("weekly slot status, the same on every day of the week", () => {
     });
     expect(deriveScheduleEntry(final, at(utc("2026-09-28", "23:59")))).toEqual({
       number: 12,
-      status: "finished",
+      status: "final",
     });
+    expect(deriveScheduleEntry(final, at(utc("2026-09-29", "00:00")))).toEqual({
+      number: 12,
+      status: "final",
+    });
+    // No next episode: nothing to show once its week is over.
     expect(
-      deriveScheduleEntry(final, at(utc("2026-09-29", "00:00"))),
+      deriveScheduleEntry(final, at(utc("2026-10-05", "00:00"))),
     ).toBeNull();
-    expect(deriveScheduleEntry(final, at(utc("2026-09-30")))).toBeNull();
   });
   it("does not show a cached penultimate episode of a finished series", () => {
     expect(

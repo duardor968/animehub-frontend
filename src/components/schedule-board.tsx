@@ -46,25 +46,26 @@ const weekOrder = [1, 2, 3, 4, 5, 6, 0];
 const statusLabels: Record<ScheduleStatus, string | null> = {
   aired: "Emitido",
   upcoming: "Próximo",
+  due: "Ahora",
   delayed: "Retrasado",
-  paused: "En pausa",
-  finished: "Finalizado",
+  final: "Final",
   unknown: null,
 };
 
 const statusChips: Record<
   Exclude<ScheduleStatus, "unknown">,
   {
-    color: "accent" | "success" | "warning" | "default";
+    color: "accent" | "success" | "warning";
     variant: "soft" | "primary";
   }
 > = {
   aired: { color: "success", variant: "soft" },
   upcoming: { color: "accent", variant: "soft" },
+  // Expected right now (within the grace window): solid, so it stands out.
+  due: { color: "accent", variant: "primary" },
   delayed: { color: "warning", variant: "soft" },
-  paused: { color: "default", variant: "soft" },
   // The series ended: solid, so it reads apart from a regular "Emitido".
-  finished: { color: "success", variant: "primary" },
+  final: { color: "success", variant: "primary" },
 };
 
 // Don't re-run the server component more than this often when the tab regains
