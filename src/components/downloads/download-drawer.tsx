@@ -36,9 +36,11 @@ export function DownloadDrawer({
       <Drawer.Trigger className="drawer-state-trigger" aria-hidden="true">
         Abrir descargas
       </Drawer.Trigger>
+      {/* Same dim backdrop as the catalog filters (no blur: cheaper on
+          phones, and one look for both drawers). */}
       <Drawer.Backdrop
-        variant="blur"
-        className="download-drawer-backdrop z-[60]"
+        variant="transparent"
+        className="download-drawer-backdrop z-[60] !bg-background/76"
       >
         <Drawer.Content
           placement="right"
@@ -60,7 +62,10 @@ export function DownloadDrawer({
               </Drawer.CloseTrigger>
             </Drawer.Header>
             <Drawer.Body className="download-drawer-body mx-0 flex flex-col gap-4 px-5 pt-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-              <DrawerSummary summary={summary} />
+              <DrawerSummary
+                label={content.mode === "links" ? "Enlaces de" : "Vas a enviar"}
+                summary={summary}
+              />
               {content.mode === "settings" ? (
                 <PreferencesPanel {...content.props} />
               ) : content.mode === "links" ? (

@@ -63,10 +63,18 @@ function AppToast({ toast }: { toast: QueuedToast<ToastContentValue> }) {
           )}
         </Toast.Indicator>
       )}
-      <Toast.Content>
-        {title ? <Toast.Title>{title}</Toast.Title> : null}
+      {/* min-w-0 + stretch: long titles wrap inside the toast instead of
+          widening it, so the dismiss button never leaves the screen. */}
+      <Toast.Content className="min-w-0 flex-1 items-stretch">
+        {title ? (
+          <Toast.Title className="[overflow-wrap:anywhere]">
+            {title}
+          </Toast.Title>
+        ) : null}
         {description ? (
-          <Toast.Description>{description}</Toast.Description>
+          <Toast.Description className="block min-w-0 [overflow-wrap:anywhere]">
+            {description}
+          </Toast.Description>
         ) : null}
         {actionProps?.children ? (
           <Toast.ActionButton {...actionProps}>

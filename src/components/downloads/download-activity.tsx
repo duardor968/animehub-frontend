@@ -1,7 +1,8 @@
 import { Button } from "@heroui/react";
-import { plural } from "@/lib/format";
+import { formatNumber, plural } from "@/lib/format";
 import {
   describeAudioFallback,
+  describeEpisodes,
   describeFailed,
   describeMissing,
   describeLinks,
@@ -67,6 +68,12 @@ export interface Activity {
   noLinks?: boolean;
   /** Requested numbers the anime doesn't have (skipped by the job). */
   missingNumbers?: number[];
+  /** False when repeating the same request can't work (a 4xx such as a
+   *  validation error): the error then offers no "Reintentar". */
+  retryable?: boolean;
+  /** Idempotency-Key of a job request whose outcome is unknown, reused by
+   *  "Reintentar" so the API returns that job instead of a second one. */
+  retryKey?: string;
 }
 
 export type ActivityAction =
@@ -87,7 +94,11 @@ export interface ActivityView {
   isLoading: boolean;
   /** Auto-dismiss delay; 0 keeps the toast until the user acts. */
   timeout: number;
+  /** "Anime · Ep. N" (describeRequest), for text-only uses. */
   summary: string;
+  /** The same, split so a long anime title can be clamped on its own. */
+  summaryTitle: string;
+  summaryEpisodes: string;
   detail?: string;
   progress?: { current: number; total: number };
   actions: Array<{
@@ -134,16 +145,25 @@ function deliverLabel(destination: DownloadDestination) {
     : `Enviar a ${destinationNames[destination]}`;
 }
 
+const linkCount = (episodes: ResolvedEpisode[]) =>
+  episodes.reduce((total, episode) => total + episode.links.length, 0);
+
 function sentSentence(activity: Activity, episodes: ResolvedEpisode[]) {
   const links = describeLinks(episodes);
+  const sent = linkCount(episodes) === 1 ? "enviado" : "enviados";
   switch (activity.deliveredVia) {
     case "COPY":
       return `${links} en el portapapeles.`;
     case "MYJD":
-      return `${links} enviados a MyJDownloader.`;
+      return `${links} ${sent} a MyJDownloader.`;
     default:
-      return `${links} enviados a JDownloader.`;
+      return `${links} ${sent} a JDownloader.`;
   }
+}
+
+/** "14 de 1.180": the progress count, formatted like every other count. */
+export function formatProgress(current: number, total: number) {
+  return `${formatNumber(current)} de ${formatNumber(total)}`;
 }
 
 export function presentActivity(
@@ -152,7 +172,13 @@ export function presentActivity(
 ): ActivityView {
   const summary = describeRequest(activity.request);
   const episodes = deliverableEpisodes(activity);
-  const base = { summary, isLoading: false, actions: [] };
+  const base = {
+    summary,
+    summaryTitle: activity.request.title,
+    summaryEpisodes: describeEpisodes(activity.request),
+    isLoading: false,
+    actions: [],
+  };
   const alternativeDestination: ActivityView["actions"] = [];
   if (activity.destination !== "COPY")
     alternativeDestination.push({ id: "copy", label: "Copiar enlaces" });
@@ -289,10 +315,15 @@ export function presentActivity(
     case "handed-off":
     case "success": {
       const fallback = describeAudioFallback(episodes, activity.preferredAudio);
+      const one = linkCount(episodes) === 1;
       const hint =
         activity.deliveredVia === "COPY"
-          ? "Pégalos en tu gestor de descargas."
-          : "Aparecerán en LinkGrabber.";
+          ? one
+            ? "Pégalo en tu gestor de descargas."
+            : "Pégalos en tu gestor de descargas."
+          : one
+            ? "Aparecerá en LinkGrabber."
+            : "Aparecerán en LinkGrabber.";
       return {
         ...base,
         title:
@@ -369,9 +400,11 @@ export function presentActivity(
           "No se pudo completar la operación. Vuelve a intentarlo.",
         variant: "danger",
         timeout: 12_000,
-        actions: activity.receipt
-          ? []
-          : [{ id: "retry", label: "Reintentar", primary: true }],
+        // A rejected request (validation) would fail again: no retry.
+        actions:
+          activity.receipt || activity.retryable === false
+            ? []
+            : [{ id: "retry", label: "Reintentar", primary: true }],
       };
   }
 }
@@ -388,8 +421,10 @@ export function ActivityToastBody({
 }) {
   return (
     <span className="flex min-w-0 flex-col gap-2">
-      <span className="truncate text-sm font-semibold text-subtle">
-        {view.summary}
+      {/* The anime title takes one line at most; the episodes always show. */}
+      <span className="flex min-w-0 items-baseline gap-1 text-sm font-semibold text-subtle">
+        <span className="min-w-0 truncate">{view.summaryTitle}</span>
+        <span className="shrink-0">{` · ${view.summaryEpisodes}`}</span>
       </span>
       {view.detail && (
         <span className="text-sm leading-5 text-muted">{view.detail}</span>
@@ -403,7 +438,7 @@ export function ActivityToastBody({
               size="sm"
               variant={action.primary ? "primary" : "secondary"}
               isPending={action.isPending}
-              className={`min-h-9 rounded-lg px-3 text-xs font-semibold shadow-none outline-none focus-visible:ring-2 focus-visible:ring-focus [@media(pointer:coarse)]:min-h-11 ${action.primary ? "bg-accent text-accent-foreground hover:bg-accent-hover" : "bg-default text-foreground hover:bg-default-hover"}`}
+              className={`min-h-9 rounded-full px-3 text-xs font-semibold shadow-none outline-none focus-visible:ring-2 focus-visible:ring-focus [@media(pointer:coarse)]:min-h-11 ${action.primary ? "bg-accent text-accent-foreground hover:bg-accent-hover" : "bg-default text-foreground hover:bg-default-hover"}`}
               onPress={() => onAction(action.id)}
             >
               {action.label}
@@ -428,7 +463,7 @@ function ToastProgress({ current, total }: { current: number; total: number }) {
         aria-valuemin={0}
         aria-valuemax={total}
         aria-valuenow={current}
-        aria-valuetext={`${current} de ${plural(total, "episodio", "episodios")}`}
+        aria-valuetext={`${formatNumber(current)} de ${plural(total, "episodio", "episodios")}`}
         className="relative block h-1.5 flex-1 overflow-hidden rounded-full bg-default"
       >
         <span
@@ -436,8 +471,11 @@ function ToastProgress({ current, total }: { current: number; total: number }) {
           style={{ transform: `scaleX(${ratio})` }}
         />
       </span>
-      <span aria-hidden="true" className="text-xs tabular-nums text-muted">
-        {current}/{total}
+      <span
+        aria-hidden="true"
+        className="shrink-0 text-xs tabular-nums text-muted"
+      >
+        {formatProgress(current, total)}
       </span>
     </span>
   );

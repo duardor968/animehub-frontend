@@ -32,6 +32,8 @@ describe("download copy helpers", () => {
   it("compresses episode numbers into ranges", () => {
     expect(formatEpisodeRanges([9, 1, 2, 3, 5, 8])).toBe("1–3, 5, 8–9");
     expect(formatEpisodeRanges([1180, 1179])).toBe("1.179–1.180");
+    // A decimal special uses the decimal comma, so runs split with "; ".
+    expect(formatEpisodeRanges([13, 12.5, 12])).toBe("12; 12,5; 13");
   });
 
   it("describes what a request covers", () => {
@@ -51,9 +53,17 @@ describe("download copy helpers", () => {
         episodeNumbers: [1, 3, 5, 7, 9],
       }),
     ).toBe("5 episodios");
-    expect(requestEpisodeCount({ slug: "a", title: "A", from: 4, to: 9 })).toBe(
-      6,
-    );
+    // A range only counts when the caller knows the numbering has no
+    // specials or gaps between its bounds.
+    expect(
+      requestEpisodeCount({ slug: "a", title: "A", from: 4, to: 9, total: 6 }),
+    ).toBe(6);
+    expect(
+      requestEpisodeCount({ slug: "a", title: "A", from: 12, to: 13 }),
+    ).toBe(0);
+    expect(
+      describeEpisodes({ slug: "a", title: "A", episodeNumbers: [12, 12.5] }),
+    ).toBe("Ep. 12; 12,5");
   });
 
   it("explains mirrors, failures and audio fallbacks with plurals", () => {
