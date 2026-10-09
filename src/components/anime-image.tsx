@@ -15,9 +15,9 @@ type Candidate = { src?: string | null; mobileSrc?: string | null };
  * Remote artwork with a skeleton while loading, a fallback chain
  * (src → fallbackSrc → branded placeholder) and optional art direction.
  *
- * Priority images (the LCP candidate) are preloaded with high fetch priority
- * and painted as soon as the browser decodes them: only non-priority images
- * fade in, so the LCP never waits for hydration.
+ * Priority images (the LCP candidate) are preloaded with high fetch priority.
+ * Priority and eager images are painted as soon as the browser decodes them;
+ * only lazy images fade in, so above-the-fold art never waits for hydration.
  */
 export function AnimeImage({
   src,
@@ -138,11 +138,14 @@ export function AnimeImage({
     />
   );
 
+  // Eager images are above the fold: painted as soon as they decode. Only
+  // lazy images wait for onLoad (after hydration) to fade in.
+  const eager = priority || loading === "eager";
   const state =
     loadedKey === activeKey
       ? "is-loaded"
-      : priority
-        ? "is-priority"
+      : eager
+        ? "is-immediate"
         : "is-loading";
 
   return (
