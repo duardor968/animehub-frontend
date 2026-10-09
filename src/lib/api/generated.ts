@@ -96,7 +96,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Busca y filtra el catálogo paginado */
+    /**
+     * Busca y filtra el catálogo paginado
+     * @description La fuente sirve páginas de 20 y como máximo 1000 resultados (50 páginas) por consulta. Cuando una consulta coincide con más títulos, la fuente trunca el conjunto: meta.totalRecords se queda en 1000, las páginas posteriores a la 50 llegan vacías y meta.capped es true. Para alcanzar el resto hay que acotar la consulta (inicial, años, género, formato o estado).
+     */
     get: operations["CatalogController_getCatalog"];
     put?: never;
     post?: never;
@@ -166,7 +169,10 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Crea un trabajo durable para una serie o rango */
+    /**
+     * Crea un trabajo durable para una serie, un rango o una selección
+     * @description scope ALL resuelve todos los episodios; RANGE, los episodios con número entre from y to (ambos obligatorios, from ≤ to); EPISODES, exactamente los números de episodeNumbers (los que el anime no tiene se omiten y se devuelven en missingEpisodeNumbers). Responde 400 si ningún episodio coincide.
+     */
     post: operations["DownloadJobsController_create"];
     delete?: never;
     options?: never;
@@ -225,6 +231,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/sitemap/anime": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Lista los anime disponibles para el sitemap
+     * @description Todos los anime que conoce la API y siguen disponibles en la fuente, ordenados por slug (máximo 50.000). Respuesta cacheable: Cache-Control "public, max-age=3600".
+     */
+    get: operations["SitemapController_getAnime"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -254,6 +280,7 @@ export interface components {
       status: "UNKNOWN" | "AIRING" | "FINISHED" | "UPCOMING";
       startDate?: string | null;
       mature: boolean;
+      /** @description Sorted by name (Spanish collation). */
       genres: components["schemas"]["CategoryDto"][];
       episodeCount?: number | null;
       trailerUrl?: string | null;
@@ -297,14 +324,20 @@ export interface components {
       meta: components["schemas"]["FreshnessDto"];
     };
     RelationDto: {
-      /** @enum {string} */
+      /**
+       * @description Source relation label: PREQUEL Precuela, SEQUEL Secuela, MAIN_STORY Historia principal, FULL_STORY Historia completa, SIDE_STORY Historia paralela, SPIN_OFF Spin-off, SUMMARY Resumen, ALTERNATIVE Versión alternativa, ALTERNATIVE_SETTING Ambientación alternativa, OTHER Otro (the source itself gives no specific relation).
+       * @enum {string}
+       */
       kind:
         | "PREQUEL"
         | "SEQUEL"
         | "MAIN_STORY"
+        | "FULL_STORY"
         | "SIDE_STORY"
+        | "SPIN_OFF"
         | "SUMMARY"
         | "ALTERNATIVE"
+        | "ALTERNATIVE_SETTING"
         | "OTHER";
       anime: components["schemas"]["AnimeSummaryDto"];
       position: number;
@@ -329,6 +362,7 @@ export interface components {
       score?: number | null;
       votes?: number | null;
       sourceUrl: string;
+      /** @description Sorted by name (Spanish collation). */
       genres: components["schemas"]["CategoryDto"][];
       relations: components["schemas"]["RelationDto"][];
     };
@@ -341,6 +375,10 @@ export interface components {
       perPage: number;
       totalPages: number;
       totalRecords: number;
+      /** @description Lowest episode number across ALL episodes of the anime (not only this page); null when it has none. Movies are often a single episode 0. */
+      firstNumber: number | null;
+      /** @description Highest episode number across ALL episodes of the anime (not only this page); null when it has none. */
+      lastNumber: number | null;
     };
     EpisodePageResponseDto: {
       data: components["schemas"]["EpisodeDto"][];
@@ -352,8 +390,12 @@ export interface components {
       stale: boolean;
       page: number;
       perPage: number;
+      /** @description Pages reported by the source; never more than 50. */
       totalPages: number;
+      /** @description Records reported by the source; clamped at 1000 (see capped). */
       totalRecords: number;
+      /** @description true when the source truncated the result set at its maximum of 1000 records / 50 pages: more titles match than totalRecords and pages beyond 50 are empty, so narrow the query (e.g. letter, year or genre filters) to reach them. totalRecords is then a lower bound ("1000+"). */
+      capped: boolean;
       categories: components["schemas"]["CategoryDto"][];
       genres: components["schemas"]["CategoryDto"][];
       years: number[];
@@ -365,11 +407,16 @@ export interface components {
     SuggestionResponseDto: {
       data: components["schemas"]["AnimeSummaryDto"][];
     };
+    /** @description One weekly slot. latestEpisode is the newest episode of the series already published at the source (never a future one); the next expected episode is latestEpisode.number + 1, due 7 days after basisPublishedAt, unless isFinalEpisode. */
     ScheduleEntryDto: {
       anime: components["schemas"]["AnimeSummaryDto"];
       latestEpisode: components["schemas"]["EpisodeDto"];
+      /**
+       * Format: date-time
+       * @description Equals latestEpisode.publishedAt. Its weekday and time in the viewer's time zone define the weekly slot; the next episode is expected 7 days later. Entries whose basisPublishedAt is more than 21 days old (hiatus or irregular releases) are omitted.
+       */
       basisPublishedAt: string;
-      /** @description The published episode completes a finished series. */
+      /** @description latestEpisode completes a finished series: there is no next episode. Such entries are kept for 48 hours after basisPublishedAt. */
       isFinalEpisode: boolean;
     };
     ScheduleResponseDto: {
@@ -403,19 +450,48 @@ export interface components {
     ResolveDownloadsResponseDto: {
       data: components["schemas"]["ResolveDownloadsDataDto"];
     };
-    CreateDownloadJobDto: {
-      /** @enum {string} */
-      scope: "ALL" | "RANGE";
+    AllDownloadJobRequestDto: {
       /** @enum {string} */
       audio: "SUB" | "DUB";
       providers: ("MEGA" | "PIXELDRAIN" | "MP4UPLOAD" | "ONE_FICHIER")[];
-      from?: number;
-      to?: number;
+      /**
+       * @description Every episode of the anime. (enum property replaced by openapi-typescript)
+       * @enum {string}
+       */
+      scope: "ALL";
+    };
+    RangeDownloadJobRequestDto: {
+      /** @enum {string} */
+      audio: "SUB" | "DUB";
+      providers: ("MEGA" | "PIXELDRAIN" | "MP4UPLOAD" | "ONE_FICHIER")[];
+      /**
+       * @description Every existing episode whose number is within [from, to] (inclusive). (enum property replaced by openapi-typescript)
+       * @enum {string}
+       */
+      scope: "RANGE";
+      /** @description Required; from <= to. */
+      from: number;
+      /** @description Required; to >= from. */
+      to: number;
+    };
+    EpisodesDownloadJobRequestDto: {
+      /** @enum {string} */
+      audio: "SUB" | "DUB";
+      providers: ("MEGA" | "PIXELDRAIN" | "MP4UPLOAD" | "ONE_FICHIER")[];
+      /**
+       * @description Exactly the listed episodes. (enum property replaced by openapi-typescript)
+       * @enum {string}
+       */
+      scope: "EPISODES";
+      /** @description Episode numbers to resolve (finite, >= 0, decimals allowed, no duplicates). Numbers the anime does not have are skipped and listed in the receipt as missingEpisodeNumbers; if none exists the request fails with 400. */
+      episodeNumbers: number[];
     };
     DownloadJobReceiptDto: {
       jobId: string;
       accessToken: string;
       expiresAt: string;
+      /** @description EPISODES scope only: requested numbers the anime does not have, which the job skips (ascending). Always empty for ALL and RANGE. */
+      missingEpisodeNumbers: number[];
     };
     DownloadJobReceiptResponseDto: {
       data: components["schemas"]["DownloadJobReceiptDto"];
@@ -434,6 +510,17 @@ export interface components {
     };
     DownloadJobResponseDto: {
       data: components["schemas"]["DownloadJobDataDto"];
+    };
+    SitemapAnimeDto: {
+      slug: string;
+      /**
+       * Format: date-time
+       * @description Last known change of the anime page content: the newer of its last detected detail change (title, synopsis, episode list, relations) and its latest episode publication.
+       */
+      updatedAt: string;
+    };
+    SitemapAnimeResponseDto: {
+      data: components["schemas"]["SitemapAnimeDto"][];
     };
   };
   responses: never;
@@ -926,7 +1013,10 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["CreateDownloadJobDto"];
+        "application/json":
+          | components["schemas"]["AllDownloadJobRequestDto"]
+          | components["schemas"]["RangeDownloadJobRequestDto"]
+          | components["schemas"]["EpisodesDownloadJobRequestDto"];
       };
     };
     responses: {
@@ -1122,6 +1212,45 @@ export interface operations {
         };
         content: {
           "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description Se superó temporalmente el límite de solicitudes. */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El servidor no pudo completar la operación. */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+    };
+  };
+  SitemapController_getAnime: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          /** @description public, max-age=3600 */
+          "Cache-Control"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SitemapAnimeResponseDto"];
         };
       };
       /** @description Se superó temporalmente el límite de solicitudes. */
