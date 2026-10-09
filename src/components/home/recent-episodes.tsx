@@ -9,6 +9,19 @@ import { EpisodeDownloadButton } from "../downloads/episode-download-button";
 
 type RecentEpisode = components["schemas"]["RecentEpisodeDto"];
 
+// Columns keep the 220px source screenshots close to their native size. Below
+// 400px each card becomes a horizontal row. Rows of 3 or 6 drop the last two
+// (oldest) of the 20 episodes so the grid never ends with an orphan row.
+export const RECENT_GRID_CLASS =
+  "grid grid-cols-1 gap-x-4 gap-y-6 max-[25rem]:gap-y-3 min-[25rem]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 min-[90rem]:grid-cols-5 min-[112.5rem]:grid-cols-6 sm:max-lg:[&>:nth-child(n+19)]:hidden min-[112.5rem]:[&>:nth-child(n+19)]:hidden";
+
+const cardClass =
+  "touch-card group relative min-w-0 gap-0 rounded-xl bg-surface p-0 transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)] has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-focus has-[a:focus-visible]:ring-offset-2 has-[a:focus-visible]:ring-offset-background";
+
+// The thumbnail is 9rem wide in the horizontal (<400px) layout.
+const mediaClass =
+  "relative aspect-[16/9] overflow-hidden bg-surface max-[25rem]:w-36 max-[25rem]:shrink-0";
+
 export function RecentEpisodes({ episodes }: { episodes: RecentEpisode[] }) {
   if (episodes.length === 0) {
     return (
@@ -19,10 +32,10 @@ export function RecentEpisodes({ episodes }: { episodes: RecentEpisode[] }) {
         <div className="max-w-md">
           <span
             aria-hidden="true"
-            className="mx-auto block h-px w-10 bg-accent"
+            className="mx-auto block h-px w-10 bg-brand"
           />
           <h3
-            className="mt-5 font-(family-name:--font-display) text-xl font-semibold tracking-tight text-foreground"
+            className="mt-5 font-display text-xl font-semibold tracking-tight text-foreground"
             id="recent-episodes-empty-title"
           >
             Aún no hay episodios recientes
@@ -43,58 +56,108 @@ export function RecentEpisodes({ episodes }: { episodes: RecentEpisode[] }) {
   }
 
   return (
-    <div className="grid grid-cols-4 gap-x-4 gap-y-6 max-lg:grid-cols-2">
-      {episodes.map(({ anime, episode }) => (
-        <MediaCard
-          className="touch-card group relative min-w-0 gap-0 rounded-xl bg-surface p-0 transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)]"
-          key={episode.id}
-        >
-          <Link
-            href={`/anime/${anime.slug}`}
-            className="block min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset"
-            aria-label={`${anime.title}, episodio ${episode.number}`}
-          >
-            <div className="touch-static-media relative aspect-[16/9] overflow-hidden bg-surface [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04]">
-              <AnimeImage
-                src={episode.imageUrl}
-                fallbackSrc={anime.backdropUrl ?? anime.posterUrl}
-                alt={`Fotograma del episodio ${episode.number} de ${anime.title}`}
-                sizes="(max-width: 700px) 92vw, (max-width: 1100px) 45vw, 23vw"
-              />
-              <div className="touch-hover-overlay absolute inset-0 bg-background/0 transition-colors duration-500 group-hover:bg-background/25" />
-              <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-background/92 to-transparent" />
-              <div className="absolute bottom-0 left-0 flex h-7 items-center rounded-tr-lg bg-surface px-3 text-[10px] font-bold">
-                <span className="tracking-[.14em] text-link">EP</span>
-                <strong className="ml-1.5 tabular-nums text-foreground">
-                  {formatEpisodeNumber(episode.number)}
-                </strong>
-              </div>
-              <time
-                className="absolute bottom-3 right-3 text-[11px] font-medium text-subtle"
-                dateTime={episode.publishedAt ?? undefined}
+    <div className={RECENT_GRID_CLASS}>
+      {episodes.map(({ anime, episode }) => {
+        const number = formatEpisodeNumber(episode.number);
+        const published = episode.publishedAt
+          ? formatRelativeTime(episode.publishedAt)
+          : null;
+        const label = [
+          anime.title,
+          `episodio ${number}${episode.title ? `: ${episode.title}` : ""}`,
+          published,
+        ]
+          .filter(Boolean)
+          .join(", ");
+        return (
+          <MediaCard className={cardClass} key={episode.id}>
+            <Link
+              href={`/anime/${anime.slug}`}
+              aria-label={label}
+              // The relative time can tick between server render and hydration.
+              suppressHydrationWarning
+              className="block min-w-0 outline-none max-[25rem]:flex max-[25rem]:items-center"
+            >
+              <div
+                className={`touch-static-media ${mediaClass} [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04] group-has-[a:focus-visible]:[&_.anime-image_img]:scale-[1.04]`}
               >
-                {formatRelativeTime(episode.publishedAt)}
-              </time>
+                <AnimeImage
+                  src={episode.imageUrl}
+                  fallbackSrc={anime.backdropUrl ?? anime.posterUrl}
+                  alt=""
+                  sizes="(max-width: 399px) 144px, (max-width: 1023px) 33vw, 20vw"
+                />
+                <div className="touch-hover-overlay absolute inset-0 bg-background/0 transition-colors duration-500 group-hover:bg-background/25" />
+                <div
+                  aria-hidden="true"
+                  className="absolute bottom-0 left-0 flex h-7 items-center rounded-tr-lg bg-surface px-3 text-[10px] font-bold"
+                >
+                  <span className="tracking-[.14em] text-link">EP</span>
+                  <strong className="ml-1.5 tabular-nums text-foreground">
+                    {number}
+                  </strong>
+                </div>
+              </div>
+              <Card.Content className="min-w-0 gap-1 px-3.5 py-3 max-[25rem]:flex-1 max-[25rem]:px-3 max-[25rem]:py-2">
+                <Card.Title className="line-clamp-2 text-sm font-semibold leading-5 text-foreground">
+                  {anime.title}
+                </Card.Title>
+                <Card.Description className="flex min-w-0 gap-1 text-xs text-muted">
+                  {episode.title ? (
+                    <span className="min-w-0 truncate">{episode.title}</span>
+                  ) : null}
+                  {episode.title && published ? <span>·</span> : null}
+                  {published ? (
+                    <time
+                      className="shrink-0"
+                      dateTime={episode.publishedAt ?? undefined}
+                      suppressHydrationWarning
+                    >
+                      {published}
+                    </time>
+                  ) : null}
+                  {!episode.title && !published ? (
+                    <span>Episodio {number}</span>
+                  ) : null}
+                </Card.Description>
+              </Card.Content>
+            </Link>
+            {/* Outside the link (no nested controls). Centered on hover with a
+              mouse; pinned to the thumbnail's top-right corner on touch,
+              clear of the EP badge. */}
+            <div
+              className={`recent-download-slot pointer-events-none absolute left-0 top-0 z-20 grid aspect-[16/9] w-full place-items-center max-[25rem]:w-36 [@media(hover:none)]:items-start [@media(hover:none)]:justify-items-end [@media(hover:none)]:p-1.5 [html[data-device=portable]_&]:items-start [html[data-device=portable]_&]:justify-items-end [html[data-device=portable]_&]:p-1.5`}
+            >
+              <EpisodeDownloadButton
+                slug={anime.slug}
+                title={anime.title}
+                episodeNumber={episode.number}
+                className="pointer-events-auto scale-90 opacity-0 transition-[opacity,transform,background-color] duration-200 group-hover:scale-100 group-hover:opacity-100 focus-visible:scale-100 focus-visible:opacity-100 [@media(hover:none)]:scale-100 [@media(hover:none)]:opacity-100"
+              />
             </div>
-            <Card.Content className="gap-1 px-3.5 py-3">
-              <Card.Title className="truncate text-sm font-semibold text-foreground">
-                {anime.title}
-              </Card.Title>
-              <Card.Description className="truncate text-xs text-muted">
-                {episode.title ||
-                  `Episodio ${formatEpisodeNumber(episode.number)}`}
-              </Card.Description>
-            </Card.Content>
-          </Link>
-          <div className="recent-download-slot pointer-events-none absolute inset-x-0 top-0 z-20 grid aspect-[16/9] place-items-center">
-            <EpisodeDownloadButton
-              slug={anime.slug}
-              title={anime.title}
-              episodeNumber={episode.number}
-              className="pointer-events-auto scale-90 opacity-0 transition-[opacity,transform,background-color] duration-200 group-hover:scale-100 group-hover:opacity-100 focus-visible:scale-100 focus-visible:opacity-100 [@media(hover:none)]:scale-100 [@media(hover:none)]:opacity-100"
-            />
+          </MediaCard>
+        );
+      })}
+    </div>
+  );
+}
+
+export function RecentEpisodesSkeleton({ count = 8 }: { count?: number }) {
+  return (
+    <div className={RECENT_GRID_CLASS} aria-hidden="true">
+      {Array.from({ length: count }, (_, index) => (
+        <div
+          key={index}
+          className="min-w-0 overflow-hidden rounded-xl bg-surface max-[25rem]:flex max-[25rem]:items-center"
+        >
+          <div className={mediaClass}>
+            <span className="image-skeleton" />
           </div>
-        </MediaCard>
+          <div className="flex min-w-0 flex-1 flex-col gap-2 px-3.5 py-3.5">
+            <span className="h-3.5 w-4/5 rounded bg-surface-tertiary" />
+            <span className="h-3 w-1/3 rounded bg-surface-tertiary/70" />
+          </div>
+        </div>
       ))}
     </div>
   );

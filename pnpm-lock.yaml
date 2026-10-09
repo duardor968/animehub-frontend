@@ -175,9 +175,6 @@ importers:
       '@internationalized/date':
         specifier: 3.12.4
         version: 3.12.4
-      embla-carousel-autoplay:
-        specifier: 8.6.0
-        version: 8.6.0(embla-carousel@8.6.0)
       embla-carousel-react:
         specifier: 8.6.0
         version: 8.6.0(react@19.3.0)
@@ -1663,11 +1660,6 @@ packages:
 
   electron-to-chromium@1.5.451:
     resolution: {integrity: sha512-vUNKPrUzw8ByEMOxloq0a71iD/mPuPxVkbDm3G5YhnxTzOw/I6qAg2MUS0cYj/c267lWmw26yW4Vv7foxTxPLg==}
-
-  embla-carousel-autoplay@8.6.0:
-    resolution: {integrity: sha512-OBu5G3nwaSXkZCo1A6LTaFMZ8EpkYbwIaH+bPqdBnDGQ2fh4+NbzjXjs2SktoPNKCtflfVMc75njaDHOYXcrsA==}
-    peerDependencies:
-      embla-carousel: 8.6.0
 
   embla-carousel-react@8.6.0:
     resolution: {integrity: sha512-0/PjqU7geVmo6F734pmPqpyHqiM99olvyecY7zdweCw+6tKEXnrE90pBiBbMMU8s5tICemzpQ3hi5EpxzGW+JA==}
@@ -4443,10 +4435,6 @@ snapshots:
       gopd: 1.2.0
 
   electron-to-chromium@1.5.451: {}
-
-  embla-carousel-autoplay@8.6.0(embla-carousel@8.6.0):
-    dependencies:
-      embla-carousel: 8.6.0
 
   embla-carousel-react@8.6.0(react@19.3.0):
     dependencies:

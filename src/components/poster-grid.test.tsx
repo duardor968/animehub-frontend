@@ -40,40 +40,75 @@ describe("PosterGrid", () => {
     ).toHaveAttribute("href", "/catalogo");
   });
 
-  it("gives each card one concise accessible name", () => {
+  it("names each card with its title, category and year, not the synopsis", () => {
     const { container } = render(<PosterGrid anime={[anime]} />);
 
-    expect(screen.getByRole("link", { name: "Ver Mob Sekai" })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Mob Sekai, TV Anime, 2026" }),
+    ).toHaveAttribute("href", "/anime/mob-sekai");
     expect(
       screen.queryByRole("link", {
         name: /Una sinopsis que no debe formar parte/,
       }),
     ).toBeNull();
+    // Fills the page container (no own width cap or inset).
+    expect(container.firstElementChild).not.toHaveClass("max-w-[1152px]");
+    expect(container.firstElementChild).not.toHaveClass("px-2");
     expect(container.firstElementChild).toHaveClass(
-      "max-w-[1152px]",
-      "px-2",
-      "grid-cols-5",
-      "max-xl:grid-cols-4",
-      "max-lg:grid-cols-3",
-      "max-sm:grid-cols-2",
+      "grid-cols-2",
+      "sm:grid-cols-3",
+      "lg:grid-cols-4",
+      "xl:grid-cols-5",
+      "2xl:grid-cols-6",
     );
   });
 
-  it("eager-loads the desktop catalog row that can become LCP", () => {
-    const items = Array.from({ length: 6 }, (_, index) => ({
+  it("does not repeat the title in the hover panel", () => {
+    render(<PosterGrid anime={[anime]} />);
+    // Title once (below the poster); the panel shows synopsis and facts.
+    expect(screen.getAllByText("Mob Sekai")).toHaveLength(1);
+    expect(screen.getByText("2026 · En emisión")).toBeInTheDocument();
+  });
+
+  it("prioritizes only the first catalog posters and keeps home posters lazy", () => {
+    const items = Array.from({ length: 8 }, (_, index) => ({
       ...anime,
       id: `anime-${index}`,
       slug: `anime-${index}`,
       title: `Anime ${index}`,
     }));
-    const { container } = render(<PosterGrid anime={items} />);
+    const { container, unmount } = render(<PosterGrid anime={items} />);
     const images = [...container.querySelectorAll("img")];
 
+    expect(images.map((image) => image.getAttribute("fetchpriority"))).toEqual([
+      "high",
+      "high",
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+    expect(images.map((image) => image.getAttribute("loading"))).toEqual([
+      "eager",
+      "eager",
+      "eager",
+      "eager",
+      "eager",
+      "eager",
+      "lazy",
+      "lazy",
+    ]);
+    unmount();
+
+    const home = render(<PosterGrid anime={items} variant="home" />);
     expect(
-      images
-        .slice(0, 5)
-        .every((image) => image.getAttribute("loading") === "eager"),
+      [...home.container.querySelectorAll("img")].every(
+        (image) =>
+          image.getAttribute("loading") === "lazy" &&
+          !image.hasAttribute("fetchpriority"),
+      ),
     ).toBe(true);
-    expect(images[5]).toHaveAttribute("loading", "lazy");
   });
 });
