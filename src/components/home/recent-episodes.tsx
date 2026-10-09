@@ -15,8 +15,10 @@ type RecentEpisode = components["schemas"]["RecentEpisodeDto"];
 export const RECENT_GRID_CLASS =
   "grid grid-cols-1 gap-x-4 gap-y-6 max-[25rem]:gap-y-3 min-[25rem]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 min-[90rem]:grid-cols-5 min-[112.5rem]:grid-cols-6 sm:max-lg:[&>:nth-child(n+19)]:hidden min-[112.5rem]:[&>:nth-child(n+19)]:hidden";
 
+// Below 400px the card is a row: thumbnail and text (the link), then the
+// download button in its own column, like the anime page's compact rows.
 const cardClass =
-  "touch-card group relative min-w-0 gap-0 rounded-xl bg-surface p-0 transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)] has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-focus has-[a:focus-visible]:ring-offset-2 has-[a:focus-visible]:ring-offset-background";
+  "touch-card group relative min-w-0 gap-0 rounded-xl bg-surface p-0 transition-shadow duration-300 hover:shadow-[0_18px_42px_rgba(0,0,0,.3)] has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-focus has-[a:focus-visible]:ring-offset-2 has-[a:focus-visible]:ring-offset-background max-[25rem]:[&>.media-card-clip]:flex max-[25rem]:[&>.media-card-clip]:items-center";
 
 // The thumbnail is 9rem wide in the horizontal (<400px) layout.
 const mediaClass =
@@ -44,7 +46,7 @@ export function RecentEpisodes({ episodes }: { episodes: RecentEpisode[] }) {
             Consulta el horario para ver qué series publican hoy.
           </p>
           <Link
-            className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-lg bg-accent-soft px-4 text-sm font-semibold text-accent-soft-foreground transition-colors hover:bg-accent-soft-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-full bg-accent-soft px-5 text-sm font-semibold text-accent-soft-foreground transition-colors hover:bg-accent-soft-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             href="/horario"
           >
             Ver horario
@@ -76,7 +78,7 @@ export function RecentEpisodes({ episodes }: { episodes: RecentEpisode[] }) {
               aria-label={label}
               // The relative time can tick between server render and hydration.
               suppressHydrationWarning
-              className="block min-w-0 outline-none max-[25rem]:flex max-[25rem]:items-center"
+              className="block min-w-0 outline-none max-[25rem]:flex max-[25rem]:flex-1 max-[25rem]:items-center"
             >
               <div
                 className={`touch-static-media ${mediaClass} [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04] group-has-[a:focus-visible]:[&_.anime-image_img]:scale-[1.04]`}
@@ -124,15 +126,15 @@ export function RecentEpisodes({ episodes }: { episodes: RecentEpisode[] }) {
             </Link>
             {/* Outside the link (no nested controls). Centered on hover with a
               mouse; pinned to the thumbnail's top-right corner on touch,
-              clear of the EP badge. */}
+              clear of the EP badge; its own column in the <400px rows. */}
             <div
-              className={`recent-download-slot pointer-events-none absolute left-0 top-0 z-20 grid aspect-[16/9] w-full place-items-center max-[25rem]:w-36 [@media(hover:none)]:items-start [@media(hover:none)]:justify-items-end [@media(hover:none)]:p-1.5 [html[data-device=portable]_&]:items-start [html[data-device=portable]_&]:justify-items-end [html[data-device=portable]_&]:p-1.5`}
+              className={`recent-download-slot pointer-events-none absolute left-0 top-0 z-20 grid aspect-[16/9] w-full place-items-center [@media(hover:none)]:items-start [@media(hover:none)]:justify-items-end [@media(hover:none)]:p-1.5 [html[data-device=portable]_&]:items-start [html[data-device=portable]_&]:justify-items-end [html[data-device=portable]_&]:p-1.5 max-[25rem]:static max-[25rem]:!flex max-[25rem]:aspect-auto max-[25rem]:w-auto max-[25rem]:shrink-0 max-[25rem]:!items-center max-[25rem]:!p-0 max-[25rem]:pr-2`}
             >
               <EpisodeDownloadButton
                 slug={anime.slug}
                 title={anime.title}
                 episodeNumber={episode.number}
-                className="pointer-events-auto scale-90 opacity-0 transition-[opacity,scale,background-color] duration-200 group-hover:scale-100 group-hover:opacity-100 focus-visible:scale-100 focus-visible:opacity-100 [@media(hover:none)]:scale-100 [@media(hover:none)]:opacity-100"
+                className="pointer-events-auto scale-90 opacity-0 transition-[opacity,scale,background-color] duration-200 group-hover:scale-100 group-hover:opacity-100 focus-visible:scale-100 focus-visible:opacity-100 [@media(hover:none)]:scale-100 [@media(hover:none)]:opacity-100 max-[25rem]:mr-2 max-[25rem]:scale-100 max-[25rem]:opacity-100"
               />
             </div>
           </MediaCard>
@@ -142,9 +144,14 @@ export function RecentEpisodes({ episodes }: { episodes: RecentEpisode[] }) {
   );
 }
 
-export function RecentEpisodesSkeleton({ count = 8 }: { count?: number }) {
+// 12 placeholders fill whole rows at 1, 2, 3, 4 and 6 columns; the
+// 5-column layout shows 10.
+export function RecentEpisodesSkeleton({ count = 12 }: { count?: number }) {
   return (
-    <div className={RECENT_GRID_CLASS} aria-hidden="true">
+    <div
+      className={`${RECENT_GRID_CLASS} min-[90rem]:max-[112.5rem]:[&>:nth-child(n+11)]:hidden`}
+      aria-hidden="true"
+    >
       {Array.from({ length: count }, (_, index) => (
         <div
           key={index}

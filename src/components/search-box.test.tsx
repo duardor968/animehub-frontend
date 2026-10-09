@@ -98,7 +98,7 @@ describe("SearchBox", () => {
 
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "naruto" } });
-    const option = screen.getByRole("option", { name: /Buscar “naruto”/ });
+    const option = screen.getByRole("option", { name: /Buscar «naruto»/ });
     expect(option).toHaveAttribute("tabindex", "-1");
 
     fireEvent.keyDown(input, { key: "ArrowDown" });

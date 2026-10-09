@@ -171,6 +171,11 @@ describe("FeaturedHero", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Mostrar A" }));
     expect(live).toHaveTextContent("A, destacado 1 de 2");
+
+    // Autoplay moves on silently and doesn't leave the old slide's text.
+    await act(() => vi.advanceTimersByTimeAsync(AUTOPLAY_DELAY_MS));
+    expect(current()).toBe("Mostrar B");
+    expect(live).toHaveTextContent("");
   });
 
   it("exposes one slide at a time with h2 titles and real links", () => {
