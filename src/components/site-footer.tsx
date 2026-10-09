@@ -9,8 +9,10 @@ const linkClass =
 
 export function SiteFooter() {
   return (
-    // The bottom padding clears the fixed mobile navigation (0 at ≥1024px).
-    <footer className="border-t border-border pt-8 pb-[calc(var(--bottom-nav-clearance)+2rem)]">
+    // The bottom padding clears the fixed mobile navigation (0 at ≥1024px)
+    // and the download dock (selection bar, pending-download button) on
+    // every page while it is shown.
+    <footer className="border-t border-border pt-8 pb-[calc(var(--bottom-nav-clearance)+var(--download-dock-height,0px)+2rem)]">
       <div className="page-container flex flex-wrap items-start justify-between gap-x-12 gap-y-6">
         <div className="max-w-sm">
           <BrandLockup className="opacity-90" />
