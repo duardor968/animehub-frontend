@@ -4,6 +4,8 @@ import {
   ApiTimeoutError,
   apiFetch,
   isApiNotFoundError,
+  parseRetryAfter,
+  visitorAddress,
 } from "./client";
 
 describe("isApiNotFoundError", () => {
@@ -15,6 +17,68 @@ describe("isApiNotFoundError", () => {
       false,
     );
     expect(isApiNotFoundError(new Error("Fallo de red"))).toBe(false);
+  });
+});
+
+describe("Retry-After", () => {
+  it("reads delay-seconds and HTTP dates", () => {
+    const now = Date.parse("2026-10-09T10:00:00Z");
+    expect(parseRetryAfter("7", now)).toBe(7_000);
+    expect(parseRetryAfter("Fri, 09 Oct 2026 10:00:30 GMT", now)).toBe(30_000);
+    expect(parseRetryAfter("soon", now)).toBeNull();
+    expect(parseRetryAfter(null, now)).toBeNull();
+  });
+
+  it("travels with the API error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        headers: new Headers({ "retry-after": "12" }),
+        json: async () => ({ detail: "Too Many Requests" }),
+      }),
+    );
+    const error = await apiFetch("/download-jobs/x", {}, true).catch(
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(ApiResponseError);
+    expect((error as ApiResponseError).retryAfterMs).toBe(12_000);
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("visitorAddress", () => {
+  it("prefers the edge's header, then x-real-ip, then the last hop", () => {
+    expect(
+      visitorAddress(
+        new Headers({
+          "cf-connecting-ip": "203.0.113.1",
+          "x-real-ip": "203.0.113.2",
+        }),
+      ),
+    ).toBe("203.0.113.1");
+    expect(
+      visitorAddress(
+        new Headers({
+          "x-real-ip": "203.0.113.2",
+          "x-forwarded-for": "203.0.113.3",
+        }),
+      ),
+    ).toBe("203.0.113.2");
+    expect(
+      visitorAddress(new Headers({ "x-forwarded-for": "1.1.1.1, ::1" })),
+    ).toBe("::1");
+  });
+
+  it("ignores values that aren't addresses", () => {
+    expect(
+      visitorAddress(new Headers({ "x-real-ip": "<script>alert(1)</script>" })),
+    ).toBeNull();
+    expect(
+      visitorAddress(new Headers({ "x-forwarded-for": "1.2.3.4, unknown" })),
+    ).toBeNull();
+    expect(visitorAddress(new Headers())).toBeNull();
   });
 });
 
