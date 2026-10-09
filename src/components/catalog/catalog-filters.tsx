@@ -450,7 +450,7 @@ export function CatalogFilters({
               className="mobile-drawer-content z-[70]"
             >
               <Drawer.Dialog className="mobile-drawer-dialog !w-[min(100vw,27rem)] !max-w-[27rem] overflow-hidden border-r border-white/10 bg-background-secondary !p-0 text-foreground shadow-[24px_0_70px_rgb(0_0_0/0.36)]">
-                <Drawer.Header className="mobile-drawer-header flex shrink-0 items-start justify-between border-b border-white/8 px-5 py-5 sm:px-6">
+                <Drawer.Header className="mobile-drawer-header flex shrink-0 items-start justify-between border-b border-white/8 px-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-5 sm:px-6">
                   <div>
                     <span className="eyebrow">
                       {scope === "search" ? "Búsqueda" : "Catálogo"}
@@ -491,7 +491,7 @@ export function CatalogFilters({
                     }
                   />
                 </Drawer.Body>
-                <Drawer.Footer className="mobile-drawer-footer sticky bottom-0 z-10 grid shrink-0 grid-cols-[minmax(0,.8fr)_minmax(0,1.35fr)] gap-3 border-t border-white/8 bg-background-secondary px-5 py-4 sm:px-6">
+                <Drawer.Footer className="mobile-drawer-footer sticky bottom-0 z-10 grid shrink-0 grid-cols-[minmax(0,.8fr)_minmax(0,1.35fr)] gap-3 border-t border-white/8 bg-background-secondary px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
                   {preview.key === draftKey &&
                     preview.status === "failed" &&
                     !draftMatchesApplied && (
