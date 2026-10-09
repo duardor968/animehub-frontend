@@ -113,6 +113,8 @@ docker build -t animehub-web \
 
 `NEXT_PUBLIC_API_URL` y `NEXT_PUBLIC_SITE_URL` se fijan durante la construcción de la imagen. Cambiarlas después exige reconstruirla. `API_INTERNAL_URL` se configura al ejecutar el contenedor y debe ser accesible desde el servidor de Next.js; puede apuntar a la URL pública de la API o a una dirección interna estable. Conserva `HOSTNAME=0.0.0.0`.
 
+Las peticiones que el servidor de Next.js hace a la API llevan la dirección del visitante en `X-Forwarded-For` (tomada de `cf-connecting-ip`, de `x-real-ip` o del último salto de `x-forwarded-for`). Para que la API limite las peticiones por visitante y no por servidor, configura su `TRUST_PROXY` con la dirección de este servidor en lugar de añadirla a `RATE_LIMIT_ALLOWLIST`.
+
 El endpoint `/health` confirma que Next.js responde. No comprueba la API ni PostgreSQL. La Web puede desplegarse por separado, siempre que conserve la compatibilidad con la versión de API que consume.
 
 La migración debe mantener `https://animehub.duardo.dev/`, sus metadatos y el archivo de verificación de Google. Este repositorio nace de la separación de `apps/web` del [monorepo AnimeHub Web](https://github.com/duardor968/animehub-web), conservando su historial. El monorepo anterior está archivado y se conserva como referencia histórica.
