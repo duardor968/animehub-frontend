@@ -22,6 +22,8 @@ import {
 import { PageHeader, pageMainClass } from "@/components/catalog/page-header";
 import { Pagination } from "@/components/catalog/pagination";
 import { PosterGrid } from "@/components/poster-grid";
+import { MAIN_CONTENT_ID } from "@/lib/navigation";
+import { siteName, siteOpenGraph } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 
@@ -82,12 +84,10 @@ export async function generateMetadata({
     alternates: { canonical },
     robots: isFiltered ? { index: false, follow: true } : undefined,
     openGraph: {
-      title: "Catálogo de anime · AnimeHub",
+      ...siteOpenGraph,
+      title: `Catálogo de anime · ${siteName}`,
       description,
       url: canonical,
-      siteName: "AnimeHub",
-      locale: "es_ES",
-      type: "website",
     },
   };
 }
@@ -117,7 +117,7 @@ export default async function CatalogPage({
   );
 
   return (
-    <main id="contenido" tabIndex={-1} className={pageMainClass}>
+    <main id={MAIN_CONTENT_ID} tabIndex={-1} className={pageMainClass}>
       <PageHeader
         eyebrow="Directorio"
         title="Catálogo"

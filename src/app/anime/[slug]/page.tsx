@@ -28,6 +28,8 @@ import {
   type EpisodePageResponse,
 } from "@/lib/api/client";
 import { formatStatus, plural } from "@/lib/format";
+import { MAIN_CONTENT_ID } from "@/lib/navigation";
+import { siteOpenGraph, siteUrl } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 
@@ -60,11 +62,10 @@ export async function generateMetadata({
     description,
     alternates: { canonical: url },
     openGraph: {
+      ...siteOpenGraph,
       title: anime.title,
       description,
       url,
-      siteName: "AnimeHub",
-      locale: "es_ES",
       type: isMovie(anime) ? "video.movie" : "video.tv_show",
       images: image ? [{ url: image, alt: anime.title }] : [],
     },
@@ -111,7 +112,7 @@ export default async function AnimePage({
     name: anime.title,
     description: anime.synopsis,
     image: anime.posterUrl,
-    url: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/anime/${anime.slug}`,
+    url: `${siteUrl}/anime/${anime.slug}`,
   };
   const year = anime.startDate
     ? new Date(anime.startDate).getUTCFullYear()
@@ -123,7 +124,7 @@ export default async function AnimePage({
   const rated = typeof anime.score === "number" && anime.score > 0;
 
   return (
-    <main id="contenido" tabIndex={-1} className="outline-none">
+    <main id={MAIN_CONTENT_ID} tabIndex={-1} className="outline-none">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{

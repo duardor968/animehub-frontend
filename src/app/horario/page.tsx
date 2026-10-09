@@ -5,6 +5,8 @@ import { ScheduleBoard } from "@/components/schedule-board";
 import { LocalTime } from "@/components/schedule-client";
 import { TIME_ZONE_COOKIE } from "@/components/schedule-status";
 import { apiFetch, type ScheduleResponse } from "@/lib/api/client";
+import { MAIN_CONTENT_ID } from "@/lib/navigation";
+import { siteName, siteOpenGraph } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 
@@ -16,13 +18,11 @@ export const metadata: Metadata = {
   description,
   alternates: { canonical: "/horario" },
   openGraph: {
-    title: "Horario estimado · AnimeHub",
+    ...siteOpenGraph,
+    title: `Horario estimado · ${siteName}`,
     description:
       "Consulta las publicaciones semanales estimadas en tu hora local.",
     url: "/horario",
-    siteName: "AnimeHub",
-    locale: "es_ES",
-    type: "website",
   },
 };
 
@@ -48,7 +48,7 @@ export default async function SchedulePage() {
   const serverNow = new Date().toISOString();
 
   return (
-    <main id="contenido" tabIndex={-1} className={pageMainClass}>
+    <main id={MAIN_CONTENT_ID} tabIndex={-1} className={pageMainClass}>
       <PageHeader
         eyebrow="Esta semana"
         title="Horario"

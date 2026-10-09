@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { MAIN_CONTENT_ID } from "@/lib/navigation";
 
 export const metadata: Metadata = {
   title: "Anime no encontrado",
@@ -10,7 +11,7 @@ export const metadata: Metadata = {
 export default function AnimeNotFound() {
   return (
     <main
-      id="contenido"
+      id={MAIN_CONTENT_ID}
       tabIndex={-1}
       className="page-container grid min-h-[70vh] place-items-center py-20 text-center outline-none"
     >

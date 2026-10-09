@@ -9,6 +9,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeResponse } from "@/lib/api/client";
 import { fetchHome } from "@/lib/api/home";
+import { MAIN_CONTENT_ID } from "@/lib/navigation";
 import { HomePlaceholder, HomeView, mergeHomeSnapshot } from "./home-view";
 
 vi.mock("@/lib/api/home", () => ({ fetchHome: vi.fn() }));
@@ -193,7 +194,7 @@ it("renders a structured placeholder with the hero height and both sections", ()
 it("gives the home one page heading, section links and a skip target", () => {
   render(<HomeView initialHome={home()} />);
   expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
-  expect(screen.getByRole("main")).toHaveAttribute("id", "contenido");
+  expect(screen.getByRole("main")).toHaveAttribute("id", MAIN_CONTENT_ID);
   expect(screen.getByRole("link", { name: /Ver horario/ })).toHaveAttribute(
     "href",
     "/horario",
