@@ -40,11 +40,7 @@ import {
 import { AnimeImage } from "../anime-image";
 import { EPISODE_PAGE_SIZE, parseEpisodePage } from "./anime-detail";
 import { MediaCard } from "../media-card";
-import {
-  MAX_QUICK_EPISODES,
-  SUPPORTS_EPISODES_SCOPE,
-  useDownloads,
-} from "../downloads/download-provider";
+import { MAX_JOB_EPISODES, useDownloads } from "../downloads/download-provider";
 import { EpisodeDownloadButton } from "../downloads/episode-download-button";
 import { describeApiError } from "../downloads/download-errors";
 import type {
@@ -135,8 +131,7 @@ export function EpisodeBrowser({
     title,
     episodeNumbers: selected,
   };
-  const selectionTooLarge =
-    !SUPPORTS_EPISODES_SCOPE && selected.length > MAX_QUICK_EPISODES;
+  const selectionTooLarge = selected.length > MAX_JOB_EPISODES;
 
   // Clear the selection once the episodes it described were delivered.
   const sentStatus = sentSelection
@@ -565,7 +560,7 @@ function EpisodeItem({
   const selectLabel = `${checked ? "Quitar" : "Seleccionar"} episodio ${number}`;
   return (
     <li
-      className={`group relative min-w-0 rounded-2xl outline-offset-2 outline-focus transition-shadow duration-300 hover:shadow-[0_18px_42px_rgb(0_0_0/0.3)] has-[.episode-select-corner_[data-focus-visible=true]]:outline-2 max-sm:rounded-xl ${checked ? "shadow-[0_16px_40px_rgb(23_79_161/0.18)]" : ""}`}
+      className={`group relative min-w-0 rounded-2xl outline-offset-2 outline-focus transition-shadow duration-300 hover:shadow-[0_18px_42px_rgb(0_0_0/0.3)] has-[.episode-select-corner_[data-focus-visible=true]]:outline-2 max-sm:rounded-xl ${checked ? "shadow-xl shadow-accent/15" : ""}`}
     >
       <MediaCard
         className={`touch-card relative min-w-0 gap-0 rounded-2xl p-0 transition-colors duration-300 max-sm:rounded-xl max-sm:p-2 max-sm:[&>.media-card-clip]:flex max-sm:[&>.media-card-clip]:items-center max-sm:[&>.media-card-clip]:gap-2 ${checked ? "bg-surface-secondary" : "bg-surface"}`}
@@ -712,8 +707,8 @@ function SelectionBar({
       </div>
       {tooLarge && (
         <p className="mt-2 text-xs leading-5 text-warning">
-          Puedes enviar hasta {MAX_QUICK_EPISODES} episodios seleccionados a la
-          vez. Para más, usa «Descargar un rango».
+          Puedes enviar hasta {formatNumber(MAX_JOB_EPISODES)} episodios a la
+          vez. Para más, usa «Descargar todo» o un rango.
         </p>
       )}
     </div>
@@ -955,7 +950,7 @@ function EpisodeNumberField({
     }
   }
   const stepper =
-    "h-full min-h-0 w-10 rounded-none bg-transparent px-0 text-muted shadow-none outline-none hover:bg-transparent hover:text-foreground focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus";
+    "h-full min-h-0 w-10 rounded-none bg-transparent [@media(pointer:coarse)]:w-11 px-0 text-muted shadow-none outline-none hover:bg-transparent hover:text-foreground focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus";
   return (
     <div className="w-32 max-md:w-full">
       <label

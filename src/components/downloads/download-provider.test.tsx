@@ -520,14 +520,49 @@ describe("DownloadProvider requests", () => {
     expect(screen.queryByText(/No episodes match/)).toBeNull();
   });
 
-  it("never sends an unbounded job for a large selection", async () => {
+  it("sends large selections as an explicit episode list", async () => {
+    vi.mocked(apiFetch).mockImplementation(async (path) => {
+      if (path.endsWith("/download-jobs"))
+        return {
+          data: {
+            jobId: "job-e",
+            accessToken: "token",
+            expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+            missingEpisodeNumbers: [51],
+          },
+        };
+      return new Promise(() => undefined);
+    });
+    renderProvider();
+    const episodeNumbers = Array.from({ length: 51 }, (_, index) => index + 1);
+
+    act(() =>
+      controls.openDownload({
+        slug: "one-piece",
+        title: "One Piece",
+        episodeNumbers,
+      }),
+    );
+
+    expect(
+      await screen.findByText("Se omitió el episodio 51: no existe."),
+    ).toBeVisible();
+    const create = vi
+      .mocked(apiFetch)
+      .mock.calls.find(([path]) => path.endsWith("/download-jobs"));
+    const body = JSON.parse(String(create?.[1]?.body));
+    expect(body).toMatchObject({ scope: "EPISODES", episodeNumbers });
+    expect(body).not.toHaveProperty("from");
+  });
+
+  it("refuses lists beyond what a job accepts", async () => {
     renderProvider();
 
     act(() =>
       controls.openDownload({
         slug: "one-piece",
         title: "One Piece",
-        episodeNumbers: Array.from({ length: 51 }, (_, index) => index + 1),
+        episodeNumbers: Array.from({ length: 5_001 }, (_, index) => index),
       }),
     );
 

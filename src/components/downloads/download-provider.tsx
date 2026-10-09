@@ -19,7 +19,8 @@ import {
   type ReactNode,
 } from "react";
 import { ApiResponseError, apiFetch } from "@/lib/api/client";
-import { plural } from "@/lib/format";
+import type { components } from "@/lib/api/generated";
+import { formatNumber, plural } from "@/lib/format";
 import {
   ActivityToastBody,
   activeStatuses,
@@ -85,17 +86,19 @@ import type {
 
 /** The resolve endpoint accepts up to 50 episodes; more need a background job. */
 export const MAX_QUICK_EPISODES = 50;
+/** Largest explicit list a job accepts (scope EPISODES). */
+export const MAX_JOB_EPISODES = 5_000;
 
-/**
- * Whether the API accepts `scope: "EPISODES"` jobs with an explicit list.
- * Until it does, selections above MAX_QUICK_EPISODES are refused: a RANGE job
- * without bounds would download the whole series.
- */
-export const SUPPORTS_EPISODES_SCOPE = false;
+type JobRequestBody =
+  | components["schemas"]["AllDownloadJobRequestDto"]
+  | components["schemas"]["RangeDownloadJobRequestDto"]
+  | components["schemas"]["EpisodesDownloadJobRequestDto"];
+type JobReceipt = components["schemas"]["DownloadJobReceiptDto"];
 
+/** A request that can't be expressed as a bounded job. */
 export class SelectionTooLargeError extends Error {
   constructor() {
-    super(`Selection above ${MAX_QUICK_EPISODES} episodes`);
+    super(`Selection above ${MAX_JOB_EPISODES} episodes or unbounded range`);
     this.name = "SelectionTooLargeError";
   }
 }
@@ -134,18 +137,19 @@ function requiresBackgroundJob(request: DownloadRequest) {
   return request.from !== undefined && request.to !== undefined;
 }
 
-/** Body for POST /download-jobs. Never sends a RANGE without both bounds:
- *  the API reads a missing bound as "to the end of the series". */
-function jobBody(request: DownloadRequest, preferences: DownloadPreferences) {
+/** Body for POST /download-jobs. A selection is sent as its explicit list
+ *  (scope EPISODES), never as a range, and a RANGE always has both bounds. */
+function jobBody(
+  request: DownloadRequest,
+  preferences: DownloadPreferences,
+): JobRequestBody {
   const common = { audio: preferences.audio, providers: preferences.providers };
   if (request.all) return { scope: "ALL", ...common };
   if (request.episodeNumbers) {
-    if (!SUPPORTS_EPISODES_SCOPE) throw new SelectionTooLargeError();
-    return {
-      scope: "EPISODES",
-      episodeNumbers: [...new Set(request.episodeNumbers)],
-      ...common,
-    };
+    const episodeNumbers = [...new Set(request.episodeNumbers)];
+    if (episodeNumbers.length > MAX_JOB_EPISODES)
+      throw new SelectionTooLargeError();
+    return { scope: "EPISODES", episodeNumbers, ...common };
   }
   if (request.from === undefined || request.to === undefined)
     throw new SelectionTooLargeError();
@@ -951,9 +955,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       const signal = controller.signal;
       try {
         if (isJob) {
-          const response = await apiFetch<{
-            data: { jobId: string; accessToken: string; expiresAt: string };
-          }>(
+          const response = await apiFetch<{ data: JobReceipt }>(
             `/anime/${encodeURIComponent(next.slug)}/download-jobs`,
             {
               method: "POST",
@@ -963,8 +965,14 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
             true,
           );
           abortersRef.current.delete(id);
-          const receipt = response.data;
-          updateActivity(id, { receipt, status: "processing" });
+          const { missingEpisodeNumbers, ...receipt } = response.data;
+          updateActivity(id, {
+            receipt,
+            status: "processing",
+            missingNumbers: missingEpisodeNumbers?.length
+              ? missingEpisodeNumbers
+              : undefined,
+          });
           void pollJob(id, receipt);
           return;
         }
@@ -1007,7 +1015,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
             error instanceof SelectionTooLargeError
               ? {
                   title: "Selección demasiado grande",
-                  detail: `Puedes enviar hasta ${MAX_QUICK_EPISODES} episodios seleccionados a la vez. Usa «Descargar rango» para más.`,
+                  detail: `Puedes enviar hasta ${formatNumber(MAX_JOB_EPISODES)} episodios a la vez. Usa «Descargar todo» o un rango.`,
                 }
               : describeApiError(error),
         });

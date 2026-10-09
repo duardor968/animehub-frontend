@@ -3,6 +3,7 @@ import {
   describeAudioFallback,
   describeEpisodes,
   describeFailed,
+  describeMissing,
   describeLinks,
   formatEpisodeRanges,
   requestEpisodeCount,
@@ -67,5 +68,19 @@ describe("download copy helpers", () => {
     expect(describeAudioFallback([episode(1, 1, "DUB" as never)], "SUB")).toBe(
       "1 episodio en doblado (DUB): no había SUB.",
     );
+  });
+
+  it("tells a source outage from missing links and skipped numbers", () => {
+    const down = { ...episode(4, 0), errorCode: "SOURCE_UNAVAILABLE" };
+    expect(describeFailed([4], 0, [down])).toBe(
+      "AnimeAV1 no respondió para el episodio 4; puedes reintentarlo.",
+    );
+    expect(describeMissing([12.5])).toBe(
+      "Se omitió el episodio 12,5: no existe.",
+    );
+    expect(describeMissing([7, 8, 9])).toBe(
+      "Se omitieron los episodios 7–9: no existen.",
+    );
+    expect(describeMissing([])).toBe("");
   });
 });
