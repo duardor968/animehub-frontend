@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { MAIN_CONTENT_ID } from "@/lib/navigation";
 
+// Next already adds <meta name="robots" content="noindex"> to 404 responses.
 export const metadata: Metadata = {
   title: "Página no encontrada",
-  robots: { index: false, follow: true },
 };
 
 export default function NotFound() {

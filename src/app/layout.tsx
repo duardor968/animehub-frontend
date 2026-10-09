@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Manrope } from "next/font/google";
 import type { ReactNode } from "react";
-import { preconnect } from "react-dom";
 import { AppHeader, SkipLink } from "@/components/app-header";
 import { MobileNav } from "@/components/mobile-nav";
 import { Providers } from "@/components/providers";
@@ -44,15 +43,17 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  // Artwork comes from the source CDN; open the connection while the HTML
-  // streams so the hero image doesn't pay DNS + TLS on the critical path.
-  preconnect("https://cdn.animeav1.com");
   return (
     <html
       lang="es"
       className={`dark ${display.variable} ${body.variable}`}
       data-scroll-behavior="smooth"
     >
+      <head>
+        {/* Artwork comes from the source CDN: open the connection while the
+            HTML streams so the hero image doesn't pay DNS + TLS late. */}
+        <link rel="preconnect" href="https://cdn.animeav1.com" />
+      </head>
       <body>
         <Providers>
           <div className="flex min-h-dvh flex-col">

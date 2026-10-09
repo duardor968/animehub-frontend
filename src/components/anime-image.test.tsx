@@ -18,9 +18,17 @@ const POSTER = "https://cdn.animeav1.com/covers/1.jpg";
 describe("AnimeImage", () => {
   it("renders priority images visible in the server HTML (no hydration gate)", () => {
     const html = renderToString(<AnimeImage src={POSTER} alt="" priority />);
-    expect(html).toContain("anime-image is-priority");
+    expect(html).toContain("anime-image is-immediate");
     expect(html).toContain('fetchPriority="high"');
     expect(html).toContain('loading="eager"');
+  });
+
+  it("paints eager (above-the-fold) images without the fade either", () => {
+    const html = renderToString(
+      <AnimeImage src={POSTER} alt="" loading="eager" />,
+    );
+    expect(html).toContain("anime-image is-immediate");
+    expect(html).not.toContain("fetchPriority");
   });
 
   it("fades in lazy images only after they load", async () => {

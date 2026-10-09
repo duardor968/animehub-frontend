@@ -182,8 +182,9 @@
     background: var(--surface);
   }
 
-  /* Lazy images fade in once loaded. Priority (LCP) images are painted as
-     soon as the browser decodes them, without waiting for hydration. */
+  /* Lazy images fade in once loaded. Eager/priority (above the fold, LCP)
+     images are painted as soon as they decode, without waiting for
+     hydration. */
   .anime-image img {
     object-fit: cover;
     opacity: 0;
@@ -191,11 +192,11 @@
   }
 
   .anime-image.is-loaded img,
-  .anime-image.is-priority img {
+  .anime-image.is-immediate img {
     opacity: 1;
   }
 
-  .anime-image.is-priority img {
+  .anime-image.is-immediate img {
     transition: none;
   }
 
@@ -325,6 +326,10 @@
   html[data-device="portable"] .mobile-drawer-footer,
   html[data-device="portable"] .mobile-drawer-body {
     padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  html[data-device="portable"] .search-suggestions [role="listbox"] {
+    max-height: min(70dvh, 26rem);
   }
 
   html[data-device="portable"] .schedule-tabs-list {
