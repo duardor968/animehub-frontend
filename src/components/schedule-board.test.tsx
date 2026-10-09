@@ -44,16 +44,18 @@ afterEach(() => {
 });
 
 describe("schedule live updates", () => {
-  it("removes the finale at local midnight while still viewing Monday", async () => {
+  it("keeps a finale on its day all week and drops it when the week rolls over", async () => {
     render(<ScheduleBoard entries={[finale]} {...server} />);
-    expect(screen.getByText("Finalizado")).toBeTruthy();
+    expect(screen.getByText("Final")).toBeTruthy();
     await act(() => vi.advanceTimersByTimeAsync(30_000));
+    expect(screen.getByText("Serie finalizada")).toBeTruthy();
+
+    vi.setSystemTime(new Date(2026, 9, 5, 0, 0, 5));
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
     expect(screen.queryByText("Serie finalizada")).toBeNull();
+    // The day the user was looking at stays selected.
     const monday = screen.getByRole("tabpanel", { name: /^lunes/ });
     expect(monday).not.toHaveAttribute("inert");
-    expect(
-      within(monday).getByRole("heading", { name: /^lunes/ }),
-    ).toBeTruthy();
     expect(
       within(monday).getByText("No hay emisiones programadas para este día."),
     ).toBeTruthy();
