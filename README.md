@@ -36,13 +36,14 @@ pnpm dev
 
 Abre `http://localhost:3000`.
 
-### Las tres URL de configuración
+### Las URL de configuración
 
-| Variable               | Quién la usa                                   | Valor local                    |
-| ---------------------- | ---------------------------------------------- | ------------------------------ |
-| `NEXT_PUBLIC_API_URL`  | El navegador, para llamar a la API.            | `http://localhost:8000/api/v1` |
-| `API_INTERNAL_URL`     | El servidor de Next.js, para consultar la API. | `http://localhost:8000/api/v1` |
-| `NEXT_PUBLIC_SITE_URL` | La Web, para sus URL canónicas y metadatos.    | `http://localhost:3000`        |
+| Variable                | Quién la usa                                                                                                   | Valor local                            |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `NEXT_PUBLIC_API_URL`   | El navegador, para llamar a la API.                                                                            | `http://localhost:8000/api/v1`         |
+| `API_INTERNAL_URL`      | El servidor de Next.js, para consultar la API.                                                                 | `http://localhost:8000/api/v1`         |
+| `NEXT_PUBLIC_SITE_URL`  | La Web, para sus URL canónicas y metadatos.                                                                    | `http://localhost:3000`                |
+| `NEXT_PUBLIC_MEDIA_URL` | La Web, para permitir y precargar las imágenes WebP que sirve la API (`MEDIA_PUBLIC_URL` de la API). Opcional. | `http://127.0.0.1:9000/animehub-media` |
 
 Las dos URL de API deben terminar en `/api/v1`. Si usas una instancia remota, su configuración de CORS debe permitir el origen de tu Web. No añadas contraseñas ni otros secretos a variables `NEXT_PUBLIC_*`: sus valores son públicos.
 
@@ -108,10 +109,11 @@ El [`Dockerfile`](Dockerfile) de la raíz genera una imagen Next.js standalone p
 ```sh
 docker build -t animehub-web \
   --build-arg NEXT_PUBLIC_API_URL=https://animehub-api.duardo.dev/api/v1 \
-  --build-arg NEXT_PUBLIC_SITE_URL=https://animehub.duardo.dev .
+  --build-arg NEXT_PUBLIC_SITE_URL=https://animehub.duardo.dev \
+  --build-arg NEXT_PUBLIC_MEDIA_URL=https://supabase.duardo.dev/storage/v1/object/public/animehub-media .
 ```
 
-`NEXT_PUBLIC_API_URL` y `NEXT_PUBLIC_SITE_URL` se fijan durante la construcción de la imagen. Cambiarlas después exige reconstruirla. `API_INTERNAL_URL` se configura al ejecutar el contenedor y debe ser accesible desde el servidor de Next.js; puede apuntar a la URL pública de la API o a una dirección interna estable. Conserva `HOSTNAME=0.0.0.0`.
+`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL` y `NEXT_PUBLIC_MEDIA_URL` se fijan durante la construcción de la imagen. Cambiarlas después exige reconstruirla. `API_INTERNAL_URL` se configura al ejecutar el contenedor y debe ser accesible desde el servidor de Next.js; puede apuntar a la URL pública de la API o a una dirección interna estable. Conserva `HOSTNAME=0.0.0.0`.
 
 Las peticiones que el servidor de Next.js hace a la API llevan la dirección del visitante en `X-Forwarded-For` (tomada de `cf-connecting-ip`, de `x-real-ip` o del último salto de `x-forwarded-for`). Para que la API limite las peticiones por visitante y no por servidor, configura su `TRUST_PROXY` con la dirección de este servidor (consulta el README de la API). Sin esa configuración, la API ignora la cabecera y todo el SSR comparte el cupo de la IP del servidor.
 

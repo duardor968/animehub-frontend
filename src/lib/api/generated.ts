@@ -55,40 +55,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/anime/{slug}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Devuelve la ficha normalizada de un anime */
-    get: operations["AnimeController_getAnime"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/anime/{slug}/episodes": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Devuelve episodios en páginas de cincuenta */
-    get: operations["AnimeController_getEpisodes"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/catalog": {
     parameters: {
       query?: never;
@@ -116,8 +82,45 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Devuelve hasta ocho sugerencias de búsqueda */
+    /**
+     * Devuelve hasta ocho sugerencias de búsqueda
+     * @description Las coincidencias más populares primero.
+     */
     get: operations["CatalogController_getSuggestions"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/anime/{slug}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Devuelve la ficha normalizada de un anime */
+    get: operations["AnimeController_getAnime"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/anime/{slug}/episodes": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Devuelve episodios en páginas de cincuenta */
+    get: operations["AnimeController_getEpisodes"];
     put?: never;
     post?: never;
     delete?: never;
@@ -282,8 +285,12 @@ export interface components {
       slug: string;
       title: string;
       synopsis?: string | null;
+      /** @description Our WebP copy, cached for a year, once converted; until then, the source image. null while the source has no such image (checked again daily). */
       posterUrl?: string | null;
+      /** @description Our WebP copy, cached for a year, once converted; until then, the source image. null while the source has no such image (checked again daily). The WebP copy is the widest in backdropSrcSet. */
       backdropUrl?: string | null;
+      /** @description srcset of the WebP backdrop ("<url> 640w, <url> 1280w, <url> 1900w"; narrower sources stop at their own width). null until the backdrop is converted, or without backdropUrl. */
+      backdropSrcSet?: string | null;
       category?: components["schemas"]["CategoryDto"] | null;
       /** @enum {string} */
       status: "UNKNOWN" | "AIRING" | "FINISHED" | "UPCOMING";
@@ -299,8 +306,12 @@ export interface components {
       slug: string;
       title: string;
       synopsis?: string | null;
+      /** @description Our WebP copy, cached for a year, once converted; until then, the source image. null while the source has no such image (checked again daily). */
       posterUrl?: string | null;
+      /** @description Our WebP copy, cached for a year, once converted; until then, the source image. null while the source has no such image (checked again daily). The WebP copy is the widest in backdropSrcSet. */
       backdropUrl?: string | null;
+      /** @description srcset of the WebP backdrop ("<url> 640w, <url> 1280w, <url> 1900w"; narrower sources stop at their own width). null until the backdrop is converted, or without backdropUrl. */
+      backdropSrcSet?: string | null;
       category?: components["schemas"]["CategoryDto"] | null;
       /** @enum {string} */
       status: "UNKNOWN" | "AIRING" | "FINISHED" | "UPCOMING";
@@ -311,6 +322,7 @@ export interface components {
       id: string;
       number: number;
       title?: string | null;
+      /** @description Our WebP copy, cached for a year, once converted; until then, the source image. null while the source has no such image (checked again daily). */
       imageUrl?: string | null;
       publishedAt?: string | null;
     };
@@ -331,6 +343,29 @@ export interface components {
     HomeResponseDto: {
       data: components["schemas"]["HomeDataDto"];
       meta: components["schemas"]["FreshnessDto"];
+    };
+    CatalogMetaDto: {
+      fetchedAt: string;
+      nextRefreshAt: string;
+      stale: boolean;
+      page: number;
+      perPage: number;
+      /** @description Pages reported by the source; never more than 50. */
+      totalPages: number;
+      /** @description Records reported by the source; clamped at 1000 (see capped). */
+      totalRecords: number;
+      /** @description true when the source truncated the result set at its maximum of 1000 records / 50 pages: more titles match than totalRecords and pages beyond 50 are empty, so narrow the query (e.g. letter, year or genre filters) to reach them. totalRecords is then a lower bound ("1000+"). */
+      capped: boolean;
+      categories: components["schemas"]["CategoryDto"][];
+      genres: components["schemas"]["CategoryDto"][];
+      years: number[];
+    };
+    CatalogResponseDto: {
+      data: components["schemas"]["AnimeSummaryDto"][];
+      meta: components["schemas"]["CatalogMetaDto"];
+    };
+    SuggestionResponseDto: {
+      data: components["schemas"]["AnimeSummaryDto"][];
     };
     RelationDto: {
       /**
@@ -356,8 +391,12 @@ export interface components {
       slug: string;
       title: string;
       synopsis?: string | null;
+      /** @description Our WebP copy, cached for a year, once converted; until then, the source image. null while the source has no such image (checked again daily). */
       posterUrl?: string | null;
+      /** @description Our WebP copy, cached for a year, once converted; until then, the source image. null while the source has no such image (checked again daily). The WebP copy is the widest in backdropSrcSet. */
       backdropUrl?: string | null;
+      /** @description srcset of the WebP backdrop ("<url> 640w, <url> 1280w, <url> 1900w"; narrower sources stop at their own width). null until the backdrop is converted, or without backdropUrl. */
+      backdropSrcSet?: string | null;
       category?: components["schemas"]["CategoryDto"] | null;
       /** @enum {string} */
       status: "UNKNOWN" | "AIRING" | "FINISHED" | "UPCOMING";
@@ -392,29 +431,6 @@ export interface components {
     EpisodePageResponseDto: {
       data: components["schemas"]["EpisodeDto"][];
       meta: components["schemas"]["EpisodePageMetaDto"];
-    };
-    CatalogMetaDto: {
-      fetchedAt: string;
-      nextRefreshAt: string;
-      stale: boolean;
-      page: number;
-      perPage: number;
-      /** @description Pages reported by the source; never more than 50. */
-      totalPages: number;
-      /** @description Records reported by the source; clamped at 1000 (see capped). */
-      totalRecords: number;
-      /** @description true when the source truncated the result set at its maximum of 1000 records / 50 pages: more titles match than totalRecords and pages beyond 50 are empty, so narrow the query (e.g. letter, year or genre filters) to reach them. totalRecords is then a lower bound ("1000+"). */
-      capped: boolean;
-      categories: components["schemas"]["CategoryDto"][];
-      genres: components["schemas"]["CategoryDto"][];
-      years: number[];
-    };
-    CatalogResponseDto: {
-      data: components["schemas"]["AnimeSummaryDto"][];
-      meta: components["schemas"]["CatalogMetaDto"];
-    };
-    SuggestionResponseDto: {
-      data: components["schemas"]["AnimeSummaryDto"][];
     };
     /** @description One weekly slot. latestEpisode is the newest episode of the series already published at the source (never a future one); the next expected episode is latestEpisode.number + 1, due 7 days after basisPublishedAt, unless isFinalEpisode. */
     ScheduleEntryDto: {
@@ -599,9 +615,11 @@ export interface operations {
           "application/problem+json": components["schemas"]["ProblemDetailsDto"];
         };
       };
-      /** @description La dependencia necesaria no está disponible. */
+      /** @description La dependencia necesaria no está disponible o no respondió a tiempo: a AnimeAV1 se le esperan como máximo 8 s. */
       503: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {
@@ -647,8 +665,130 @@ export interface operations {
           "application/problem+json": components["schemas"]["ProblemDetailsDto"];
         };
       };
-      /** @description La dependencia necesaria no está disponible. */
+      /** @description La dependencia necesaria no está disponible o no respondió a tiempo: a AnimeAV1 se le esperan como máximo 8 s. */
       503: {
+        headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+    };
+  };
+  CatalogController_getCatalog: {
+    parameters: {
+      query?: {
+        maxYear?: number;
+        minYear?: number;
+        category?: string[];
+        genre?: string[];
+        status?: "emision" | "finalizado" | "proximamente";
+        letter?: string;
+        order?:
+          "score" | "popular" | "title" | "latest_added" | "latest_released";
+        search?: string;
+        page?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CatalogResponseDto"];
+        };
+      };
+      /** @description La solicitud no supera la validación. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description Se superó temporalmente el límite de solicitudes. */
+      429: {
+        headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El servidor no pudo completar la operación. */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description La dependencia necesaria no está disponible o no respondió a tiempo: a AnimeAV1 se le esperan como máximo 8 s. */
+      503: {
+        headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+    };
+  };
+  CatalogController_getSuggestions: {
+    parameters: {
+      query: {
+        q: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SuggestionResponseDto"];
+        };
+      };
+      /** @description La solicitud no supera la validación. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description Se superó temporalmente el límite de solicitudes. */
+      429: {
+        headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
+        };
+      };
+      /** @description El servidor no pudo completar la operación. */
+      500: {
         headers: {
           [name: string]: unknown;
         };
@@ -706,9 +846,11 @@ export interface operations {
           "application/problem+json": components["schemas"]["ProblemDetailsDto"];
         };
       };
-      /** @description La dependencia necesaria no está disponible. */
+      /** @description La dependencia necesaria no está disponible o no respondió a tiempo: a AnimeAV1 se le esperan como máximo 8 s. */
       503: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {
@@ -776,127 +918,11 @@ export interface operations {
           "application/problem+json": components["schemas"]["ProblemDetailsDto"];
         };
       };
-      /** @description La dependencia necesaria no está disponible. */
+      /** @description La dependencia necesaria no está disponible o no respondió a tiempo: a AnimeAV1 se le esperan como máximo 8 s. */
       503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
-        };
-      };
-    };
-  };
-  CatalogController_getCatalog: {
-    parameters: {
-      query?: {
-        maxYear?: number;
-        minYear?: number;
-        category?: string[];
-        genre?: string[];
-        status?: "emision" | "finalizado" | "proximamente";
-        letter?: string;
-        order?:
-          "score" | "popular" | "title" | "latest_added" | "latest_released";
-        search?: string;
-        page?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CatalogResponseDto"];
-        };
-      };
-      /** @description La solicitud no supera la validación. */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
-        };
-      };
-      /** @description Se superó temporalmente el límite de solicitudes. */
-      429: {
         headers: {
           /** @description Segundos que conviene esperar antes de reintentar. */
           "Retry-After"?: number;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
-        };
-      };
-      /** @description El servidor no pudo completar la operación. */
-      500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
-        };
-      };
-      /** @description La dependencia necesaria no está disponible. */
-      503: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
-        };
-      };
-    };
-  };
-  CatalogController_getSuggestions: {
-    parameters: {
-      query: {
-        q: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SuggestionResponseDto"];
-        };
-      };
-      /** @description La solicitud no supera la validación. */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
-        };
-      };
-      /** @description Se superó temporalmente el límite de solicitudes. */
-      429: {
-        headers: {
-          /** @description Segundos que conviene esperar antes de reintentar. */
-          "Retry-After"?: number;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/problem+json": components["schemas"]["ProblemDetailsDto"];
-        };
-      };
-      /** @description El servidor no pudo completar la operación. */
-      500: {
-        headers: {
           [name: string]: unknown;
         };
         content: {
@@ -942,9 +968,11 @@ export interface operations {
           "application/problem+json": components["schemas"]["ProblemDetailsDto"];
         };
       };
-      /** @description La dependencia necesaria no está disponible. */
+      /** @description La dependencia necesaria no está disponible o no respondió a tiempo: a AnimeAV1 se le esperan como máximo 8 s. */
       503: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {
@@ -1014,9 +1042,11 @@ export interface operations {
           "application/problem+json": components["schemas"]["ProblemDetailsDto"];
         };
       };
-      /** @description La dependencia necesaria no está disponible. */
+      /** @description La dependencia necesaria no está disponible o no respondió a tiempo: a AnimeAV1 se le esperan como máximo 8 s. */
       503: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {
@@ -1110,9 +1140,11 @@ export interface operations {
           "application/problem+json": components["schemas"]["ProblemDetailsDto"];
         };
       };
-      /** @description La dependencia necesaria no está disponible. */
+      /** @description La dependencia necesaria no está disponible o no respondió a tiempo: a AnimeAV1 se le esperan como máximo 8 s. */
       503: {
         headers: {
+          /** @description Segundos que conviene esperar antes de reintentar. */
+          "Retry-After"?: number;
           [name: string]: unknown;
         };
         content: {

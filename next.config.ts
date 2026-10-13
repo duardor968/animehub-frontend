@@ -4,30 +4,15 @@ const nextConfig: NextConfig = {
   output: "standalone",
   agentRules: false,
   allowedDevOrigins: ["127.0.0.1"],
-  images: {
-    unoptimized: true,
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "cdn.animeav1.com",
-        pathname: "/covers/**",
-      },
-      {
-        protocol: "https",
-        hostname: "cdn.animeav1.com",
-        pathname: "/backdrops/**",
-      },
-      {
-        protocol: "https",
-        hostname: "cdn.animeav1.com",
-        pathname: "/screenshots/**",
-      },
-    ],
-  },
+  images: { unoptimized: true },
   async headers() {
     const api =
       process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
     const apiOrigin = new URL(api).origin;
+    // Our WebP copies of the artwork (the API falls back to the source CDN
+    // for images it has not converted yet).
+    const media = process.env.NEXT_PUBLIC_MEDIA_URL;
+    const mediaSource = media ? ` ${new URL(media).origin}` : "";
     const developmentScripts =
       process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'";
     return [
@@ -38,7 +23,7 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "img-src 'self' data: https://cdn.animeav1.com",
+              `img-src 'self' data: https://cdn.animeav1.com${mediaSource}`,
               "style-src 'self' 'unsafe-inline'",
               `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com${developmentScripts}`,
               `connect-src 'self' ${apiOrigin} https://api.jdownloader.org http://127.0.0.1:9666`,

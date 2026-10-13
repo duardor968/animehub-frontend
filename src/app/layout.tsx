@@ -9,6 +9,10 @@ import { SiteFooter } from "@/components/site-footer";
 import { siteDescription, siteName, siteOpenGraph, siteUrl } from "@/lib/site";
 import "./globals.css";
 
+const mediaOrigin = process.env.NEXT_PUBLIC_MEDIA_URL
+  ? new URL(process.env.NEXT_PUBLIC_MEDIA_URL).origin
+  : null;
+
 const display = Bricolage_Grotesque({
   subsets: ["latin"],
   variable: "--font-display",
@@ -54,8 +58,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     >
       <head>
         <DeviceProfileScript />
-        {/* Artwork comes from the source CDN: open the connection while the
-            HTML streams so the hero image doesn't pay DNS + TLS late. */}
+        {/* Open the artwork connections while the HTML streams so the hero
+            image doesn't pay DNS + TLS late. */}
+        {mediaOrigin ? <link rel="preconnect" href={mediaOrigin} /> : null}
         <link rel="preconnect" href="https://cdn.animeav1.com" />
       </head>
       <body>
