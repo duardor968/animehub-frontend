@@ -27,8 +27,8 @@ import {
   useTransition,
   type ReactNode,
 } from "react";
+import { flushSync } from "react-dom";
 import type { components } from "@/lib/api/generated";
-import { formatNumber, plural } from "@/lib/format";
 import {
   catalogHref,
   catalogLetters,
@@ -107,7 +107,7 @@ export function CatalogFilters({
   // The draft's result count, keyed by its query; null when it failed.
   const [preview, setPreview] = useState<{
     key: string;
-    result: { count: number; capped: boolean } | null;
+    count: number | null;
   } | null>(null);
   const [isNavigationPending, startNavigation] = useTransition();
   const [hasNavigated, setHasNavigated] = useState(false);
@@ -133,13 +133,11 @@ export function CatalogFilters({
   const draftKey = draft.toString();
   const draftMatchesApplied = draftKey === appliedKey;
   const draftPreview = preview?.key === draftKey ? preview : null;
-  const result = draftMatchesApplied
-    ? { count: totalRecords, capped }
-    : (draftPreview?.result ?? null);
-  const isPreviewPending =
-    drawer.isOpen && !draftMatchesApplied && !draftPreview;
+  // A draft that matches nothing can't be applied (it would land on an
+  // empty page).
+  const draftIsEmpty = !draftMatchesApplied && draftPreview?.count === 0;
 
-  // Result count for the draft, debounced: "Mostrar N obras" before applying.
+  // Result count for the draft, debounced.
   useEffect(() => {
     if (!drawer.isOpen || draftMatchesApplied) return;
     const controller = new AbortController();
@@ -152,20 +150,12 @@ export function CatalogFilters({
       })
         .then((response) => {
           if (!response.ok) throw new Error("Catalog preview unavailable");
-          return response.json() as Promise<{
-            totalRecords: number;
-            capped?: boolean;
-          }>;
+          return response.json() as Promise<{ totalRecords: number }>;
         })
-        .then((data) =>
-          setPreview({
-            key: draftKey,
-            result: { count: data.totalRecords, capped: data.capped === true },
-          }),
-        )
+        .then((data) => setPreview({ key: draftKey, count: data.totalRecords }))
         .catch(() => {
           if (!controller.signal.aborted)
-            setPreview({ key: draftKey, result: null });
+            setPreview({ key: draftKey, count: null });
         });
     }, 350);
     return () => {
@@ -215,20 +205,11 @@ export function CatalogFilters({
 
   // The button that was pressed becomes disabled: hand focus to the next
   // step instead of letting it fall back to the page.
+  // (Rendered first: the apply button may only now be enabled.)
   const clearDraft = () => {
-    setDraft((params) => clearCatalogFilters(params, bounds));
+    flushSync(() => setDraft((params) => clearCatalogFilters(params, bounds)));
     applyButtonRef.current?.focus();
   };
-
-  const applyLabel = isPreviewPending
-    ? "Calculando…"
-    : !result
-      ? "Aplicar filtros"
-      : result.count === 0
-        ? "Sin resultados"
-        : result.capped
-          ? `Mostrar más de ${formatNumber(result.count)} obras`
-          : `Mostrar ${plural(result.count, "obra", "obras")}`;
 
   const countText = formatCatalogCount(totalRecords, capped);
 
@@ -348,18 +329,16 @@ export function CatalogFilters({
                 setParams={setDraft}
               />
             </Drawer.Body>
-            {/* Stacked: "Mostrar más de 1000 obras" and "Limpiar filtros"
-                don't fit side by side in the drawer's width. */}
+            {/* Stacked: two full-width actions, like the rest of the drawer. */}
             <Drawer.Footer className="flex-col">
               <Button
                 ref={applyButtonRef}
                 fullWidth
-                className="tabular-nums"
                 onPress={applyFilters}
-                isDisabled={result?.count === 0}
+                isDisabled={draftMatchesApplied || draftIsEmpty}
                 isPending={isNavigationPending}
               >
-                {applyLabel}
+                {draftIsEmpty ? "Sin resultados" : "Aplicar filtros"}
               </Button>
               <Button
                 fullWidth
@@ -370,7 +349,7 @@ export function CatalogFilters({
                 Limpiar filtros
               </Button>
               <span className="sr-only" role="status">
-                {isPreviewPending ? "" : applyLabel}
+                {draftIsEmpty ? "Sin resultados" : ""}
               </span>
             </Drawer.Footer>
           </Drawer.Dialog>

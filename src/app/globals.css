@@ -501,16 +501,91 @@
     outline: none;
   }
 
+  /* Search field (header and /buscar): HeroUI's InputGroup, 40 px, with a
+     1 px border that lightens on hover. Focus is an accent border without a
+     halo: 3.9:1 against the header, 3.5:1 against the field. */
+  .search-box .input-group {
+    height: 2.5rem;
+    overflow: hidden;
+    border-width: 1px;
+    border-color: var(--field-border);
+
+    @media (hover: hover) {
+      &:hover:not(:focus-within) {
+        background-color: var(--field-background);
+        border-color: color-mix(in srgb, var(--muted) 36%, transparent);
+      }
+    }
+
+    &:has([data-slot="input-group-input"]:focus) {
+      box-shadow: none;
+      border-color: color-mix(
+        in srgb,
+        var(--focus) 65%,
+        var(--field-background)
+      );
+    }
+  }
+
+  .search-box .input-group__suffix {
+    gap: 0.5rem;
+    align-self: stretch;
+    height: auto;
+    padding-inline-end: 0;
+  }
+
+  /* The shortcut: a small key at rest, never on touch screens or while
+     typing. */
+  .search-box .kbd {
+    height: 1.25rem;
+    padding-inline: 0.375rem;
+    border: 1px solid var(--field-border);
+    border-radius: var(--radius-md);
+    background-color: var(--surface-secondary);
+    font-size: var(--text-xs);
+  }
+
+  .search-box .input-group:focus-within .kbd,
+  html[data-device="portable"] .search-box .kbd {
+    display: none;
+  }
+
+  /* The search button closes the field on the right, past a separator. */
+  .search-box__submit {
+    width: 2.75rem;
+    height: 100%;
+    /* The field's outer corners, inside its border: the focus ring follows
+       them. */
+    border-radius: 0;
+    border-start-end-radius: calc(var(--radius-field) - 1px);
+    border-end-end-radius: calc(var(--radius-field) - 1px);
+    border-inline-start: 1px solid var(--field-border);
+    color: var(--link);
+
+    &[data-focus-visible="true"] {
+      box-shadow: inset 0 0 0 2px var(--focus);
+    }
+  }
+
   /* Listboxes (Select, search suggestions), one standard: one active row in
-     HeroUI's hover fill, plus its focus ring when the keyboard set it; while
-     a row has the ring no other row paints hover. Rows follow the popover's
-     corner: its radius minus the list's 6 px padding (the Select's), which
-     also stays visible when the arrows scroll a row into view. */
+     a soft fill, plus a 1 px accent border when the keyboard set it (5.8:1
+     on the fill); while a row has it no other row paints hover. Rows follow
+     the popover's corner: its radius minus the list's 6 px padding (the
+     Select's), which also stays visible when the arrows scroll a row into
+     view. */
   :is(.select__popover, .search-suggestions) .list-box-item {
     border-radius: calc(min(32px, var(--radius-3xl)) - 0.375rem);
 
+    @media (hover: hover) {
+      &:hover,
+      &[data-hovered="true"] {
+        background-color: var(--surface-hover);
+      }
+    }
+
     &[data-focus-visible="true"] {
-      background-color: var(--default);
+      background-color: var(--surface-hover);
+      box-shadow: inset 0 0 0 1px var(--focus);
     }
   }
 
@@ -535,7 +610,7 @@
       }
 
       &[aria-selected="true"] {
-        background-color: var(--default);
+        background-color: var(--surface-hover);
       }
     }
   }
@@ -704,6 +779,12 @@
     border-color: var(--faint);
   }
 
+  /* Header controls are 40 px tall like the search field, with the 14 px
+     text of the navigation links. */
+  .site-header .button--lg {
+    font-size: var(--text-sm);
+  }
+
   /* Every drawer: the close button centred on the h3 title's line, which
      leaves room for it, and its glyph (inside 0.25rem of padding) on the
      content's edge (the dialog's 1.5rem padding). */
@@ -792,14 +873,14 @@
     outline: none;
     transition: background-color 150ms var(--ease-out);
 
-    &[data-hovered] {
-      background: var(--accent-soft-hover);
+    /* HeroUI's soft accent, which keeps the logos' colours readable;
+       keyboard focus adds its contour. */
+    &:is([data-hovered], [data-focus-visible]) {
+      background: var(--accent-soft);
     }
 
-    &[data-focus-visible],
     &[data-pressed] {
-      background: var(--accent);
-      color: var(--accent-foreground);
+      background: var(--accent-soft-hover);
     }
 
     &[aria-disabled] {
@@ -824,26 +905,49 @@
     }
   }
 
+  /* 4px stroke centred on the clip path: its inner 2px show. */
+  .copy-ring__contour {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke: var(--focus);
+    stroke-width: 4px;
+    visibility: hidden;
+
+    [data-focus-visible] > & {
+      visibility: visible;
+    }
+  }
+
   .copy-ring__mark {
     position: absolute;
     translate: -50% -50%;
     display: grid;
     place-items: center;
-    font-size: var(--text-xs);
-    font-weight: 500;
-    white-space: nowrap;
 
     & svg {
       width: 1.25rem;
       height: 1.25rem;
     }
 
-    /* Three sectors leave the side ones too narrow for "MP4Upload". */
-    .copy-ring[data-sectors="3"] & {
-      max-width: 2.75rem;
-      line-height: 1.15;
-      text-align: center;
-      white-space: normal;
+    /* Not capped by the room left at the ring's edge (preflight's 100%). */
+    & img {
+      width: auto;
+      max-width: none;
+      height: 1.25rem;
+    }
+
+    /* MP4Upload's wordmark: as wide as its sector allows, which in a ring of
+       three is less. */
+    & .copy-ring__wordmark {
+      width: 4.5rem;
+      height: auto;
+    }
+
+    .copy-ring[data-sectors="3"] & .copy-ring__wordmark {
+      width: 3rem;
     }
   }
 

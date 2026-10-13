@@ -340,15 +340,18 @@ describe("CatalogFilters interactions", () => {
     expect(document.activeElement).toBe(applyButton(dialog));
   });
 
-  it("updates the result count without navigating while the drawer is edited", async () => {
+  it("applies only a changed draft, checking it without navigating", async () => {
     render(filters());
     const dialog = await openDrawer();
+    const apply = within(dialog).getByRole("button", {
+      name: "Aplicar filtros",
+    });
+    expect(apply).toBeDisabled();
+
     fireEvent.click(chip(dialog, "Género", "Aventura"));
 
-    expect(
-      await within(dialog).findByRole("button", { name: "Mostrar 12 obras" }),
-    ).toBeTruthy();
-    expect(fetch).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    expect(apply).toBeEnabled();
     expect(navigation.push).not.toHaveBeenCalled();
   });
 

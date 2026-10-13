@@ -213,14 +213,18 @@ describe("SearchBox", () => {
     expect(screen.getByRole("tooltip")).toHaveTextContent("Limpiar búsqueda");
   });
 
-  it("never shows the shortcut while the field is in use", () => {
+  it("labels the search button with a tooltip and submits like Enter", async () => {
+    vi.useFakeTimers();
     render(<SearchBox compact />);
+    const button = screen.getByRole("button", { name: "Buscar" });
 
-    // Keyboard focus reaches the tooltip trigger's handlers through the field.
-    fireEvent.keyDown(document.body, { key: "Tab" });
-    act(() => combobox().focus());
+    hover(button);
+    await act(() => vi.advanceTimersByTimeAsync(300));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Buscar");
 
-    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.change(combobox(), { target: { value: "naruto" } });
+    fireEvent.click(button);
+    expect(push).toHaveBeenCalledWith("/buscar?q=naruto");
   });
 
   it("renders every suggestion as a link, so it can open in a new tab", async () => {
@@ -283,11 +287,19 @@ describe("SearchBox", () => {
     expect(push).toHaveBeenCalledWith("/buscar?q=x");
   });
 
-  it("keeps the shortcut out of the field", () => {
+  it("shows the shortcut at rest and the clear button once there is text", () => {
     render(<SearchBox compact />);
 
-    expect(combobox().closest("[data-slot=tooltip-trigger]")).not.toBeNull();
+    expect(document.querySelector("kbd")).toHaveTextContent("CtrlK");
+    expect(combobox()).toHaveAttribute("aria-keyshortcuts", "Control+K");
+    expect(
+      screen.queryByRole("button", { name: "Limpiar búsqueda" }),
+    ).toBeNull();
+
+    fireEvent.change(combobox(), { target: { value: "fr" } });
     expect(document.querySelector("kbd")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Limpiar búsqueda" }));
+    expect(combobox()).toHaveValue("");
   });
 
   it("only requests suggestions while focused and caps the query length", async () => {

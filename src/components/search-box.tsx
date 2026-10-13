@@ -1,6 +1,13 @@
 "use client";
 
-import { Kbd, SearchField, Spinner, Tooltip } from "@heroui/react";
+import {
+  Button,
+  CloseButton,
+  InputGroup,
+  Kbd,
+  TextField,
+  Tooltip,
+} from "@heroui/react";
 import {
   listboxItemVariants,
   listboxVariants,
@@ -152,9 +159,8 @@ function SearchBoxState({
   const [result, setResult] = useState<SuggestionResult | null>(null);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [activeOptionIndex, setActiveOptionIndex] = useState(-1);
-  // The arrows moved the active option last (it also shows the focus ring).
+  // The arrows moved the active option last (it also shows the focus border).
   const [isActiveByKeyboard, setIsActiveByKeyboard] = useState(false);
-  const [isShortcutShown, setIsShortcutShown] = useState(false);
   const isApple = useSyncExternalStore(
     subscribeNever,
     isApplePlatform,
@@ -288,8 +294,7 @@ function SearchBoxState({
     setActiveOptionIndex(-1);
   };
 
-  // Enter is handled by SearchField's onSubmit (React Aria runs it before any
-  // input onKeyDown), so this is the single place that decides what Enter does.
+  // What Enter and the search button do.
   const handleSubmit = () => {
     closeSuggestions();
     const option =
@@ -312,7 +317,23 @@ function SearchBoxState({
     else focusInput();
   };
 
+  const clearQuery = () => {
+    setQuery("");
+    setActiveOptionIndex(-1);
+  };
+
   const handleInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      handleSubmit();
+      return;
+    }
+    // With the list closed (see handleKeyDownCapture), Escape clears.
+    if (event.key === "Escape" && query) {
+      event.preventDefault();
+      clearQuery();
+      return;
+    }
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     if (!isSuggestionsOpen) {
       if (normalizedQuery) setIsSearchFocused(true);
@@ -331,9 +352,8 @@ function SearchBoxState({
     );
   };
 
-  // The first Escape only closes the list; React Aria's own Escape handler
-  // (which clears the field) runs on a second press. Capture phase so this
-  // runs before the input's handlers.
+  // The first Escape only closes the list; a second one clears the field.
+  // Capture phase so this runs before the input's handlers.
   const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Escape" || !isSuggestionsOpen) return;
     event.preventDefault();
@@ -350,82 +370,82 @@ function SearchBoxState({
 
   return (
     <div
-      className={`relative min-w-0 ${compact ? "max-w-xl flex-1 max-lg:hidden" : "w-full max-w-2xl"}`}
+      className={`search-box relative min-w-0 ${compact ? "max-w-xl flex-1 max-lg:hidden" : "w-full max-w-2xl"}`}
       onKeyDownCapture={handleKeyDownCapture}
     >
-      {/* The shortcut is an accelerator: it shows on hover, never while the
-          field is in use. The trigger only detects the hover: the field
-          inside is the control, so it is neither a button nor a tab stop.
-          The trigger's focus handlers reach the input too (keyboard focus
-          would open it), hence the check on every open. */}
-      <Tooltip
-        delay={300}
-        isOpen={isShortcutShown}
-        onOpenChange={(open) =>
-          setIsShortcutShown(
-            open && document.activeElement !== searchInputRef.current,
-          )
-        }
+      <TextField
+        aria-label="Buscar anime"
+        fullWidth
+        value={query}
+        onBlur={() => window.setTimeout(closeSuggestions, 80)}
+        onChange={(value) => {
+          setQuery(value.slice(0, SEARCH_MAX_LENGTH));
+          setIsSearchFocused(true);
+          setActiveOptionIndex(-1);
+        }}
+        onFocus={() => {
+          if (!isArrivingRef.current) setIsSearchFocused(true);
+        }}
       >
-        <Tooltip.Trigger className="block w-full" role="none" tabIndex={-1}>
-          <SearchField
-            aria-label="Buscar anime"
-            fullWidth
-            value={query}
-            onBlur={() => window.setTimeout(closeSuggestions, 80)}
-            onChange={(value) => {
-              setQuery(value.slice(0, SEARCH_MAX_LENGTH));
-              setIsSearchFocused(true);
-              setActiveOptionIndex(-1);
-            }}
-            onFocus={() => {
-              if (!isArrivingRef.current) setIsSearchFocused(true);
-            }}
-            onSubmit={handleSubmit}
-          >
-            <SearchField.Group>
-              <SearchField.SearchIcon>
-                {isLoadingSuggestions && isSuggestionsOpen ? (
-                  <Spinner size="sm" color="current" aria-hidden="true" />
-                ) : (
-                  <Search aria-hidden="true" />
-                )}
-              </SearchField.SearchIcon>
-              <SearchField.Input
-                ref={searchInputRef}
-                role="combobox"
-                aria-autocomplete="list"
-                aria-expanded={isSuggestionsOpen}
-                aria-controls={isSuggestionsOpen ? listboxId : undefined}
-                aria-activedescendant={activeOptionId}
-                autoComplete="off"
-                autoCapitalize="none"
-                autoCorrect="off"
-                enterKeyHint="search"
-                maxLength={SEARCH_MAX_LENGTH}
-                spellCheck={false}
-                placeholder="Buscar anime…"
-                onKeyDown={handleInputKeyDown}
-              />
+        <InputGroup fullWidth>
+          <InputGroup.Input
+            ref={searchInputRef}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={isSuggestionsOpen}
+            aria-controls={isSuggestionsOpen ? listboxId : undefined}
+            aria-activedescendant={activeOptionId}
+            aria-keyshortcuts={isApple ? "Meta+K" : "Control+K"}
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+            enterKeyHint="search"
+            maxLength={SEARCH_MAX_LENGTH}
+            spellCheck={false}
+            placeholder="Buscar anime"
+            onKeyDown={handleInputKeyDown}
+          />
+          <InputGroup.Suffix>
+            {query ? (
               <Tooltip delay={300}>
-                <SearchField.ClearButton aria-label={CLEAR_LABEL} />
+                {/* Escape clears from the keyboard. */}
+                <CloseButton
+                  aria-label={CLEAR_LABEL}
+                  excludeFromTabOrder
+                  preventFocusOnPress
+                  onPress={clearQuery}
+                />
                 <Tooltip.Content>{CLEAR_LABEL}</Tooltip.Content>
               </Tooltip>
-            </SearchField.Group>
-          </SearchField>
-        </Tooltip.Trigger>
-        <Tooltip.Content>
-          {/* Light: the tooltip is the only box. */}
-          <Kbd variant="light">
-            {isApple ? (
-              <Kbd.Abbr keyValue="command" />
             ) : (
-              <Kbd.Content>Ctrl</Kbd.Content>
+              // The shortcut, at rest only (hidden on focus and on touch
+              // screens, see globals.css); the input carries it for
+              // assistive tech.
+              <Kbd aria-hidden="true">
+                {isApple ? (
+                  <Kbd.Abbr keyValue="command" />
+                ) : (
+                  <Kbd.Content>Ctrl</Kbd.Content>
+                )}
+                <Kbd.Content>K</Kbd.Content>
+              </Kbd>
             )}
-            <Kbd.Content>K</Kbd.Content>
-          </Kbd>
-        </Tooltip.Content>
-      </Tooltip>
+            <Tooltip delay={300}>
+              <Button
+                aria-label="Buscar"
+                className="search-box__submit"
+                isIconOnly
+                preventFocusOnPress
+                variant="tertiary"
+                onPress={handleSubmit}
+              >
+                <Search aria-hidden="true" />
+              </Button>
+              <Tooltip.Content>Buscar</Tooltip.Content>
+            </Tooltip>
+          </InputGroup.Suffix>
+        </InputGroup>
+      </TextField>
 
       {isSuggestionsOpen ? (
         <div
@@ -465,15 +485,12 @@ function SearchBoxState({
               >
                 {option.kind === "QUERY" ? (
                   <>
-                    {/* In the posters' column, so the text lines up
-                        with the titles. */}
-                    <span className="flex w-9 shrink-0 justify-center">
-                      <Search
-                        aria-hidden="true"
-                        className="size-4 text-muted"
-                      />
+                    {/* In the posters' column, so icon and text line up
+                        with the rows below. */}
+                    <span className="grid size-9 shrink-0 place-items-center rounded-md bg-accent-soft text-link">
+                      <Search aria-hidden="true" className="size-4" />
                     </span>
-                    <span className="min-w-0 truncate text-muted">
+                    <span className="min-w-0 truncate text-subtle">
                       Buscar{" "}
                       <span className="font-semibold text-foreground">
                         «{option.label}»

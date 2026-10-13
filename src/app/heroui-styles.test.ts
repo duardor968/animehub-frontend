@@ -19,6 +19,7 @@ const stylesheets: Record<string, string[]> = {
   Checkbox: ["checkbox"],
   CheckboxGroup: ["checkbox-group"],
   Chip: ["chip"],
+  CloseButton: ["close-button"],
   Description: ["description"],
   Drawer: ["drawer", "close-button"],
   I18nProvider: [],

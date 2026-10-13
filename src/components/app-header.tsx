@@ -43,7 +43,7 @@ export function AppHeader() {
   // the header would only compete with it.
   const showSearch = pathname !== "/buscar";
   return (
-    <header className="sticky top-0 z-50 border-b border-separator bg-background/90 backdrop-blur-xl">
+    <header className="site-header sticky top-0 z-50 border-b border-separator bg-background/90 backdrop-blur-xl">
       <div className="page-container flex h-(--header-height) items-center gap-6 max-lg:gap-3">
         <Brand />
         {showSearch ? <SearchBox compact /> : null}

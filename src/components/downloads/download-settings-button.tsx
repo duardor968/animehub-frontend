@@ -11,6 +11,8 @@ const label = "Preferencias de descarga";
 export function DownloadSettingsButton() {
   const { openSettings } = useDownloads();
   const actions = {
+    // 40 px from md, as tall as the header search.
+    size: "lg",
     variant: "secondary",
     "aria-label": label,
     onPress: openSettings,

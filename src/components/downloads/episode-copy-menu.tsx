@@ -10,10 +10,10 @@ import {
   useRef,
   useState,
   type ButtonHTMLAttributes,
-  type ComponentType,
   type KeyboardEvent,
-  type SVGProps,
+  type ReactNode,
 } from "react";
+import Image from "next/image";
 import { createPortal } from "react-dom";
 import {
   mergeProps,
@@ -25,7 +25,12 @@ import {
   usePress,
 } from "react-aria";
 import { formatEpisodeNumber } from "@/lib/format";
-import { MegaLogo, PixeldrainLogo } from "../brand-icons";
+import {
+  MegaLogo,
+  PixeldrainLogo,
+  mp4uploadLogo,
+  oneFichierLogo,
+} from "../brand-icons";
 import { useDownloads, type EpisodeLinks } from "./download-provider";
 import { providerLabels, type DownloadProviderId } from "./download-types";
 
@@ -40,9 +45,24 @@ const GAP = 4;
 /** Closest the ring gets to the viewport edge. */
 const EDGE = 8;
 
-const logos: Partial<
-  Record<DownloadProviderId, ComponentType<SVGProps<SVGSVGElement>>>
-> = { MEGA: MegaLogo, PIXELDRAIN: PixeldrainLogo };
+// Every mark is a logo; the sector's label names it.
+const logos: Record<DownloadProviderId, ReactNode> = {
+  MEGA: <MegaLogo />,
+  PIXELDRAIN: <PixeldrainLogo />,
+  MP4UPLOAD: (
+    <Image
+      src={mp4uploadLogo}
+      alt=""
+      width={144}
+      height={23}
+      unoptimized
+      className="copy-ring__wordmark"
+    />
+  ),
+  ONE_FICHIER: (
+    <Image src={oneFichierLogo} alt="" width={40} height={48} unoptimized />
+  ),
+};
 
 const arrowAngles: Record<string, number> = {
   ArrowUp: -90,
@@ -97,13 +117,14 @@ function polar(center: number, radius: number, degrees: number) {
   ];
 }
 
-/** clip-path of an annular sector inside the ring's square box. */
-function sectorClip(index: number, count: number, inner: number) {
+/** Path of an annular sector inside the ring's square box: its clip-path
+ *  and its keyboard-focus contour. A ring of one is two circles (evenodd). */
+function sectorPath(index: number, count: number, inner: number) {
   const outer = inner + RING;
   if (count === 1) {
     const circle = (r: number) =>
       `M ${outer - r} ${outer} a ${r} ${r} 0 1 0 ${2 * r} 0 a ${r} ${r} 0 1 0 ${-2 * r} 0 Z`;
-    return `path(evenodd, "${circle(outer)} ${circle(inner)}")`;
+    return `${circle(outer)} ${circle(inner)}`;
   }
   const span = 360 / count;
   const mid = sectorAngle(index, count);
@@ -114,7 +135,7 @@ function sectorClip(index: number, count: number, inner: number) {
   const [cx, cy] = polar(outer, inner, mid + span / 2 - pad(inner));
   const [dx, dy] = polar(outer, inner, mid - span / 2 + pad(inner));
   const large = span > 180 ? 1 : 0;
-  return `path("M ${ax} ${ay} A ${outer} ${outer} 0 ${large} 1 ${bx} ${by} L ${cx} ${cy} A ${inner} ${inner} 0 ${large} 0 ${dx} ${dy} Z")`;
+  return `M ${ax} ${ay} A ${outer} ${outer} 0 ${large} 1 ${bx} ${by} L ${cx} ${cy} A ${inner} ${inner} 0 ${large} 0 ${dx} ${dy} Z`;
 }
 
 interface Ring {
@@ -469,6 +490,7 @@ function Sector({
   onCopy: () => void;
 }) {
   const name = providerLabels[provider];
+  const shape = sectorPath(index, count, inner);
   const found =
     links?.episode.links.filter((link) => link.provider === provider).length ??
     0;
@@ -477,7 +499,6 @@ function Sector({
     : found === 0
       ? `${name} no tiene este episodio`
       : `Copiar ${found === 1 ? "el enlace" : "los enlaces"} de ${name}`;
-  const Logo = logos[provider];
   const [x, y] = polar(
     inner + RING,
     inner + RING / 2,
@@ -491,7 +512,7 @@ function Sector({
       // Still looking it up: neither available nor without a link.
       data-loading={!links || undefined}
       className="copy-ring__sector"
-      style={{ clipPath: sectorClip(index, count, inner) }}
+      style={{ clipPath: `path(evenodd, "${shape}")` }}
       onPress={() => {
         if (found > 0) onCopy();
       }}
@@ -502,19 +523,13 @@ function Sector({
         style={{ left: x, top: y }}
         translate="no"
       >
-        {Logo ? (
-          <Logo />
-        ) : provider === "MP4UPLOAD" ? (
-          // Where a sector is too narrow (three of them), it breaks here.
-          <>
-            MP4
-            <wbr />
-            Upload
-          </>
-        ) : (
-          name
-        )}
+        {logos[provider]}
       </span>
+      {/* An outline would be clipped with the sector: the focus is drawn
+          along its shape instead. */}
+      <svg className="copy-ring__contour" aria-hidden="true">
+        <path d={shape} />
+      </svg>
     </RingButton>
   );
   if (portable) return sector;
