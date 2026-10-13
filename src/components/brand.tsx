@@ -11,7 +11,7 @@ const assetUrl = (asset: StaticImageData | string) =>
 /** The AnimeHub lockup (mark + wordmark), 148 CSS px wide. */
 export function BrandLockup({ className = "" }: { className?: string }) {
   return (
-    <picture className="contents">
+    <picture className="flex shrink-0">
       <source
         srcSet={`${assetUrl(lockup1x)} 1x, ${assetUrl(lockup2x)} 2x`}
         type="image/webp"
@@ -22,7 +22,7 @@ export function BrandLockup({ className = "" }: { className?: string }) {
         height={34}
         alt="AnimeHub"
         loading="eager"
-        className={`h-auto w-[148px] max-w-full object-contain object-left ${className}`}
+        className={`h-auto w-37 max-w-full object-contain object-left ${className}`}
       />
     </picture>
   );
@@ -31,7 +31,7 @@ export function BrandLockup({ className = "" }: { className?: string }) {
 export function Brand() {
   return (
     <Link
-      className="flex h-11 w-[148px] shrink-0 items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-4 focus-visible:ring-offset-background max-sm:w-[132px]"
+      className="flex h-11 w-37 shrink-0 items-center rounded-md outline-none focus-visible:status-focused max-sm:w-33"
       href="/"
       aria-label="AnimeHub, inicio"
     >

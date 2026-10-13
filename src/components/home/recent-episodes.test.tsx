@@ -9,20 +9,6 @@ vi.mock("../downloads/episode-download-button", () => ({
 
 afterEach(cleanup);
 
-describe("RecentEpisodes", () => {
-  it("explains an empty recent feed and links to the schedule", () => {
-    render(<RecentEpisodes episodes={[]} />);
-
-    expect(
-      screen.getByRole("region", { name: "Aún no hay episodios recientes" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /ver horario/i })).toHaveAttribute(
-      "href",
-      "/horario",
-    );
-  });
-});
-
 describe("RecentEpisodes cards", () => {
   const episodes = [
     {
@@ -60,6 +46,15 @@ describe("RecentEpisodes cards", () => {
     expect(
       screen.getByRole("link", { name: "Show B, episodio 4: El regreso" }),
     ).toBeInTheDocument();
+  });
+
+  it("labels the still with the episode number, linked like any anime card", () => {
+    const { container } = render(<RecentEpisodes episodes={episodes} />);
+    expect(container.querySelectorAll(".media-card")).toHaveLength(2);
+    expect(container.querySelector(".media-label")).toHaveTextContent("EP 3");
+    expect(
+      screen.getByRole("link", { name: "Show A, episodio 3, hace 2 h" }),
+    ).not.toContainElement(screen.getAllByRole("button")[0]);
   });
 
   it("shows the publish time instead of repeating the episode badge", () => {

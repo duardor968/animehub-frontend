@@ -1,5 +1,12 @@
 import { cache } from "react";
 import { apiFetch, type CatalogResponse } from "@/lib/api/client";
+import {
+  catalogApiYearBounds,
+  getYearBounds,
+  normalizeCatalogParams,
+  toCatalogApiParams,
+  type CatalogScope,
+} from "./catalog-filter-params";
 
 export type PageSearchParams = Record<string, string | string[] | undefined>;
 
@@ -14,11 +21,43 @@ export function toSearchParams(values: PageSearchParams): URLSearchParams {
 
 /**
  * One catalog request per render: generateMetadata and the page share it.
- * Keyed by the API query string.
+ * Keyed by the API query string. A healthy cold query answers in about 2 s;
+ * when the source hangs the API keeps retrying for over 30 s, so the page
+ * gives up first and shows the error view with its retry.
  */
 export const loadCatalog = cache((query: string) =>
-  apiFetch<CatalogResponse>(`/catalog?${query}`),
+  apiFetch<CatalogResponse>(`/catalog?${query}`, {}, false, {
+    timeoutMs: 15_000,
+  }),
 );
+
+/**
+ * Loads the requested catalog or search page; `params` is its canonical query,
+ * limited to the formats and genres the source offers.
+ */
+export async function resolveCatalog(
+  incoming: URLSearchParams,
+  scope: CatalogScope,
+) {
+  const request = normalizeCatalogParams(incoming, catalogApiYearBounds, {
+    keepPage: true,
+  });
+  const page = Number(request.get("page") ?? 1);
+  const response = await loadCatalog(
+    toCatalogApiParams(request, scope, { page }).toString(),
+  );
+  const bounds = getYearBounds(response.meta.years);
+  // From `incoming`, not `request`: with the source's genre list, a
+  // hand-edited `genre=x&genre=accion` keeps `accion` instead of nothing.
+  const params = normalizeCatalogParams(incoming, bounds, {
+    keepPage: true,
+    allowedCategories: new Set(
+      response.meta.categories.map((category) => category.slug),
+    ),
+    allowedGenres: new Set(response.meta.genres.map((genre) => genre.slug)),
+  });
+  return { params, response, bounds, page };
+}
 
 /** Same keys and values, ignoring the order of the keys. */
 export function sameSearchParams(a: URLSearchParams, b: URLSearchParams) {

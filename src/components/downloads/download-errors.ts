@@ -89,7 +89,7 @@ export function describeApiError(error: unknown): FriendlyError {
       detail: "AnimeAV1 no respondió a tiempo. No se envió nada.",
     };
   }
-  if (error instanceof ApiConnectionError || isNetworkError(error)) {
+  if (error instanceof ApiConnectionError || error instanceof TypeError) {
     return {
       title: "Sin conexión con AnimeHub",
       detail: "Comprueba tu conexión a internet y vuelve a intentarlo.",
@@ -139,10 +139,6 @@ export function describeApiError(error: unknown): FriendlyError {
     title: "Algo salió mal",
     detail: "No se pudo completar la operación. Vuelve a intentarlo.",
   };
-}
-
-function isNetworkError(error: unknown) {
-  return error instanceof TypeError;
 }
 
 interface MyJdErrorLike {

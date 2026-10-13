@@ -1,7 +1,8 @@
 import { getEffectiveDestination, type DeviceProfile } from "./device-profile";
-import type { DownloadDestination } from "./download-types";
+import { requestEpisodeCount } from "./download-copy";
+import type { DownloadDestination, DownloadRequest } from "./download-types";
 
-export type DownloadDispatchPlan =
+type DownloadDispatchPlan =
   | { action: "configure-myjd" }
   | {
       action: "start";
@@ -34,9 +35,26 @@ export function planDownloadDispatch({
   };
 }
 
-export function isRememberedDeviceAvailable(
-  selectedDeviceId: string,
-  availableDeviceIds: string[],
+/** From this many episodes a download asks first, whatever started it. */
+const CONFIRM_FROM_EPISODES = 25;
+
+/** Episodes a request covers: its count or, for a range of unknown count,
+ *  the whole numbers between its bounds. */
+function estimatedCount(request: DownloadRequest) {
+  const known = requestEpisodeCount(request);
+  if (known > 0 || request.from === undefined || request.to === undefined)
+    return known;
+  const [low, high] = [request.from, request.to].sort((a, b) => a - b);
+  return Math.floor(high) - Math.ceil(low) + 1;
+}
+
+/** Large downloads ask first; a copy to the clipboard never does (nothing
+ *  irreversible). A whole series of unknown size counts as large. */
+export function needsConfirmation(
+  request: DownloadRequest,
+  destination: DownloadDestination,
 ) {
-  return availableDeviceIds.includes(selectedDeviceId);
+  if (destination === "COPY") return false;
+  if (request.all && !request.total) return true;
+  return estimatedCount(request) >= CONFIRM_FROM_EPISODES;
 }

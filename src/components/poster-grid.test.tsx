@@ -56,18 +56,17 @@ describe("PosterGrid", () => {
     expect(container.firstElementChild).not.toHaveClass("px-2");
     expect(container.firstElementChild).toHaveClass(
       "grid-cols-2",
-      "sm:grid-cols-3",
-      "lg:grid-cols-4",
-      "xl:grid-cols-5",
-      "2xl:grid-cols-6",
+      "sm:grid-cols-4",
+      "lg:grid-cols-5",
     );
   });
 
   it("does not repeat the title in the hover panel", () => {
     render(<PosterGrid anime={[anime]} />);
-    // Title once (below the poster); the panel shows synopsis and facts.
+    // Title and year once (below the poster); the panel shows status and synopsis.
     expect(screen.getAllByText("Mob Sekai")).toHaveLength(1);
-    expect(screen.getByText("2026 · En emisión")).toBeInTheDocument();
+    expect(screen.getAllByText("2026")).toHaveLength(1);
+    expect(screen.getByText("En emisión")).toBeInTheDocument();
   });
 
   it("prioritizes only the first catalog posters and keeps home posters lazy", () => {
@@ -88,7 +87,7 @@ describe("PosterGrid", () => {
       "low",
       "low",
       "low",
-      "low",
+      null,
       null,
       null,
     ]);
@@ -98,7 +97,7 @@ describe("PosterGrid", () => {
       "eager",
       "eager",
       "eager",
-      "eager",
+      "lazy",
       "lazy",
       "lazy",
     ]);

@@ -1,64 +1,70 @@
 "use client";
 
-import { Button, ProgressCircle, Tooltip } from "@heroui/react";
+import { Button, Spinner, Tooltip } from "@heroui/react";
 import { Download } from "lucide-react";
-import { useDownloads } from "./download-provider";
 import { formatEpisodeNumber } from "@/lib/format";
+import { activeStatuses } from "./download-activity";
+import { useDownloads } from "./download-provider";
+import { EpisodeCopyMenu } from "./episode-copy-menu";
 
+/** An episode's own download button: a copy menu when links go to the
+ *  clipboard, otherwise a download to the chosen destination. The tooltip
+ *  says the action; the accessible name adds the episode and, among several
+ *  series (`withSeries`), the anime. */
 export function EpisodeDownloadButton({
   slug,
   title,
   episodeNumber,
+  withSeries = true,
   className = "",
 }: {
   slug: string;
   title: string;
   episodeNumber: number;
+  withSeries?: boolean;
   className?: string;
 }) {
-  const { deviceProfile, getEpisodeStatus, openDownload } = useDownloads();
-  const status = getEpisodeStatus(slug, episodeNumber);
-  const pending = ["resolving", "processing", "sending"].includes(status ?? "");
+  const { deviceProfile, destination, getRequestStatus, openDownload } =
+    useDownloads();
+  const portable = deviceProfile === "portable";
+  if (destination === "COPY")
+    return (
+      <EpisodeCopyMenu
+        slug={slug}
+        title={title}
+        episodeNumber={episodeNumber}
+        withSeries={withSeries}
+        className={className}
+        portable={portable}
+      />
+    );
+
+  const request = { slug, title, episodeNumbers: [episodeNumber] };
+  const status = getRequestStatus(request);
+  const pending = status !== undefined && activeStatuses.has(status);
+  const label = `Descargar el episodio ${formatEpisodeNumber(episodeNumber)}${withSeries ? ` de ${title}` : ""}`;
   const button = (
     <Button
       isIconOnly
-      variant="ghost"
-      // Pending keeps the button visible even where it normally appears on
-      // hover. `scale` (not `transform`) is what Tailwind's scale-* sets.
-      className={`episode-download-action h-11 w-11 min-w-11 rounded-full bg-accent text-accent-foreground shadow-lg shadow-accent/30 outline-none hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95 ${className} ${pending ? "!scale-100 !opacity-100" : ""}`}
-      aria-label={`Descargar episodio ${formatEpisodeNumber(episodeNumber)} de ${title}`}
+      variant="tertiary"
+      aria-label={label}
       isPending={pending}
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        openDownload({ slug, title, episodeNumbers: [episodeNumber] });
-      }}
+      // Visible while pending where it otherwise shows only on hover.
+      className={`${className} ${pending ? "!scale-100 !opacity-100" : ""}`}
+      onPress={() => openDownload(request)}
     >
       {pending ? (
-        <ProgressCircle
-          isIndeterminate
-          size="sm"
-          color="default"
-          aria-label="Preparando descarga"
-          className="size-5 text-white"
-        >
-          <ProgressCircle.Track className="size-5">
-            <ProgressCircle.TrackCircle className="stroke-white/25" />
-            <ProgressCircle.FillCircle className="stroke-white" />
-          </ProgressCircle.Track>
-        </ProgressCircle>
+        <Spinner color="current" size="sm" aria-label="Preparando descarga" />
       ) : (
-        <Download aria-hidden="true" size={18} />
+        <Download aria-hidden="true" />
       )}
     </Button>
   );
-  if (deviceProfile === "portable") return button;
+  if (portable) return button;
   return (
     <Tooltip delay={300}>
       {button}
-      <Tooltip.Content className="bg-surface-tertiary px-2.5 py-1 text-xs text-foreground">
-        Descargar episodio
-      </Tooltip.Content>
+      <Tooltip.Content>Descargar</Tooltip.Content>
     </Tooltip>
   );
 }

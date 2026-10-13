@@ -1,6 +1,6 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { buttonVariants } from "@heroui/styles";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { MouseEvent } from "react";
@@ -26,7 +26,11 @@ export function SkipLink() {
     <a
       href={`#${MAIN_CONTENT_ID}`}
       onClick={skip}
-      className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[200] focus:inline-flex focus:h-11 focus:items-center focus:rounded-full focus:bg-accent focus:px-5 focus:text-sm focus:font-semibold focus:text-accent-foreground focus:shadow-[0_12px_34px_rgba(0,0,0,.45)] focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      // Above the viewport until it gets keyboard focus.
+      className={buttonVariants({
+        className:
+          "fixed left-4 top-3 z-60 -translate-y-20 focus:translate-y-0",
+      })}
     >
       Saltar al contenido
     </a>
@@ -39,7 +43,7 @@ export function AppHeader() {
   // the header would only compete with it.
   const showSearch = pathname !== "/buscar";
   return (
-    <header className="sticky top-0 z-50 bg-background/90 shadow-[0_1px_0_rgba(255,255,255,.055)] backdrop-blur-xl">
+    <header className="sticky top-0 z-50 border-b border-separator bg-background/90 backdrop-blur-xl">
       <div className="page-container flex h-(--header-height) items-center gap-6 max-lg:gap-3">
         <Brand />
         {showSearch ? <SearchBox compact /> : null}
@@ -55,21 +59,12 @@ export function AppHeader() {
                 aria-current={
                   isActiveLink(pathname, link.href) ? "page" : undefined
                 }
-                className="relative grid h-11 place-items-center rounded-lg px-4 text-sm font-medium text-muted outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus aria-[current=page]:text-foreground aria-[current=page]:after:absolute aria-[current=page]:after:inset-x-4 aria-[current=page]:after:-bottom-2.5 aria-[current=page]:after:h-0.5 aria-[current=page]:after:rounded-full aria-[current=page]:after:bg-brand"
+                className="relative grid h-11 place-items-center rounded-lg px-4 text-sm font-medium text-muted outline-none transition-colors hover:text-foreground focus-visible:status-focused aria-[current=page]:text-foreground aria-[current=page]:after:absolute aria-[current=page]:after:inset-x-4 aria-[current=page]:after:-bottom-2.5 aria-[current=page]:after:h-0.5 aria-[current=page]:after:rounded-full aria-[current=page]:after:bg-brand"
               >
                 {link.label}
               </Link>
             ))}
           </nav>
-          {showSearch ? (
-            <Link
-              href="/buscar"
-              aria-label="Buscar anime"
-              className="grid size-11 place-items-center rounded-full text-subtle outline-none transition-colors hover:bg-default-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus lg:hidden"
-            >
-              <Search aria-hidden="true" size={20} />
-            </Link>
-          ) : null}
           <DownloadSettingsButton />
         </div>
       </div>

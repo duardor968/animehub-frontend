@@ -17,8 +17,8 @@ export const metadata: Metadata = {
 
 // The home content is part of the first HTML response (no Suspense fallback
 // streamed ahead of it), so it shows without JavaScript and to link-preview
-// bots. fetchHome has a 3 s budget; without data HomeView renders the
-// skeleton and recovers on the client.
+// bots. fetchHome has a 3 s budget. Any failure (429 included) renders the
+// skeleton, never an error page: the browser then tries once on its own.
 export default async function HomePage() {
   const home = await fetchHome().catch(() => null);
   return <HomeView initialHome={home} />;

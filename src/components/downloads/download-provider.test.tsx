@@ -25,7 +25,7 @@ import {
   sendToClickNLoad,
   sendToMyJd,
 } from "./download-client";
-import { getDeviceProfile, isPortableDevice } from "./device-profile";
+import { getDeviceProfile } from "./device-profile";
 import { ClickNLoadError } from "./download-errors";
 import {
   activeDownloadJobsStorageKey,
@@ -51,15 +51,7 @@ vi.mock("./download-client", () => ({
   disconnectMyJd: vi.fn(async () => undefined),
   isMyJdConnected: vi.fn(() => false),
   listMyJdDevices: vi.fn(async () => []),
-  providerLabels: {
-    MEGA: "Mega",
-    PIXELDRAIN: "Pixeldrain",
-    MP4UPLOAD: "MP4Upload",
-    ONE_FICHIER: "1Fichier",
-  },
-  sendToClickNLoad: vi.fn(async () => ({
-    acceptedAt: new Date().toISOString(),
-  })),
+  sendToClickNLoad: vi.fn(async () => undefined),
   sendToMyJd: vi.fn(),
 }));
 
@@ -68,7 +60,6 @@ vi.mock("./device-profile", async (importOriginal) => {
   return {
     ...original,
     getDeviceProfile: vi.fn(() => "desktop"),
-    isPortableDevice: vi.fn(() => false),
   };
 });
 
@@ -105,11 +96,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(isMyJdConnected).mockReturnValue(false);
   vi.mocked(getDeviceProfile).mockReturnValue("desktop");
-  vi.mocked(isPortableDevice).mockReturnValue(false);
   vi.mocked(copyLinks).mockResolvedValue(true);
-  vi.mocked(sendToClickNLoad).mockResolvedValue({
-    acceptedAt: new Date().toISOString(),
-  });
+  vi.mocked(sendToClickNLoad).mockResolvedValue(undefined);
   vi.mocked(sendToMyJd).mockResolvedValue(undefined);
 });
 
@@ -181,7 +169,15 @@ const controls = {
     handle.current?.openDownload(request),
   getRequestStatus: (request: DownloadRequest) =>
     handle.current?.getRequestStatus(request),
+  downloads: () => handle.current as ReturnType<typeof useDownloads>,
 };
+
+function preferCopy(providers = ["MEGA", "PIXELDRAIN"]) {
+  localStorage.setItem(
+    "animehub.download-preferences",
+    JSON.stringify({ audio: "SUB", providers, destination: "COPY" }),
+  );
+}
 
 function renderProvider() {
   return render(
@@ -195,12 +191,12 @@ function renderProvider() {
   );
 }
 
-/** The toast's "Anime · Ep. N" line (title and episodes are two spans). */
+/** The toast's "Anime · Ep. N" title (title and episodes are two spans). */
 function summaryLine(text: string) {
   return screen.getAllByText(
     (_, element) =>
-      element?.textContent === text &&
-      element.querySelector(".truncate") !== null,
+      element?.textContent?.replace(/\u00a0/g, " ") === text &&
+      element.querySelector(":scope > .truncate") !== null,
   );
 }
 
@@ -220,7 +216,7 @@ describe("DownloadProvider restored jobs", () => {
     expect(
       await screen.findByRole("button", { name: "Enviar a JDownloader" }),
     ).toBeVisible();
-    expect(screen.getByText("Enlaces listos")).toBeVisible();
+    expect(screen.getByText("1 enlace listo")).toBeVisible();
     expect(summaryLine("Otome Game Sekai 2 · Ep. 1–12")[0]).toBeVisible();
     expect(sendToClickNLoad).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(activeDownloadJobsStorageKey)).not.toBeNull();
@@ -234,7 +230,9 @@ describe("DownloadProvider restored jobs", () => {
         "https://example.com/file",
       ]),
     );
-    expect(await screen.findByText("Enviado a JDownloader")).toBeVisible();
+    expect(
+      await screen.findByText("1 enlace enviado a JDownloader"),
+    ).toBeVisible();
     await waitFor(() =>
       expect(sessionStorage.getItem(activeDownloadJobsStorageKey)).toBeNull(),
     );
@@ -276,7 +274,7 @@ describe("DownloadProvider restored jobs", () => {
 
     renderProvider();
 
-    expect(await screen.findByText("Enlaces listos")).toBeVisible();
+    expect(await screen.findByText("1 enlace listo")).toBeVisible();
     expect(screen.getByText(/el último envío falló/i)).toBeVisible();
     expect(screen.queryByText("Entrega sin confirmar")).toBeNull();
   });
@@ -386,7 +384,6 @@ describe("DownloadProvider restored jobs", () => {
   it("keeps a portable waiting-device job recoverable after closing the drawer", async () => {
     persist({ current: 12, destination: "MYJD" });
     vi.mocked(getDeviceProfile).mockReturnValue("portable");
-    vi.mocked(isPortableDevice).mockReturnValue(true);
     vi.mocked(apiFetch).mockResolvedValue(jobData());
 
     renderProvider();
@@ -437,17 +434,16 @@ describe("DownloadProvider requests", () => {
     },
   };
 
-  it("names the anime and mirrors in the result", async () => {
+  it("names the anime in the title and the links in the result", async () => {
     vi.mocked(apiFetch).mockResolvedValue(resolved);
     renderProvider();
 
     act(() => controls.openDownload(episodeOne));
 
-    expect(await screen.findByText("Enviado a JDownloader")).toBeVisible();
-    expect(summaryLine("Tensei Goblin · Ep. 1")[0]).toBeVisible();
     expect(
-      screen.getByText(/2 enlaces \(espejos\) de 1 episodio/),
+      await screen.findByText("2 enlaces enviados a JDownloader"),
     ).toBeVisible();
+    expect(summaryLine("Tensei Goblin · Ep. 1")[0]).toBeVisible();
   });
 
   it("offers copy and MyJDownloader when Click'n'Load is unreachable", async () => {
@@ -476,7 +472,7 @@ describe("DownloadProvider requests", () => {
         "https://pixeldrain.example/1",
       ]),
     );
-    expect(await screen.findByText("Enlaces copiados")).toBeVisible();
+    expect(await screen.findByText("2 enlaces copiados")).toBeVisible();
   });
 
   it("shows the links when the clipboard is blocked", async () => {
@@ -495,7 +491,9 @@ describe("DownloadProvider requests", () => {
 
     act(() => controls.openDownload(episodeOne));
 
-    expect(await screen.findByText("Enlaces listos para copiar")).toBeVisible();
+    expect(
+      await screen.findByText("2 enlaces listos para copiar"),
+    ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Ver enlaces" }));
     const drawer = await screen.findByRole("dialog", {
       name: "Enlaces de descarga",
@@ -557,6 +555,10 @@ describe("DownloadProvider requests", () => {
         episodeNumbers,
       }),
     );
+    const confirm = await screen.findByRole("alertdialog", {
+      name: "¿Descargar 51 episodios?",
+    });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Descargar" }));
 
     expect(
       await screen.findByText("Se omitió el episodio 51: no existe."),
@@ -578,6 +580,11 @@ describe("DownloadProvider requests", () => {
         title: "One Piece",
         episodeNumbers: Array.from({ length: 5_001 }, (_, index) => index),
       }),
+    );
+    fireEvent.click(
+      within(
+        await screen.findByRole("alertdialog", { name: /5001/ }),
+      ).getByRole("button", { name: "Descargar" }),
     );
 
     expect(await screen.findByText("Selección demasiado grande")).toBeVisible();
@@ -679,7 +686,9 @@ describe("DownloadProvider requests", () => {
       screen.getByRole("button", { name: "Reintentar fallidos" }),
     );
 
-    expect(await screen.findByText("Enviado a JDownloader")).toBeVisible();
+    expect(
+      await screen.findByText("1 enlace enviado a JDownloader"),
+    ).toBeVisible();
     expect(sendToClickNLoad).toHaveBeenLastCalledWith("Otome Game Sekai 2", [
       "https://mega.example/2",
     ]);
@@ -796,7 +805,9 @@ describe("DownloadProvider job requests", () => {
     await screen.findByText("2 de 12");
     fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
 
-    expect(await screen.findByText("Enviado a JDownloader")).toBeVisible();
+    expect(
+      await screen.findByText("1 enlace enviado a JDownloader"),
+    ).toBeVisible();
     expect(sendToClickNLoad).toHaveBeenCalled();
     expect(screen.queryByText("Descarga cancelada")).toBeNull();
   });
@@ -827,7 +838,7 @@ describe("DownloadProvider job requests", () => {
       { timeout: 3_000 },
     );
     expect(screen.getByText("Buscando enlaces")).toBeVisible();
-    expect(screen.queryByText("Reconectando con la descarga")).toBeNull();
+    expect(screen.queryByText("Reconectando con AnimeHub")).toBeNull();
   });
 
   it("doesn't offer to retry a request the API rejected as invalid", async () => {
@@ -852,27 +863,226 @@ describe("DownloadProvider job requests", () => {
 });
 
 describe("DownloadProvider drawer", () => {
-  it("loads the drawer on first open and keeps it for later opens", async () => {
+  it("opens and closes the preferences without scrolling the page", async () => {
+    const scrollTo = vi.spyOn(window, "scrollTo");
     renderProvider();
-    // Nothing of the drawer is rendered (or loaded) before it opens.
-    expect(document.querySelector(".drawer-state-trigger")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
 
     act(() => handle.current?.openSettings());
     const drawer = await screen.findByRole("dialog", {
       name: "Preferencias de descarga",
     });
     expect(
-      within(drawer).getByRole("radiogroup", {
-        name: "Destino de los enlaces",
-      }),
+      within(drawer).getByRole("radiogroup", { name: "Destino" }),
     ).toBeVisible();
     fireEvent.click(within(drawer).getByRole("button", { name: "Cerrar" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(document.querySelector(".drawer-state-trigger")).not.toBeNull();
 
     act(() => handle.current?.openSettings());
     expect(
       await screen.findByRole("dialog", { name: "Preferencias de descarga" }),
     ).toBeVisible();
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("keeps at least one provider", async () => {
+    renderProvider();
+    act(() => handle.current?.openSettings());
+    const drawer = await screen.findByRole("dialog", {
+      name: "Preferencias de descarga",
+    });
+    for (const name of ["Mega", "Pixeldrain"])
+      fireEvent.click(within(drawer).getByRole("checkbox", { name }));
+
+    // The last one marked can't be unmarked, and shows it.
+    const last = within(drawer).getByRole("checkbox", { name: "MP4Upload" });
+    expect(last).toBeChecked();
+    expect(last).toBeDisabled();
+    expect(
+      JSON.parse(localStorage.getItem("animehub.download-preferences") ?? "{}")
+        .providers,
+    ).toEqual(["MP4UPLOAD"]);
+  });
+});
+
+describe("DownloadProvider large downloads", () => {
+  const selection = (count: number): DownloadRequest => ({
+    slug: "one-piece",
+    title: "One Piece",
+    episodeNumbers: Array.from({ length: count }, (_, index) => index + 1),
+  });
+
+  it("asks before 25 episodes or more, whatever started them", async () => {
+    vi.mocked(apiFetch).mockReturnValue(new Promise(() => undefined));
+    renderProvider();
+
+    act(() => controls.openDownload({ ...range, from: 1, to: 25 }));
+    const confirm = await screen.findByRole("alertdialog", {
+      name: "¿Descargar los episodios 1–25?",
+    });
+    expect(confirm).toHaveTextContent(
+      "Los enlaces de Otome Game Sekai 2 se enviarán a JDownloader, con todos los espejos de Mega, Pixeldrain y MP4Upload.",
+    );
+    fireEvent.click(within(confirm).getByRole("button", { name: "Cancelar" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("alertdialog", { name: /Descargar/ }),
+      ).toBeNull(),
+    );
+    expect(apiFetch).not.toHaveBeenCalled();
+
+    act(() => controls.openDownload(selection(24)));
+    await screen.findByText("Buscando enlaces");
+    expect(
+      screen.queryByRole("alertdialog", { name: /¿Descargar/ }),
+    ).toBeNull();
+  });
+
+  it("names the series when it downloads all of it", async () => {
+    renderProvider();
+    act(() =>
+      controls.openDownload({
+        ...range,
+        from: undefined,
+        to: undefined,
+        all: true,
+        total: 1180,
+      }),
+    );
+    expect(
+      await screen.findByRole("alertdialog", {
+        name: "¿Descargar los 1180 episodios?",
+      }),
+    ).toBeVisible();
+  });
+});
+
+describe("DownloadProvider dismissed work", () => {
+  it("offers the copy instead of overwriting the clipboard after the toast was closed", async () => {
+    preferCopy();
+    persist({ current: 3, destination: "COPY" });
+    let finishJob!: (value: unknown) => void;
+    vi.mocked(apiFetch).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishJob = resolve;
+      }) as ReturnType<typeof apiFetch>,
+    );
+    renderProvider();
+
+    const running = await screen.findByText("Reanudando la descarga");
+    fireEvent.click(
+      within(running.closest('[data-slot="toast"]') as HTMLElement).getByRole(
+        "button",
+        { name: /close|cerrar/i },
+      ),
+    );
+    await screen.findByRole("button", { name: /Mostrar descarga/ });
+    await act(async () => finishJob(jobData()));
+
+    expect(await screen.findByText("1 enlace listo")).toBeVisible();
+    expect(copyLinks).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Copiar enlaces" }));
+    await waitFor(() =>
+      expect(copyLinks).toHaveBeenCalledWith(["https://example.com/file"]),
+    );
+    expect(await screen.findByText("1 enlace copiado")).toBeVisible();
+  });
+});
+
+describe("DownloadProvider episode links", () => {
+  const episodeFive: DownloadRequest = {
+    slug: "one-piece",
+    title: "One Piece",
+    episodeNumbers: [5],
+  };
+  const resolvedFive = {
+    data: {
+      packageName: "One Piece",
+      episodes: [
+        {
+          episodeNumber: 5,
+          audio: "SUB",
+          links: [
+            { provider: "MEGA", url: "https://mega.example/5" },
+            { provider: "PIXELDRAIN", url: "https://pixeldrain.example/5" },
+          ],
+          errorCode: null,
+        },
+      ],
+    },
+  };
+
+  it("looks an episode up once and copies one provider or all", async () => {
+    preferCopy();
+    vi.mocked(apiFetch).mockResolvedValue(resolvedFive);
+    renderProvider();
+    await act(async () => undefined);
+
+    let links: Awaited<
+      ReturnType<ReturnType<typeof useDownloads>["resolveEpisodeLinks"]>
+    > = null;
+    await act(async () => {
+      links = await controls.downloads().resolveEpisodeLinks(episodeFive);
+    });
+    expect(links).not.toBeNull();
+    expect(controls.downloads().cachedEpisodeLinks(episodeFive)).toEqual(links);
+    await act(async () => {
+      await controls.downloads().resolveEpisodeLinks(episodeFive);
+    });
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+    expect(
+      JSON.parse(String(vi.mocked(apiFetch).mock.calls[0][1]?.body)),
+    ).toEqual({
+      episodeNumbers: [5],
+      audio: "SUB",
+      providers: ["MEGA", "PIXELDRAIN"],
+    });
+
+    act(() =>
+      controls.downloads().copyEpisodeLinks(episodeFive, links!, "PIXELDRAIN"),
+    );
+    expect(copyLinks).toHaveBeenLastCalledWith([
+      "https://pixeldrain.example/5",
+    ]);
+    expect(
+      await screen.findByText("1 enlace de Pixeldrain copiado"),
+    ).toBeVisible();
+
+    act(() => controls.downloads().copyEpisodeLinks(episodeFive, links!));
+    expect(copyLinks).toHaveBeenLastCalledWith([
+      "https://mega.example/5",
+      "https://pixeldrain.example/5",
+    ]);
+    expect(await screen.findByText("2 enlaces copiados")).toBeVisible();
+  });
+
+  it("fails fast and visibly when an episode has no links", async () => {
+    preferCopy();
+    vi.mocked(apiFetch).mockResolvedValue({
+      data: {
+        packageName: "One Piece",
+        episodes: [
+          {
+            episodeNumber: 5,
+            audio: "SUB",
+            links: [],
+            errorCode: "NO_SUPPORTED_LINKS",
+          },
+        ],
+      },
+    });
+    renderProvider();
+    await act(async () => undefined);
+
+    let links: unknown;
+    await act(async () => {
+      links = await controls.downloads().resolveEpisodeLinks(episodeFive);
+    });
+
+    expect(links).toBeNull();
+    expect(await screen.findByText("No hay enlaces disponibles")).toBeVisible();
+    expect(
+      controls.downloads().cachedEpisodeLinks(episodeFive),
+    ).toBeUndefined();
   });
 });

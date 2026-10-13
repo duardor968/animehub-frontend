@@ -53,6 +53,38 @@ describe("AnimeImage", () => {
     );
   });
 
+  it("lets the browser pick the desktop width from srcSet", () => {
+    const srcSet =
+      "https://media/b/640.webp 640w, https://media/b/1900.webp 1900w";
+    const { container } = render(
+      <AnimeImage
+        src="https://media/b/1900.webp"
+        srcSet={srcSet}
+        mobileSrc={POSTER}
+        sizes="100vw"
+        alt=""
+      />,
+    );
+    const [mobile, desktop] = container.querySelectorAll("picture source");
+    expect(mobile).toHaveAttribute("srcset", POSTER);
+    expect(desktop).toHaveAttribute("srcset", srcSet);
+    expect(desktop).toHaveAttribute("sizes", "100vw");
+  });
+
+  it("drops the srcSet with the source it belongs to", () => {
+    const { container } = render(
+      <AnimeImage
+        src="https://media/b/1900.webp"
+        srcSet="https://media/b/640.webp 640w"
+        fallbackSrc={POSTER}
+        alt=""
+      />,
+    );
+    fireEvent.error(container.querySelector("img")!);
+    expect(container.querySelector("picture")).toBeNull();
+    expect(container.querySelector("img")).toHaveAttribute("src", POSTER);
+  });
+
   it("falls back to the next source and then to a branded placeholder", () => {
     const { container } = render(
       <AnimeImage src={BACKDROP} fallbackSrc={POSTER} alt="Fotograma" />,

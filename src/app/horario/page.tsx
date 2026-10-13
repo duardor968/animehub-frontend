@@ -1,9 +1,11 @@
+import { Alert } from "@heroui/react";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
-import { PageHeader, pageMainClass } from "@/components/catalog/page-header";
+import { redirect } from "next/navigation";
+import { PageHeader, pageMainClass } from "@/components/page-header";
 import { ScheduleBoard } from "@/components/schedule-board";
 import { LocalTime } from "@/components/schedule-client";
-import { TIME_ZONE_COOKIE } from "@/components/schedule-status";
+import { daySlugs, TIME_ZONE_COOKIE } from "@/components/schedule-status";
 import { apiFetch, type ScheduleResponse } from "@/lib/api/client";
 import { MAIN_CONTENT_ID } from "@/lib/navigation";
 import { siteName, siteOpenGraph } from "@/lib/site";
@@ -38,7 +40,15 @@ function validTimeZone(value: string | null | undefined) {
   }
 }
 
-export default async function SchedulePage() {
+export default async function SchedulePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ dia?: string | string[] }>;
+}) {
+  // An unknown `?dia=` (hand-edited or stale link) falls back to today.
+  const { dia } = await searchParams;
+  if (dia !== undefined && !daySlugs.includes(String(dia)))
+    redirect("/horario");
   const [response, cookieStore, headerStore] = await Promise.all([
     apiFetch<ScheduleResponse>("/schedule"),
     cookies(),
@@ -51,45 +61,39 @@ export default async function SchedulePage() {
     headerStore.get("cf-timezone") ?? headerStore.get("x-vercel-ip-timezone"),
   );
   const serverTimeZone = viewerZone ?? guessedZone ?? "UTC";
+  const zoneConfirmed = viewerZone !== null;
   const serverNow = new Date().toISOString();
 
   return (
     <main id={MAIN_CONTENT_ID} tabIndex={-1} className={pageMainClass}>
       <PageHeader
-        eyebrow="Esta semana"
         title="Horario"
-        description={
-          <>
-            Estimado a partir de las publicaciones recientes, en tu hora local.{" "}
-            <strong className="font-semibold text-subtle">
-              Las horas son referenciales.
-            </strong>
-          </>
-        }
         aside={
           <LocalTime
             serverNow={serverNow}
             serverTimeZone={serverTimeZone}
-            zoneIsViewers={viewerZone !== null || guessedZone !== null}
-            zoneConfirmed={viewerZone !== null}
+            zoneIsViewers={zoneConfirmed || guessedZone !== null}
+            zoneConfirmed={zoneConfirmed}
           />
         }
       />
       {response.meta.stale && (
-        <p
-          role="status"
-          className="mb-6 rounded-xl border border-warning/25 bg-warning/10 px-4 py-3 text-sm text-warning"
-        >
-          No se ha podido actualizar el horario. Se muestra la última
-          información disponible.
-        </p>
+        <Alert status="warning" className="mb-8">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>No se ha podido actualizar el horario</Alert.Title>
+            <Alert.Description>
+              Se muestra la última información disponible.
+            </Alert.Description>
+          </Alert.Content>
+        </Alert>
       )}
       <ScheduleBoard
         entries={response.data}
         stale={response.meta.stale}
         serverNow={serverNow}
         serverTimeZone={serverTimeZone}
-        zoneConfirmed={viewerZone !== null}
+        zoneConfirmed={zoneConfirmed}
       />
     </main>
   );

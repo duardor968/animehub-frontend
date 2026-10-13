@@ -1,5 +1,4 @@
 import { ClickNLoadError, MyJdDeviceError } from "./download-errors";
-import type { DownloadProviderId } from "./download-types";
 
 let myJdClient: Awaited<
   ReturnType<(typeof import("jdownloader-connect"))["default"]>
@@ -47,14 +46,6 @@ export async function connectMyJd(email: string, password: string) {
   return guardMyJd(async () => {
     const { default: connect } = await import("jdownloader-connect");
     myJdClient = await connect({ email, password, appKey: "animehub-webui" });
-    try {
-      sessionStorage.setItem(
-        "animehub.myjd.session",
-        JSON.stringify({ active: true, createdAt: new Date().toISOString() }),
-      );
-    } catch {
-      // The session marker is informational only.
-    }
     return myJdClient.listDevices();
   });
 }
@@ -95,11 +86,6 @@ export async function sendToMyJd(
 export async function disconnectMyJd() {
   const client = myJdClient;
   myJdClient = null;
-  try {
-    sessionStorage.removeItem("animehub.myjd.session");
-  } catch {
-    // Ignore blocked storage.
-  }
   if (client) await guardMyJd(() => client.disconnect());
 }
 
@@ -151,7 +137,6 @@ export async function sendToClickNLoad(packageName: string, urls: string[]) {
     throw new ClickNLoadError("uncertain");
   }
   if (!response.ok) throw new ClickNLoadError("rejected");
-  return { acceptedAt: new Date().toISOString() };
 }
 
 /**
@@ -186,10 +171,3 @@ export async function copyLinks(urls: string[]): Promise<boolean> {
     return false;
   }
 }
-
-export const providerLabels: Record<DownloadProviderId, string> = {
-  MEGA: "Mega",
-  PIXELDRAIN: "Pixeldrain",
-  MP4UPLOAD: "MP4Upload",
-  ONE_FICHIER: "1Fichier",
-};

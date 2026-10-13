@@ -1,22 +1,29 @@
 "use client";
 
-import { Card, Chip, Tabs } from "@heroui/react";
+import { Chip, Skeleton, Tabs, type ChipProps } from "@heroui/react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type Key,
-} from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { components } from "@/lib/api/generated";
 import { formatEpisodeNumber, plural } from "@/lib/format";
 import { AnimeImage } from "./anime-image";
-import { MediaCard } from "./media-card";
-import { zonePending } from "./schedule-client";
+import { ButtonLink } from "./button-link";
+import { EmptyState } from "./empty-state";
 import {
+  MediaCard,
+  MediaCardBody,
+  MediaCardLabel,
+  MediaCardMedia,
+} from "./media-card";
+import {
+  POSTER_GRID_CLASS,
+  POSTER_GRID_SIZES,
+  PosterGridSkeleton,
+} from "./poster-grid";
+import { subscribeMinute, useHydrated, zonePending } from "./schedule-client";
+import {
+  days,
+  daySlugs,
   deriveScheduleEntry,
   formatScheduleTime,
   TIME_ZONE_COOKIE,
@@ -27,64 +34,36 @@ import {
 type ScheduleEntry = components["schemas"]["ScheduleEntryDto"];
 type DisplayEntry = ScheduleEntry & {
   display: { number: number; status: ScheduleStatus };
-  slotMinutes: number;
+  slot: number;
+  time: string;
 };
 
-const days = [
-  "domingo",
-  "lunes",
-  "martes",
-  "miércoles",
-  "jueves",
-  "viernes",
-  "sábado",
-];
-const daysShort = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
-// Column order: Monday first (es locale), Sunday last. Indices stay aligned to
-// Date.getDay() (0=Sun…6=Sat) so grouping, the "hoy" marker and tab ids don't move.
+// Indexed like Date#getDay (0 = Sunday); the tabs start on Monday.
 const weekOrder = [1, 2, 3, 4, 5, 6, 0];
 
-const statusLabels: Record<ScheduleStatus, string | null> = {
-  aired: "Emitido",
-  upcoming: "Próximo",
-  due: "Ahora",
-  delayed: "Retrasado",
-  final: "Final",
-  unknown: null,
-};
-
-const statusChips: Record<
-  Exclude<ScheduleStatus, "unknown">,
-  {
-    color: "accent" | "success" | "warning";
-    variant: "soft" | "primary";
-  }
+const statusChips: Partial<
+  Record<
+    ScheduleStatus,
+    { label: string; color: ChipProps["color"]; variant: ChipProps["variant"] }
+  >
 > = {
-  aired: { color: "success", variant: "soft" },
-  upcoming: { color: "accent", variant: "soft" },
-  // Expected right now (within the grace window): solid, so it stands out.
-  due: { color: "accent", variant: "primary" },
-  delayed: { color: "warning", variant: "soft" },
-  // The series ended: solid, so it reads apart from a regular "Emitido".
-  final: { color: "success", variant: "primary" },
+  aired: { label: "Emitido", color: "success", variant: "soft" },
+  upcoming: { label: "Próximo", color: "accent", variant: "soft" },
+  // Solid: expected right now, and the end of a series.
+  due: { label: "Ahora", color: "accent", variant: "primary" },
+  delayed: { label: "Retrasado", color: "warning", variant: "soft" },
+  final: { label: "Final", color: "success", variant: "primary" },
 };
 
 // Don't re-run the server component more than this often when the tab regains
 // focus, so quick tab-switching never hammers the API.
 const REVALIDATE_THROTTLE_MS = 30_000;
 
-const subscribeHydration = () => () => {};
-const getHydratedSnapshot = () => true;
-const getServerSnapshot = () => false;
-
-function msToNextMinute() {
-  return 60_000 - (Date.now() % 60_000) + 50;
-}
-
 /**
  * The server renders the week in `serverTimeZone` (the viewer's zone from the
  * `tz` cookie, UTC on a first visit) at `serverNow`; hydration reproduces that
  * exact output, then the board switches to the viewer's own zone and clock.
+ * The selected day lives in `?dia=`, so Back returns to it.
  */
 export function ScheduleBoard({
   entries,
@@ -101,24 +80,11 @@ export function ScheduleBoard({
   zoneConfirmed?: boolean;
 }) {
   const router = useRouter();
-  const hydrated = useSyncExternalStore(
-    subscribeHydration,
-    getHydratedSnapshot,
-    getServerSnapshot,
-  );
+  const searchParams = useSearchParams();
+  const hydrated = useHydrated();
   // Advance the local day and statuses at minute boundaries, including midnight.
   const [liveNow, setLiveNow] = useState(() => new Date());
-  useEffect(() => {
-    let interval: number | undefined;
-    const timeout = window.setTimeout(() => {
-      setLiveNow(new Date());
-      interval = window.setInterval(() => setLiveNow(new Date()), 60_000);
-    }, msToNextMinute());
-    return () => {
-      window.clearTimeout(timeout);
-      window.clearInterval(interval);
-    };
-  }, []);
+  useEffect(() => subscribeMinute(() => setLiveNow(new Date())), []);
 
   // Remember the viewer's zone so the next server render already matches it.
   useEffect(() => {
@@ -167,99 +133,59 @@ export function ScheduleBoard({
     for (const entry of entries) {
       const display = deriveScheduleEntry(entry, { now, timeZone, stale });
       if (!display) continue;
-      const moment = zonedMoment(new Date(entry.basisPublishedAt), timeZone);
+      const published = new Date(entry.basisPublishedAt);
+      const moment = zonedMoment(published, timeZone);
       groups[moment.weekday].push({
         ...entry,
         display,
-        slotMinutes: moment.minutes,
+        slot: moment.minutes,
+        time: formatScheduleTime(published, timeZone),
       });
     }
     // Ordered by the hour a series airs, independent of which week it last aired.
-    groups.forEach((group) =>
-      group.sort((a, b) => a.slotMinutes - b.slotMinutes),
-    );
+    groups.forEach((group) => group.sort((a, b) => a.slot - b.slot));
     return groups;
   }, [entries, now, stale, timeZone]);
 
-  // Open on today: the server's day while hydrating, then the viewer's own
-  // day. It stays put afterwards (e.g. at midnight) unless the user picks one.
+  // Without `?dia=`, open on today (the server's day while hydrating) and stay
+  // there, e.g. past midnight.
   const [mountedDay] = useState(() => zonedMoment(new Date()).weekday);
-  const serverDay = zonedMoment(new Date(serverNow), serverTimeZone).weekday;
-  const [chosenDay, setChosenDay] = useState<string | null>(null);
-  const openingDay = hydrated ? mountedDay : serverDay;
-  const selectedKey = chosenDay ?? String(openingDay);
-
-  // On narrow screens the strip scrolls: bring the opening day into view.
-  const scrollerRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
-    const center = () => {
-      const tab =
-        scroller.querySelectorAll<HTMLElement>('[role="tab"]')[
-          weekOrder.indexOf(openingDay)
-        ];
-      if (!tab || scroller.scrollWidth <= scroller.clientWidth) return;
-      scroller.scrollLeft = Math.max(
-        0,
-        tab.offsetLeft - (scroller.clientWidth - tab.offsetWidth) / 2,
-      );
-    };
-    center();
-    // React Aria re-mounts the tab items once after hydration, which resets
-    // the strip to the start: centre again until the user takes over.
-    const observer = new MutationObserver(center);
-    observer.observe(scroller, { childList: true, subtree: true });
-    const release = () => observer.disconnect();
-    const timeout = window.setTimeout(release, 3_000);
-    const events = ["pointerdown", "wheel", "touchstart", "keydown"] as const;
-    events.forEach((type) =>
-      scroller.addEventListener(type, release, { passive: true }),
-    );
-    return () => {
-      release();
-      window.clearTimeout(timeout);
-      events.forEach((type) => scroller.removeEventListener(type, release));
-    };
-  }, [openingDay]);
+  const urlDay = daySlugs.indexOf(searchParams.get("dia") ?? "");
+  const selectedIndex =
+    urlDay >= 0 ? urlDay : hydrated ? mountedDay : todayIndex;
+  // React Aria re-mounts the tabs once after hydration, and the underline
+  // would replay a slide from a wrong place: it slides once the user picks.
+  const [userPicked, setUserPicked] = useState(false);
 
   const pending = zonePending(hydrated, zoneConfirmed, serverTimeZone);
   return (
-    <div data-zone-pending={pending}>
-      {pending && <ZoneMatchStyle zone={pending} />}
+    <div className="relative" data-zone-pending={pending}>
+      {pending && <PendingZone zone={pending} />}
       <Tabs
         variant="secondary"
-        aria-label="Días de la semana"
-        selectedKey={selectedKey}
-        onSelectionChange={(key: Key) => setChosenDay(String(key))}
-        className="w-full gap-0"
+        className="gap-6"
+        selectedKey={daySlugs[selectedIndex]}
+        // Not router.replace: that would re-render the page on the server.
+        onSelectionChange={(key) => {
+          setUserPicked(true);
+          window.history.replaceState(null, "", `?dia=${key}`);
+        }}
+        data-slide={userPicked}
       >
-        {/* Own scroller instead of Tabs.ListContainer: HeroUI's overflow
-          arrows are 16px with fixed English labels; a swipeable strip that
-          scrolls today into view needs neither. The class keeps the
-          secondary-variant underline styles. */}
-        <div
-          ref={scrollerRef}
-          className="tabs__list-container mb-7 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          <Tabs.List
-            aria-label="Días de la semana"
-            className="w-max !min-w-0 gap-1 bg-transparent"
-          >
+        <Tabs.ListContainer>
+          <Tabs.List aria-label="Días de la semana">
             {weekOrder.map((index) => {
-              const day = days[index];
               const count = grouped[index].length;
               const isToday = index === todayIndex;
               return (
-                // The underline is CSS: HeroUI's animated indicator is re-mounted
-                // with the items after hydration and can stick mid-transition.
                 <Tabs.Tab
-                  id={String(index)}
-                  key={day}
-                  aria-label={`${day}, ${plural(count, "lanzamiento", "lanzamientos")}${isToday ? ", hoy" : ""}`}
-                  className="flex min-h-11 !w-auto items-center gap-2 px-3 text-sm text-muted shadow-none transition-colors after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[selected=true]:after:bg-brand data-[hovered=true]:text-subtle data-[selected=true]:font-semibold data-[selected=true]:text-foreground data-[focus-visible=true]:ring-2 data-[focus-visible=true]:ring-inset data-[focus-visible=true]:ring-focus"
+                  id={daySlugs[index]}
+                  key={index}
+                  ref={index === selectedIndex ? centerInStrip : undefined}
+                  aria-label={`${days[index]}, ${plural(count, "episodio", "episodios")}${isToday ? ", hoy" : ""}`}
+                  className="gap-2"
                 >
-                  <span className="capitalize">{daysShort[index]}</span>
+                  <span className="capitalize">{days[index].slice(0, 3)}</span>
                   <span className="text-xs tabular-nums text-faint">
                     {count}
                   </span>
@@ -269,54 +195,49 @@ export function ScheduleBoard({
                       className="size-1.5 rounded-full bg-success"
                     />
                   )}
+                  <Tabs.Indicator />
                 </Tabs.Tab>
               );
             })}
           </Tabs.List>
-        </div>
+        </Tabs.ListContainer>
 
         {weekOrder.map((index) => {
-          const day = days[index];
-          const isSelected = selectedKey === String(index);
+          const isSelected = index === selectedIndex;
           return (
-            // Every day is in the HTML (search engines, no-JS); only the selected
-            // one is shown and reachable.
+            // Every day is in the HTML (search engines, no-JS); only the
+            // selected one is shown and reachable.
             <Tabs.Panel
-              id={String(index)}
-              key={day}
+              id={daySlugs[index]}
+              key={index}
               shouldForceMount
-              className="p-0 outline-none data-[inert=true]:hidden"
+              className="data-[inert=true]:hidden"
             >
-              <div className="mb-4 flex items-baseline gap-2.5">
-                <h2 className="font-display text-xl font-semibold capitalize text-foreground">
-                  {day}
-                  {index === todayIndex && (
-                    <span className="sr-only"> (hoy)</span>
-                  )}
-                </h2>
-                <span className="text-xs text-muted">
-                  {plural(grouped[index].length, "lanzamiento", "lanzamientos")}
-                </span>
-              </div>
-
+              <h2 className="sr-only">
+                {days[index]}
+                {index === todayIndex && " (hoy)"}
+              </h2>
               {grouped[index].length === 0 ? (
-                <div className="rounded-xl border border-dashed border-white/10 bg-surface py-16 text-center">
-                  <p className="text-sm text-muted">
-                    No hay emisiones programadas para este día.
-                  </p>
-                </div>
+                <EmptyState
+                  title="Sin episodios este día"
+                  action={
+                    <ButtonLink
+                      href="/catalogo"
+                      variant="secondary"
+                      prefetch={false}
+                    >
+                      Ver catálogo
+                    </ButtonLink>
+                  }
+                />
               ) : (
-                <ul className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
+                <ul className={POSTER_GRID_CLASS}>
                   {grouped[index].map((entry, entryIndex) => (
                     <li key={entry.anime.id} className="min-w-0">
                       <ScheduleCard
                         entry={entry}
-                        time={formatScheduleTime(
-                          new Date(entry.basisPublishedAt),
-                          timeZone,
-                        )}
                         priority={isSelected && entryIndex < 2}
-                        eager={isSelected && entryIndex < 7}
+                        eager={isSelected && entryIndex < 5}
                       />
                     </li>
                   ))}
@@ -330,51 +251,64 @@ export function ScheduleBoard({
   );
 }
 
-/** Shows the server-rendered week right away when the head script found the
- *  viewer in the zone it was grouped by (html[data-tz]). The zone is a
- *  validated IANA name (letters, digits, _ + - /), safe in the selector. */
-function ZoneMatchStyle({ zone }: { zone: string }) {
+/**
+ * While the week is grouped in a zone the server only guessed, it stays
+ * hidden (globals.css) under a skeleton, unless the head script found the
+ * viewer in that zone (html[data-tz]). The zone is a validated IANA name
+ * (letters, digits, _ + - /), safe in the selectors.
+ */
+function PendingZone({ zone }: { zone: string }) {
   return (
-    <style
-      dangerouslySetInnerHTML={{
-        __html: `html[data-tz="${zone}"] [data-zone-pending="${zone}"],html[data-tz="${zone}"] .site-footer{visibility:visible}`,
-      }}
-    />
+    <>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `html[data-tz="${zone}"] [data-zone-pending="${zone}"],html[data-tz="${zone}"] .site-footer{visibility:visible}@media (scripting:enabled){html:not([data-tz="${zone}"]) .schedule-skeleton{display:flex;visibility:visible}}`,
+        }}
+      />
+      <div
+        aria-hidden="true"
+        className="schedule-skeleton absolute inset-x-0 top-0 hidden flex-col gap-6"
+      >
+        <div className="flex h-8 items-center justify-around gap-2">
+          {weekOrder.map((index) => (
+            <Skeleton key={index} className="h-3.5 w-10" />
+          ))}
+        </div>
+        <PosterGridSkeleton count={10} />
+      </div>
+    </>
   );
 }
 
 function ScheduleCard({
   entry,
-  time,
   priority,
   eager,
 }: {
   entry: DisplayEntry;
-  time: string;
   /** First row on phones: the LCP candidates. */
   priority: boolean;
-  /** Rest of the selected day's first row on wide screens (up to 7). */
+  /** Rest of the selected day's first row on wide screens. */
   eager: boolean;
 }) {
   const { status, number } = entry.display;
-  const label = statusLabels[status];
-  const chip = status === "unknown" ? null : statusChips[status];
+  const chip = statusChips[status];
   return (
-    <Link
-      href={`/anime/${entry.anime.slug}`}
-      aria-label={[
-        entry.anime.title,
-        `episodio ${formatEpisodeNumber(number)}`,
-        label?.toLocaleLowerCase("es"),
-        time,
-      ]
-        .filter(Boolean)
-        .join(", ")}
-      // Outer ring: an inset one would be painted under the card's own surface.
-      className="group block h-full rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-    >
-      <MediaCard className="touch-card relative h-full min-w-0 gap-0 rounded-xl bg-surface p-0 transition-shadow duration-300 group-hover:shadow-[0_18px_42px_rgba(0,0,0,.3)] [&>.media-card-clip]:flex [&>.media-card-clip]:h-full [&>.media-card-clip]:flex-col">
-        <div className="touch-static-media relative aspect-[2/3] overflow-hidden bg-surface [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04]">
+    <MediaCard className="h-full">
+      <Link
+        href={`/anime/${entry.anime.slug}`}
+        prefetch={false}
+        aria-label={[
+          entry.anime.title,
+          `episodio ${formatEpisodeNumber(number)}`,
+          chip?.label.toLocaleLowerCase("es"),
+          entry.time,
+        ]
+          .filter(Boolean)
+          .join(", ")}
+        className="flex flex-1 flex-col outline-none"
+      >
+        <MediaCardMedia aspect="poster">
           <AnimeImage
             src={entry.anime.posterUrl}
             fallbackSrc={entry.anime.backdropUrl}
@@ -382,36 +316,41 @@ function ScheduleCard({
             priority={priority}
             loading={eager ? "eager" : "lazy"}
             fetchPriority={eager && !priority ? "low" : undefined}
-            sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 16vw"
+            sizes={POSTER_GRID_SIZES}
           />
-          <time
-            className="absolute left-2 top-2 rounded-lg bg-background-secondary/85 px-2 py-1 font-mono text-[11px] font-bold text-link backdrop-blur-sm"
-            dateTime={entry.basisPublishedAt}
-          >
-            {time}
-          </time>
-          <div className="absolute bottom-0 left-0 flex h-6 items-center rounded-tr-lg bg-surface px-2.5 text-[11px] font-bold">
-            <span className="tracking-[.12em] text-link">EP</span>
-            <strong className="ml-1 tabular-nums text-foreground">
-              {formatEpisodeNumber(number)}
-            </strong>
-          </div>
-        </div>
-        <Card.Content className="flex flex-1 flex-col items-start gap-2 px-3.5 py-3">
-          <strong className="line-clamp-2 min-h-10 break-words text-sm font-semibold leading-5 text-foreground">
-            {entry.anime.title}
-          </strong>
-          <div className="mt-auto flex min-h-6 items-center">
-            {chip && label && (
-              <Chip color={chip.color} variant={chip.variant} size="sm">
-                <Chip.Label>{label}</Chip.Label>
-              </Chip>
-            )}
-          </div>
-        </Card.Content>
-      </MediaCard>
-    </Link>
+          <MediaCardLabel position="top">
+            <time dateTime={entry.time}>
+              <strong>{entry.time}</strong>
+            </time>
+          </MediaCardLabel>
+          <MediaCardLabel>
+            EP <strong>{formatEpisodeNumber(number)}</strong>
+          </MediaCardLabel>
+        </MediaCardMedia>
+        <MediaCardBody title={entry.anime.title}>
+          {chip && (
+            <Chip
+              color={chip.color}
+              variant={chip.variant}
+              size="sm"
+              className="mt-auto self-start"
+            >
+              <Chip.Label>{chip.label}</Chip.Label>
+            </Chip>
+          )}
+        </MediaCardBody>
+      </Link>
+    </MediaCard>
   );
+}
+
+/** On narrow screens the strip scrolls: center the selected day. A ref, not
+ *  an effect, because React Aria re-mounts the tabs once after hydration. */
+function centerInStrip(tab: HTMLElement | null) {
+  const strip = tab?.closest<HTMLElement>('[data-slot="scroll-shadow"]');
+  if (tab && strip)
+    strip.scrollLeft =
+      tab.offsetLeft - (strip.clientWidth - tab.offsetWidth) / 2;
 }
 
 function readTimeZoneCookie() {

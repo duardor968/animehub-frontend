@@ -1,19 +1,16 @@
 "use client";
 
+import { linkVariants } from "@heroui/styles";
 import { useLayoutEffect, useRef, useState } from "react";
+
+const link = linkVariants();
 
 /**
  * Synopsis clamped to four lines on phones with a "Leer más" toggle; shown
  * in full from 640px. The toggle is rendered on the server for long texts
  * (no layout shift) and hidden after mount if the text already fits.
  */
-export function ExpandableSynopsis({
-  text,
-  className = "",
-}: {
-  text: string;
-  className?: string;
-}) {
+export function ExpandableSynopsis({ text }: { text: string }) {
   const textRef = useRef<HTMLParagraphElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [fits, setFits] = useState(text.length < 180);
@@ -24,20 +21,17 @@ export function ExpandableSynopsis({
     const measure = () =>
       setFits(element.scrollHeight <= element.clientHeight + 1);
     measure();
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(measure);
-    observer?.observe(element);
-    return () => observer?.disconnect();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
   }, [expanded]);
 
   return (
-    <div className={className}>
+    <div className="mt-4">
       <p
         ref={textRef}
         id="sinopsis"
-        className={`max-w-[920px] whitespace-pre-line text-[15px] leading-7 text-subtle ${expanded ? "" : "max-sm:line-clamp-4"}`}
+        className={`max-w-prose whitespace-pre-line text-sm leading-6 text-subtle ${expanded ? "" : "max-sm:line-clamp-4"}`}
       >
         {text}
       </p>
@@ -47,7 +41,7 @@ export function ExpandableSynopsis({
           aria-expanded={expanded}
           aria-controls="sinopsis"
           onClick={() => setExpanded((current) => !current)}
-          className="mt-1 min-h-11 rounded-md text-sm font-semibold text-link outline-none hover:underline focus-visible:ring-2 focus-visible:ring-focus sm:hidden"
+          className={`${link.base()} mt-2 text-sm sm:hidden`}
         >
           {expanded ? "Leer menos" : "Leer más"}
         </button>

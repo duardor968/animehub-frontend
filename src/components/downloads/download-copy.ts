@@ -1,5 +1,11 @@
-import { formatNumber, plural } from "@/lib/format";
-import type { AudioPreference, DownloadRequest } from "./download-types";
+import { formatEpisodeNumber, formatNumber, plural } from "@/lib/format";
+import {
+  providerLabels,
+  type AudioPreference,
+  type DownloadDestination,
+  type DownloadProviderId,
+  type DownloadRequest,
+} from "./download-types";
 
 export interface ResolvedEpisodeLike {
   episodeNumber: number;
@@ -51,8 +57,8 @@ export function formatEpisodeRanges(numbers: number[]): string {
   return episodeRuns(numbers)
     .map(([start, end]) =>
       start === end
-        ? formatNumber(start)
-        : `${formatNumber(start)}–${formatNumber(end)}`,
+        ? formatEpisodeNumber(start)
+        : `${formatEpisodeNumber(start)}–${formatEpisodeNumber(end)}`,
     )
     .join(separator);
 }
@@ -60,7 +66,7 @@ export function formatEpisodeRanges(numbers: number[]): string {
 const runCount = (numbers: number[]) => episodeRuns(numbers).length;
 
 /** Short label for the episodes in a request: "Ep. 5", "Ep. 1–50",
- *  "Ep. 1–3, 7", "12 episodios" or "Todos (1.180 episodios)". */
+ *  "Ep. 1–3, 7", "12 episodios" or "Todos (1180 episodios)". */
 export function describeEpisodes(request: DownloadRequest): string {
   if (request.all) {
     return request.total
@@ -74,34 +80,69 @@ export function describeEpisodes(request: DownloadRequest): string {
   }
   if (request.from !== undefined && request.to !== undefined) {
     return request.from === request.to
-      ? `Ep. ${formatNumber(request.from)}`
-      : `Ep. ${formatNumber(request.from)}–${formatNumber(request.to)}`;
+      ? `Ep. ${formatEpisodeNumber(request.from)}`
+      : `Ep. ${formatEpisodeNumber(request.from)}–${formatEpisodeNumber(request.to)}`;
   }
   return "Episodios";
 }
 
-/** "One Piece · Ep. 1–50": names the anime and episodes in every toast. */
+// A copy to the clipboard never asks first (see needsConfirmation).
+type SentTo = Exclude<DownloadDestination, "COPY">;
+const destinationPhrases: Record<SentTo, string> = {
+  CNL: "se enviarán a JDownloader",
+  MYJD: "se enviarán a MyJDownloader",
+};
+const listFormat = new Intl.ListFormat("es", { type: "conjunction" });
+
+/** Confirmation of a large download: how many episodes, where they go and
+ *  that every mirror of the chosen providers is included. */
+export function describeConfirmation(
+  request: DownloadRequest,
+  destination: SentTo,
+  providers: DownloadProviderId[],
+) {
+  const count = requestEpisodeCount(request);
+  const episodes = describeEpisodes(request);
+  const heading = request.all
+    ? count
+      ? `¿Descargar los ${formatNumber(count)} episodios?`
+      : "¿Descargar todos los episodios?"
+    : count
+      ? `¿Descargar ${plural(count, "episodio", "episodios")}?`
+      : `¿Descargar los episodios ${episodes.replace("Ep. ", "")}?`;
+  const which = count && episodes.startsWith("Ep. ") ? ` (${episodes})` : "";
+  const mirrors = listFormat.format(
+    Object.entries(providerLabels)
+      .filter(([id]) => providers.includes(id as DownloadProviderId))
+      .map(([, label]) => label),
+  );
+  return {
+    heading,
+    body: `Los enlaces de ${request.title}${which} ${destinationPhrases[destination]}, con todos los espejos de ${mirrors}.`,
+  };
+}
+
+/** "One Piece · Ep. 1–50", or a movie's title alone. */
 export function describeRequest(request: DownloadRequest): string {
-  return `${request.title} · ${describeEpisodes(request)}`;
+  return request.movie
+    ? request.title
+    : `${request.title} · ${describeEpisodes(request)}`;
 }
 
 export function collectUrls(episodes: ResolvedEpisodeLike[]): string[] {
   return episodes.flatMap((episode) => episode.links.map((link) => link.url));
 }
 
-/** Every mirror is sent (JDownloader groups them), so the copy makes clear
- *  that several links can belong to one episode. */
-export function describeLinks(episodes: ResolvedEpisodeLike[]): string {
-  const withLinks = episodes.filter((episode) => episode.links.length > 0);
-  const linkCount = withLinks.reduce(
-    (total, episode) => total + episode.links.length,
-    0,
-  );
-  const links = plural(linkCount, "enlace", "enlaces");
-  const episodesLabel = plural(withLinks.length, "episodio", "episodios");
-  return linkCount > withLinks.length
-    ? `${links} (espejos) de ${episodesLabel}`
-    : `${links} de ${episodesLabel}`;
+export const countLinks = (episodes: ResolvedEpisodeLike[]) =>
+  episodes.reduce((total, episode) => total + episode.links.length, 0);
+
+/** "4 enlaces", or "1 enlace de Mega" when only that provider's were taken. */
+export function describeLinks(
+  episodes: ResolvedEpisodeLike[],
+  provider?: DownloadProviderId,
+): string {
+  const links = plural(countLinks(episodes), "enlace", "enlaces");
+  return provider ? `${links} de ${providerLabels[provider]}` : links;
 }
 
 export function failedEpisodeNumbers(episodes: ResolvedEpisodeLike[]) {

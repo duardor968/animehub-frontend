@@ -3,9 +3,10 @@
 import { useSyncExternalStore } from "react";
 import { formatScheduleTime } from "./schedule-status";
 
-function subscribeMinute(onChange: () => void) {
+/** Calls `onChange` on every minute boundary, so the clock never lags behind
+ *  the system's. Returns the unsubscribe function. */
+export function subscribeMinute(onChange: () => void) {
   let interval: number | undefined;
-  // Tick on the minute boundary so the clock never lags behind the system's.
   const timeout = window.setTimeout(
     () => {
       onChange();
@@ -20,6 +21,15 @@ function subscribeMinute(onChange: () => void) {
 }
 
 const subscribeHydration = () => () => {};
+
+/** False on the server and while hydrating, true afterwards. */
+export function useHydrated() {
+  return useSyncExternalStore(
+    subscribeHydration,
+    () => true,
+    () => false,
+  );
+}
 
 /**
  * Value for `data-zone-pending` on schedule parts rendered in a zone the
@@ -43,34 +53,34 @@ export function LocalTime({
   serverNow,
   serverTimeZone,
   zoneIsViewers,
-  zoneConfirmed = zoneIsViewers,
+  zoneConfirmed,
 }: {
   serverNow: string;
   serverTimeZone: string;
   /** The server zone is the viewer's (cookie or geo guess), not UTC. */
   zoneIsViewers: boolean;
   /** It came from the viewer's own cookie (see zonePending). */
-  zoneConfirmed?: boolean;
+  zoneConfirmed: boolean;
 }) {
   const time = useSyncExternalStore(
     subscribeMinute,
     () => formatScheduleTime(new Date()),
     () => formatScheduleTime(new Date(serverNow), serverTimeZone),
   );
-  const hydrated = useSyncExternalStore(
-    subscribeHydration,
-    () => true,
-    () => false,
-  );
+  const hydrated = useHydrated();
   return (
     <p
-      className="inline-flex items-center gap-2 text-sm text-muted"
+      className="text-sm text-muted"
       data-zone-pending={zonePending(hydrated, zoneConfirmed, serverTimeZone)}
     >
-      <span className="text-[11px] font-bold uppercase tracking-[.16em] text-faint">
-        {hydrated || zoneIsViewers ? "Hora local" : "Hora UTC"}
-      </span>
-      <strong className="tabular-nums text-foreground">{time}</strong>
+      Horas aproximadas ·{" "}
+      {hydrated || zoneIsViewers ? "Hora local" : "Hora UTC"}:{" "}
+      <time
+        dateTime={time}
+        className="font-semibold tabular-nums text-foreground"
+      >
+        {time}
+      </time>
     </p>
   );
 }

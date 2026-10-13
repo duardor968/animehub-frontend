@@ -1,5 +1,6 @@
 "use client";
 
+import { Skeleton } from "@heroui/react";
 import Image from "next/image";
 import { type SyntheticEvent, useMemo, useState } from "react";
 import { preload } from "react-dom";
@@ -9,7 +10,11 @@ import mark from "@/assets/brand/animehub-mark.webp";
 const MOBILE_MEDIA = "(max-width: 639.98px)";
 const DESKTOP_MEDIA = "(min-width: 640px)";
 
-type Candidate = { src?: string | null; mobileSrc?: string | null };
+type Candidate = {
+  src?: string | null;
+  srcSet?: string | null;
+  mobileSrc?: string | null;
+};
 
 /**
  * Remote artwork with a skeleton while loading, a fallback chain
@@ -21,6 +26,7 @@ type Candidate = { src?: string | null; mobileSrc?: string | null };
  */
 export function AnimeImage({
   src,
+  srcSet,
   fallbackSrc,
   mobileSrc,
   alt,
@@ -31,6 +37,8 @@ export function AnimeImage({
   imageClassName = "",
 }: {
   src?: string | null;
+  /** Widths of `src` ("url 640w, url 1280w…"): the browser picks by `sizes`. */
+  srcSet?: string | null;
   fallbackSrc?: string | null;
   /** Alternative art below 640px (e.g. the 2:3 poster for a phone hero). */
   mobileSrc?: string | null;
@@ -48,17 +56,18 @@ export function AnimeImage({
 }) {
   const candidates = useMemo<Candidate[]>(
     () => [
-      { src: src ?? null, mobileSrc: mobileSrc ?? null },
+      { src: src ?? null, srcSet, mobileSrc: mobileSrc ?? null },
       { src: fallbackSrc },
     ],
-    [fallbackSrc, mobileSrc, src],
+    [fallbackSrc, mobileSrc, src, srcSet],
   );
   const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set());
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
 
   // First candidate with a usable URL. A failed mobile/desktop variant
   // degrades to the other one before moving on to the fallback.
-  let active: { src: string; mobileSrc?: string } | null = null;
+  let active: { src: string; srcSet?: string; mobileSrc?: string } | null =
+    null;
   for (const candidate of candidates) {
     const desktop =
       candidate.src && !failed.has(candidate.src) ? candidate.src : null;
@@ -70,24 +79,33 @@ export function AnimeImage({
     if (!primary) continue;
     active = {
       src: primary,
+      srcSet: (desktop && candidate.srcSet) || undefined,
       mobileSrc: desktop && mobile && mobile !== desktop ? mobile : undefined,
     };
     break;
   }
 
-  const activeKey = active ? `${active.src}\n${active.mobileSrc ?? ""}` : null;
-  const artDirected = Boolean(active?.mobileSrc);
+  const activeKey = active
+    ? [active.src, active.srcSet, active.mobileSrc].join("\n")
+    : null;
+  const usesPicture = Boolean(active?.mobileSrc || active?.srcSet);
 
-  // Art-directed preloads: each viewport only fetches the image it will show.
-  // (Next's own `preload` prop would fetch the desktop art on phones too.)
-  if (priority && active?.mobileSrc) {
+  // Preloads matching what <picture> will pick: each viewport fetches only
+  // its own art, at its own width. (Next's `preload` prop knows neither.)
+  if (priority && active && usesPicture) {
     const options = {
       as: "image",
       fetchPriority: "high",
       referrerPolicy: "no-referrer",
     } as const;
-    preload(active.mobileSrc, { ...options, media: MOBILE_MEDIA });
-    preload(active.src, { ...options, media: DESKTOP_MEDIA });
+    if (active.mobileSrc)
+      preload(active.mobileSrc, { ...options, media: MOBILE_MEDIA });
+    preload(active.src, {
+      ...options,
+      imageSrcSet: active.srcSet,
+      imageSizes: active.srcSet ? sizes : undefined,
+      media: active.mobileSrc ? DESKTOP_MEDIA : undefined,
+    });
   }
 
   if (!active) {
@@ -101,10 +119,10 @@ export function AnimeImage({
           src={mark}
           alt=""
           aria-hidden="true"
-          width={80}
-          height={60}
+          width={160}
+          height={121}
           unoptimized
-          className="h-auto w-[min(36%,5rem)] min-w-3 opacity-35"
+          className="h-auto w-1/3 max-w-20 opacity-35"
         />
       </span>
     );
@@ -132,7 +150,7 @@ export function AnimeImage({
       src={active.src}
       alt={alt}
       fill
-      preload={priority && !artDirected}
+      preload={priority && !usesPicture}
       fetchPriority={priority ? "high" : fetchPriority}
       loading={priority ? "eager" : (loading ?? "lazy")}
       sizes={sizes}
@@ -156,10 +174,15 @@ export function AnimeImage({
 
   return (
     <span className={`anime-image ${state}`}>
-      <span className="image-skeleton" aria-hidden="true" />
-      {active.mobileSrc ? (
+      <Skeleton aria-hidden="true" />
+      {usesPicture ? (
         <picture key={activeKey} className="absolute inset-0">
-          <source media={MOBILE_MEDIA} srcSet={active.mobileSrc} />
+          {active.mobileSrc ? (
+            <source media={MOBILE_MEDIA} srcSet={active.mobileSrc} />
+          ) : null}
+          {active.srcSet ? (
+            <source srcSet={active.srcSet} sizes={sizes} />
+          ) : null}
           {image}
         </picture>
       ) : (

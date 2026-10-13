@@ -21,14 +21,11 @@ export const APP_LOCALE = "es-ES";
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <I18nProvider locale={APP_LOCALE}>
-      {/* The z-index sits above the drawer backdrop (z-60) / dialog (z-70) so a
-          toast stays readable over the dimmed overlay. The bottom offset clears
-          the mobile navigation (below lg) and the download dock (episode
-          selection bar) while it is shown. */}
+      {/* Placement over drawers and above the download dock: globals.css. */}
       <Toast.Provider
         placement="bottom end"
         width="min(26rem, calc(100vw - 2rem))"
-        className="animehub-toast-region !z-[100] bottom-[calc(var(--bottom-nav-clearance)+1rem+var(--download-dock-height,0px))]"
+        className="animehub-toast-region"
       >
         {({ toast }) => <AppToast toast={toast} />}
       </Toast.Provider>
@@ -67,12 +64,14 @@ function AppToast({ toast }: { toast: QueuedToast<ToastContentValue> }) {
           widening it, so the dismiss button never leaves the screen. */}
       <Toast.Content className="min-w-0 flex-1 items-stretch">
         {title ? (
-          <Toast.Title className="[overflow-wrap:anywhere]">
-            {title}
-          </Toast.Title>
+          <Toast.Title className="wrap-anywhere">{title}</Toast.Title>
         ) : null}
         {description ? (
-          <Toast.Description className="block min-w-0 [overflow-wrap:anywhere]">
+          // A div: download toasts put blocks (progress, actions) in it.
+          <Toast.Description
+            elementType="div"
+            className="min-w-0 wrap-anywhere"
+          >
             {description}
           </Toast.Description>
         ) : null}

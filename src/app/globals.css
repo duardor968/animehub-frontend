@@ -11,33 +11,43 @@
 @import "@heroui/styles/base/base.css" layer(base);
 @import "@heroui/styles/base/scrollbar.css" layer(base);
 @import "@heroui/styles/components/close-button.css" layer(components);
+@import "@heroui/styles/components/description.css" layer(components);
 @import "@heroui/styles/components/label.css" layer(components);
-@import "@heroui/styles/components/disclosure.css" layer(components);
+@import "@heroui/styles/components/link.css" layer(components);
+@import "@heroui/styles/components/pagination.css" layer(components);
 @import "@heroui/styles/components/tabs.css" layer(components);
 @import "@heroui/styles/components/button.css" layer(components);
-@import "@heroui/styles/components/toggle-button.css" layer(components);
-@import "@heroui/styles/components/toggle-button-group.css" layer(components);
 @import "@heroui/styles/components/list-box-item.css" layer(components);
 @import "@heroui/styles/components/list-box.css" layer(components);
 @import "@heroui/styles/components/tag-group.css" layer(components);
 @import "@heroui/styles/components/tag.css" layer(components);
 @import "@heroui/styles/components/slider.css" layer(components);
 @import "@heroui/styles/components/chip.css" layer(components);
+@import "@heroui/styles/components/alert.css" layer(components);
+@import "@heroui/styles/components/skeleton.css" layer(components);
+@import "@heroui/styles/components/progress-bar.css" layer(components);
 @import "@heroui/styles/components/progress-circle.css" layer(components);
 @import "@heroui/styles/components/spinner.css" layer(components);
 @import "@heroui/styles/components/toast.css" layer(components);
 @import "@heroui/styles/components/checkbox-group.css" layer(components);
 @import "@heroui/styles/components/checkbox.css" layer(components);
 @import "@heroui/styles/components/input-group.css" layer(components);
+@import "@heroui/styles/components/number-field.css" layer(components);
 @import "@heroui/styles/components/radio-group.css" layer(components);
 @import "@heroui/styles/components/radio.css" layer(components);
 @import "@heroui/styles/components/textfield.css" layer(components);
 @import "@heroui/styles/components/search-field.css" layer(components);
+@import "@heroui/styles/components/textarea.css" layer(components);
 @import "@heroui/styles/components/card.css" layer(components);
+@import "@heroui/styles/components/separator.css" layer(components);
 @import "@heroui/styles/components/alert-dialog.css" layer(components);
 @import "@heroui/styles/components/drawer.css" layer(components);
+@import "@heroui/styles/components/popover.css" layer(components);
 @import "@heroui/styles/components/tooltip.css" layer(components);
 @import "@heroui/styles/components/select.css" layer(components);
+@import "@heroui/styles/components/kbd.css" layer(components);
+@import "@heroui/styles/components/typography.css" layer(components);
+@import "@heroui/styles/components/scroll-shadow.css" layer(components);
 @import "@heroui/styles/themes/default" layer(theme);
 @import "@heroui/styles/utilities";
 @import "@heroui/styles/variants";
@@ -110,35 +120,11 @@
   }
 }
 
+/* Utilities for the app's own tokens; HeroUI's theme maps its own. */
 @theme inline {
-  --color-background: var(--background);
-  --color-background-secondary: var(--background-secondary);
-  --color-background-tertiary: var(--background-tertiary);
-  --color-foreground: var(--foreground);
   --color-subtle: var(--subtle);
-  --color-muted: var(--muted);
   --color-faint: var(--faint);
-  --color-surface: var(--surface);
-  --color-surface-secondary: var(--surface-secondary);
-  --color-surface-tertiary: var(--surface-tertiary);
-  --color-surface-hover: var(--surface-hover);
-  --color-default: var(--default);
-  --color-default-hover: var(--default-hover);
-  --color-border: var(--border);
   --color-brand: var(--brand);
-  --color-accent: var(--accent);
-  --color-accent-hover: var(--accent-hover);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent-soft: var(--accent-soft);
-  --color-accent-soft-hover: var(--accent-soft-hover);
-  --color-accent-soft-foreground: var(--accent-soft-foreground);
-  --color-link: var(--link);
-  --color-focus: var(--focus);
-  --color-success: var(--success);
-  --color-danger: var(--danger);
-  --color-danger-soft: var(--danger-soft);
-  --color-danger-soft-foreground: var(--danger-soft-foreground);
-  --color-warning: var(--warning);
   --font-sans: var(--font-body);
   --font-display: var(--font-display);
 }
@@ -147,7 +133,7 @@
 @utility page-container {
   margin-inline: auto;
   width: 100%;
-  max-width: 1600px;
+  max-width: 80rem;
   padding-inline: 1.5rem;
 
   @media (width < 40rem) {
@@ -155,43 +141,57 @@
   }
 }
 
-/* Small uppercase label above section titles. */
-@utility eyebrow {
-  font-size: 0.625rem;
-  font-weight: 700;
-  line-height: 1rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--link);
+/* Heading scale (Typography): page, section and group/overlay titles. */
+@layer components {
+  .typography--h1,
+  .typography--h2 {
+    font-family: var(--font-display);
+  }
+
+  .typography--h1,
+  .typography--h2,
+  .typography--h3 {
+    text-wrap: balance;
+  }
+
+  .typography--h1 {
+    @apply max-sm:text-3xl;
+  }
+
+  .typography--h2 {
+    @apply text-2xl;
+  }
+
+  .typography--h3 {
+    @apply text-lg;
+  }
 }
 
 @layer base {
-  * {
-    box-sizing: border-box;
-  }
-
   html {
     min-width: 320px;
     background: var(--background);
     scroll-behavior: smooth;
-    scroll-padding-top: calc(var(--header-height) + 1rem);
+  }
+
+  /* Content scrolled into view (anchors, focus) clears the sticky header. On
+     html (scroll-padding) it would also scroll the page whenever a header
+     control takes focus, to "reveal" what is always visible. */
+  main,
+  main * {
+    scroll-margin-top: calc(var(--header-height) + 1rem);
   }
 
   body {
     min-height: 100vh;
-    margin: 0;
-    overflow-x: hidden;
+    /* clip, not hidden: hidden makes the body a scroll container whenever an
+       overlay locks the page (overflow: hidden on html), and the sticky
+       header then scrolls away with it. */
+    overflow-x: clip;
     background: var(--background);
     color: var(--foreground);
     font-family: var(--font-body), sans-serif;
     text-rendering: optimizeLegibility;
-  }
-
-  button,
-  input,
-  select,
-  textarea {
-    font: inherit;
   }
 
   a {
@@ -200,16 +200,12 @@
   }
 
   ::selection {
-    background: rgb(47 129 247 / 35%);
+    background: color-mix(in srgb, var(--brand) 35%, transparent);
     color: var(--foreground);
   }
 }
 
 @layer components {
-  .drawer-state-trigger {
-    display: none !important;
-  }
-
   .anime-image {
     position: absolute;
     inset: 0;
@@ -248,35 +244,15 @@
     place-items: center;
   }
 
-  /* Shimmer animates a transform only, so it stays on the compositor. */
-  .image-skeleton {
+  .anime-image > .skeleton {
     position: absolute;
     inset: 0;
-    overflow: hidden;
-    background: var(--surface);
+    border-radius: 0;
+    transition: opacity 180ms ease;
   }
 
-  .image-skeleton::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-      105deg,
-      transparent 20%,
-      var(--surface-tertiary) 42%,
-      transparent 64%
-    );
-    transform: translateX(-100%);
-    animation: image-loading 1.4s ease-in-out infinite;
-  }
-
-  .anime-image.is-loaded .image-skeleton {
+  .anime-image.is-loaded > .skeleton {
     opacity: 0;
-    pointer-events: none;
-  }
-
-  .anime-image.is-loaded .image-skeleton::after {
-    animation: none;
   }
 
   html[data-device="portable"] button,
@@ -284,30 +260,161 @@
     touch-action: manipulation;
   }
 
-  html[data-device="portable"] .touch-static-media .anime-image img {
-    transform: none !important;
+  /* MediaCard: the one card for an anime or an episode. The clip composites
+     the image and its layers before the rounded edge, so the shadow stays
+     outside and fractional positions never show a seam. */
+  .media-card {
+    gap: 0;
+    padding: 0;
+    min-width: 0;
+    border-radius: var(--radius-xl);
+    transition: box-shadow 300ms ease;
+
+    &:hover {
+      box-shadow: 0 18px 42px rgb(0 0 0 / 30%);
+    }
+
+    /* The card's link; a control inside the card shows its own ring. */
+    &:has(a:focus-visible) {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
   }
 
-  html[data-device="portable"] .touch-hover-overlay {
-    background: transparent !important;
-  }
-
-  html[data-device="portable"] .touch-hover-panel {
-    opacity: 0 !important;
-  }
-
-  html[data-device="portable"] .touch-category-label {
-    opacity: 1 !important;
-  }
-
-  .media-card-clip {
+  .media-card__clip {
     position: relative;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
     min-width: 0;
     border-radius: inherit;
-    overflow: visible;
     clip-path: border-box;
-    -webkit-mask-image: linear-gradient(#000 0 0);
     mask-image: linear-gradient(#000 0 0);
+  }
+
+  .media-card__media {
+    position: relative;
+    overflow: hidden;
+
+    & .anime-image img {
+      transition:
+        opacity 180ms ease,
+        transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+  }
+
+  .media-card .card__content {
+    padding: 0.75rem 0.875rem;
+  }
+
+  .media-card .card__title {
+    @apply line-clamp-2 leading-5 font-semibold;
+  }
+
+  .media-card .card__description {
+    @apply truncate text-xs;
+  }
+
+  .media-card__overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 1rem;
+    background: color-mix(
+      in srgb,
+      var(--background-secondary) 92%,
+      transparent
+    );
+    opacity: 0;
+    transition: opacity 250ms ease;
+  }
+
+  /* Corner label on the artwork (category, episode, time). */
+  .media-label {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 1.75rem;
+    /* The card body's inline padding: label and title start on one line. */
+    padding-inline: 0.875rem;
+    border-start-end-radius: var(--radius-lg);
+    background: var(--surface);
+    color: var(--link);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: opacity 300ms ease;
+
+    & strong {
+      color: var(--foreground);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0;
+    }
+  }
+
+  .media-label--top {
+    top: 0;
+    bottom: auto;
+    border-start-end-radius: 0;
+    border-end-end-radius: var(--radius-lg);
+  }
+
+  .media-label--accent {
+    background: var(--accent);
+    color: var(--accent-foreground);
+  }
+
+  /* Control over a 16:9 still, outside the card's link (episode download):
+     in the corner on touch, centered on hover or focus with a pointer. */
+  .media-card__action {
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    display: grid;
+    place-items: start end;
+    aspect-ratio: 16 / 9;
+    padding: 0.5rem;
+    pointer-events: none;
+
+    & > * {
+      pointer-events: auto;
+    }
+  }
+
+  @media (hover: hover) {
+    html:not([data-device="portable"]) .media-card__action {
+      place-items: center;
+
+      & > * {
+        opacity: 0;
+        transition: opacity 200ms ease;
+      }
+    }
+
+    html:not([data-device="portable"])
+      .media-card:is(:hover, :has(:focus-visible)) {
+      & .media-card__media .anime-image img {
+        transform: scale(1.04);
+      }
+
+      & .media-card__overlay {
+        opacity: 1;
+      }
+
+      & .media-card__overlay ~ .media-label {
+        opacity: 0;
+      }
+
+      & .media-card__action > * {
+        opacity: 1;
+      }
+    }
   }
 }
 
@@ -317,12 +424,6 @@
   }
   to {
     transform: scaleX(1);
-  }
-}
-
-@keyframes image-loading {
-  to {
-    transform: translateX(100%);
   }
 }
 
@@ -399,9 +500,84 @@
   main[tabindex="-1"]:focus-visible {
     outline: none;
   }
+
+  /* Listboxes (Select, search suggestions), one standard: one active row in
+     HeroUI's hover fill, plus its focus ring when the keyboard set it; while
+     a row has the ring no other row paints hover. Rows follow the popover's
+     corner: its radius minus the list's 6 px padding (the Select's), which
+     also stays visible when the arrows scroll a row into view. */
+  :is(.select__popover, .search-suggestions) .list-box-item {
+    border-radius: calc(min(32px, var(--radius-3xl)) - 0.375rem);
+
+    &[data-focus-visible="true"] {
+      background-color: var(--default);
+    }
+  }
+
+  .select__popover
+    .list-box:has([data-focus-visible="true"])
+    .list-box-item:not([data-focus-visible="true"]):is(
+      :hover,
+      [data-hovered="true"]
+    ) {
+    background-color: transparent;
+  }
+
+  /* Suggestions: the pointer moves the active row too (see search-box), so
+     only the active row paints. */
+  .search-suggestions {
+    padding: 0.375rem;
+    scroll-padding-block: 0.375rem;
+
+    & .list-box-item {
+      &:hover {
+        background-color: transparent;
+      }
+
+      &[aria-selected="true"] {
+        background-color: var(--default);
+      }
+    }
+  }
 }
 
 @layer utilities {
+  /* Toasts sit above the download dock and glide when it (pending download,
+     episode selection) changes height. */
+  .animehub-toast-region {
+    bottom: calc(var(--bottom-nav-clearance) + 1rem);
+    translate: 0 calc(-1 * var(--download-dock-height, 0px));
+    transition: translate 200ms var(--ease-out);
+  }
+
+  /* Enter and leave with a short slide that stays clear of the dock, not
+     from a whole toast height below (over the selection bar). */
+  .animehub-toast-region .toast[data-entering="true"],
+  .animehub-toast-region .toast[data-exiting="true"][data-frontmost="true"] {
+    --toast-enter: -0.75rem;
+    opacity: 0;
+  }
+
+  /* The front toast follows its content's height with HeroUI's transition,
+     clipped so growing content never paints outside the box meanwhile.
+     Expanded (hovered) toasts take it at once: their hit area reaches out of
+     the box. */
+  .animehub-toast-region .toast[data-frontmost="true"] {
+    --toast-height-duration: 250ms;
+    --toast-ease: var(--ease-smooth);
+    overflow: hidden;
+
+    /* Pinned to the top while the box catches up, not centred in it. */
+    & .toast__content {
+      align-self: flex-start;
+    }
+  }
+
+  .animehub-toast-region .toast[data-expanded="true"] {
+    height: auto;
+    overflow: visible;
+  }
+
   /* Toast dismiss button: always visible on the front toast with a 44px hit
      area. HeroUI only reveals its 20px button on hover, which touch screens
      never trigger. */
@@ -444,6 +620,41 @@
 
 /* == catalog & schedule == */
 @layer components {
+  /* A removable chip acts only through its ×: HeroUI styles every tag as
+     pressable, so the label drops the hand cursor and the hover fill. */
+  .tag[data-allows-removing]:not([data-selection-mode]) {
+    cursor: default;
+
+    &.tag--default:hover {
+      background-color: var(--default);
+    }
+  }
+
+  /* A selected chip in accent-soft is 1.07:1 against an unselected one; the
+     filled accent reaches 3.6:1 (WCAG 1.4.11) with white text at 4.6:1. */
+  .tag[data-selected="true"] {
+    background-color: var(--accent);
+    color: var(--accent-foreground);
+
+    &:hover {
+      background-color: var(--accent-hover);
+    }
+  }
+
+  /* HeroUI slides the drawer panel with a transition on .drawer__dialog, but
+     React Aria only holds the entering state on its parent, so the panel
+     opened in place (it only slid out). The starting style gives the panel
+     its offscreen position when it is inserted. */
+  @starting-style {
+    .drawer__content--left .drawer__dialog {
+      translate: -100% 0;
+    }
+
+    .drawer__content--right .drawer__dialog {
+      translate: 100% 0;
+    }
+  }
+
   /* Schedule parts rendered in a zone the server only guessed (first visit)
      stay invisible until hydration regroups the week in the viewer's zone, so
      the regrouping never moves visible content; so does the footer, which a
@@ -455,15 +666,54 @@
       visibility: hidden;
     }
   }
+
+  /* Tab panels align with the page edges. */
+  .tabs__panel {
+    padding: 0;
+  }
+
+  /* In a scrolling tab list an outer ring is clipped by the scroller: draw it
+     inside, over the underline. */
+  .tabs__list-container .tabs__tab[data-focus-visible="true"] {
+    box-shadow: none;
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
+
+  /* No scroll chevrons: on a narrow list they cover the cut-off tab and
+     carry hardcoded English labels. The edge shadow shows there is more, and
+     swiping, the wheel and the arrow keys scroll it. */
+  .tabs .tabs__list-container > .tabs__list-container__scroll-prev,
+  .tabs .tabs__list-container > .tabs__list-container__scroll-next {
+    display: none;
+  }
+
+  /* No slide until the user picks a tab (see the schedule board). */
+  .tabs[data-slide="false"] .tabs__indicator {
+    transition: none;
+  }
 }
 
 /* == anime & downloads == */
 @layer components {
-  /* Unchecked checkboxes need a visible edge (WCAG 1.4.11, 3:1). Selected and
-     indeterminate states keep HeroUI's filled style. */
-  .checkbox-visible .checkbox__control {
+  /* Unchecked checkboxes and radios need a visible edge (WCAG 1.4.11, 3:1).
+     Selected and indeterminate states keep HeroUI's filled style. */
+  .checkbox-visible .checkbox__control,
+  .radio__control {
     border-width: 1.5px;
     border-color: var(--faint);
+  }
+
+  /* Every drawer: the close button centred on the h3 title's line, which
+     leaves room for it, and its glyph (inside 0.25rem of padding) on the
+     content's edge (the dialog's 1.5rem padding). */
+  .drawer__close-trigger {
+    top: 1.625rem;
+    inset-inline-end: 1.25rem;
+  }
+
+  .drawer__header {
+    padding-inline-end: 2rem;
   }
 
   .checkbox-visible:hover:not([data-selected="true"]):not(
@@ -473,50 +723,140 @@
     border-color: var(--muted);
   }
 
-  /* The episode pager scrolls sideways on narrow screens instead of
-     overflowing; the padding keeps focus rings visible. */
-  .episode-pager-content {
-    max-width: 100%;
-    padding: 3px;
-    overflow-x: auto;
-    overscroll-behavior-inline: contain;
-    scrollbar-width: none;
+  /* Bottom stack above the mobile nav: pending download and page bars. */
+  .download-dock {
+    position: fixed;
+    inset-inline: 0;
+    bottom: calc(var(--bottom-nav-clearance) + 1rem);
+    z-index: 40;
+
+    & > .button {
+      box-shadow: var(--overlay-shadow);
+    }
   }
 
-  .episode-pager-content::-webkit-scrollbar {
-    display: none;
+  /* A page bar in the dock (episode selection): slides in and out. */
+  .dock-bar {
+    @apply rounded-3xl bg-overlay p-2 shadow-overlay animate-in fade-in-0 slide-in-from-bottom-2 duration-200;
+
+    &[data-exiting] {
+      @apply animate-out fade-out-0 slide-out-to-bottom-2 fill-mode-forwards;
+    }
   }
 
-  /* Indeterminate page-load bar; animates a transform only. */
-  .episode-loading-bar {
-    animation: episode-loading 1.1s ease-in-out infinite;
+  /* Episode copy menu: a ring of provider sectors around a copy button. The
+     sectors are clipped to their shape, so focus shows as a fill. */
+  .copy-ring {
+    position: fixed;
+    z-index: 60;
+    pointer-events: none;
+    filter: drop-shadow(0 10px 24px rgb(0 0 0 / 45%));
+
+    /* One disc under the pieces: the gaps between them read as seams. */
+    &::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: var(--background);
+    }
+
+    &[data-exiting] * {
+      pointer-events: none;
+    }
+
+    /* Phones: the ring covers part of the next rows' buttons. It opens over
+       the drawer's backdrop, so they don't peek out under its edge. */
+    @media (width < 40rem) {
+      filter: none;
+
+      &::after {
+        content: "";
+        position: absolute;
+        inset: -100vmax;
+        z-index: -1;
+        background: var(--backdrop);
+        pointer-events: auto;
+      }
+    }
   }
 
-  /* Related timeline: fade the edges that have more content. */
-  .related-scroller[data-fade-start] {
-    mask-image: linear-gradient(to right, transparent, black 3rem);
+  .copy-ring__sector {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: auto;
+    background: var(--default);
+    color: var(--default-foreground);
+    cursor: var(--cursor-interactive);
+    outline: none;
+    transition: background-color 150ms var(--ease-out);
+
+    &[data-hovered] {
+      background: var(--accent-soft-hover);
+    }
+
+    &[data-focus-visible],
+    &[data-pressed] {
+      background: var(--accent);
+      color: var(--accent-foreground);
+    }
+
+    &[aria-disabled] {
+      background: var(--default);
+      cursor: default;
+    }
+
+    /* No link here. */
+    &[aria-disabled] .copy-ring__mark {
+      opacity: 0.35;
+    }
+
+    /* Still looking it up: a pulsing skeleton, no mark yet. */
+    &[data-loading] .copy-ring__mark {
+      visibility: hidden;
+    }
+
+    & > .skeleton {
+      position: absolute;
+      inset: 0;
+      border-radius: 0;
+    }
   }
 
-  .related-scroller[data-fade-end] {
-    mask-image: linear-gradient(to left, transparent, black 3rem);
+  .copy-ring__mark {
+    position: absolute;
+    translate: -50% -50%;
+    display: grid;
+    place-items: center;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    white-space: nowrap;
+
+    & svg {
+      width: 1.25rem;
+      height: 1.25rem;
+    }
+
+    /* Three sectors leave the side ones too narrow for "MP4Upload". */
+    .copy-ring[data-sectors="3"] & {
+      max-width: 2.75rem;
+      line-height: 1.15;
+      text-align: center;
+      white-space: normal;
+    }
   }
 
-  .related-scroller[data-fade-start][data-fade-end] {
-    mask-image: linear-gradient(
-      to right,
-      transparent,
-      black 3rem,
-      black calc(100% - 3rem),
-      transparent
-    );
-  }
-}
+  .copy-ring__center {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    translate: -50% -50%;
+    pointer-events: auto;
 
-@keyframes episode-loading {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(300%);
+    /* Keyboard focus is on the button underneath: shown here. */
+    &.is-focus-visible {
+      @apply status-focused;
+    }
   }
 }

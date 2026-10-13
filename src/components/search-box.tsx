@@ -1,14 +1,19 @@
 "use client";
 
-import { Button, SearchField } from "@heroui/react";
-import { LoaderCircle, Search } from "lucide-react";
+import { Kbd, SearchField, Spinner, Tooltip } from "@heroui/react";
+import {
+  listboxItemVariants,
+  listboxVariants,
+  popoverVariants,
+} from "@heroui/styles";
+import { Search } from "lucide-react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   type KeyboardEvent,
   useCallback,
   useEffect,
   useId,
-  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -18,14 +23,22 @@ import { plural } from "@/lib/format";
 import { AnimeImage } from "./anime-image";
 
 /** Longest query the catalog API accepts (longer ones are rejected with 400). */
-export const SEARCH_MAX_LENGTH = 100;
+const SEARCH_MAX_LENGTH = 100;
+/** Shortest query the suggestions endpoint accepts. */
+const SUGGESTION_MIN_LENGTH = 2;
 const SUGGESTION_DEBOUNCE_MS = 220;
-// Set by the header shortcut when it has to open /buscar instead of focusing a
-// hidden field; the page's search box consumes it to take focus on arrival.
+// Set when a search box opens /buscar with a query and the page's field
+// replaces it (the header's is hidden there; the page's remounts per query):
+// the page's search box consumes it to take focus on arrival. Without a query
+// the page's field takes focus anyway.
 const FOCUS_ON_ARRIVAL_KEY = "animehub:focus-search";
+const CLEAR_LABEL = "Limpiar búsqueda";
+
+const popoverClass = popoverVariants().base();
+const listboxClass = listboxVariants();
+const optionClass = listboxItemVariants().item();
 
 type SuggestionItem = {
-  id: string;
   slug: string;
   label: string;
   meta: string;
@@ -33,8 +46,11 @@ type SuggestionItem = {
 };
 
 type SearchOption =
-  | { id: "search-query"; kind: "QUERY"; label: string }
-  | ({ kind: "ANIME" } & SuggestionItem);
+  { kind: "QUERY"; label: string } | ({ kind: "ANIME" } & SuggestionItem);
+
+const searchHref = (q: string) => `/buscar?q=${encodeURIComponent(q)}`;
+const optionHref = (option: SearchOption) =>
+  option.kind === "QUERY" ? searchHref(option.label) : `/anime/${option.slug}`;
 
 type SuggestionResult = {
   query: string;
@@ -68,7 +84,6 @@ export function findMatch(label: string, query: string) {
   return { start: starts[index], end: starts[index + needle.length] };
 }
 
-// Bolds the matched slice of a suggestion label, like the reference search.
 function Highlighted({ label, query }: { label: string; query: string }) {
   const match = findMatch(label, query);
   if (!match) return <>{label}</>;
@@ -104,16 +119,10 @@ const isModalOpen = () =>
 export function SearchBox({
   compact = false,
   initialQuery = "",
-  label = "Buscar anime",
-  describedBy,
 }: {
   /** Header variant: hidden below lg, where the header shows a search link. */
   compact?: boolean;
   initialQuery?: string;
-  /** Accessible name of the combobox. */
-  label?: string;
-  /** Id of a hint rendered by the page (e.g. minimum query length). */
-  describedBy?: string;
 }) {
   const pathname = usePathname();
   // The header instance starts empty again after every navigation; the page
@@ -122,9 +131,7 @@ export function SearchBox({
     <SearchBoxState
       key={compact ? pathname : initialQuery}
       compact={compact}
-      initialQuery={compact ? "" : initialQuery}
-      label={label}
-      describedBy={describedBy}
+      initialQuery={initialQuery}
     />
   );
 }
@@ -132,37 +139,35 @@ export function SearchBox({
 function SearchBoxState({
   compact,
   initialQuery,
-  label,
-  describedBy,
 }: {
   compact: boolean;
   initialQuery: string;
-  label: string;
-  describedBy?: string;
 }) {
   const router = useRouter();
   const listboxId = useId();
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // Set while the field takes focus on arrival (see FOCUS_ON_ARRIVAL_KEY).
+  const isArrivingRef = useRef(false);
   const [query, setQuery] = useState(initialQuery.slice(0, SEARCH_MAX_LENGTH));
   const [result, setResult] = useState<SuggestionResult | null>(null);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [activeOptionIndex, setActiveOptionIndex] = useState(-1);
+  // The arrows moved the active option last (it also shows the focus ring).
+  const [isActiveByKeyboard, setIsActiveByKeyboard] = useState(false);
+  const [isShortcutShown, setIsShortcutShown] = useState(false);
   const isApple = useSyncExternalStore(
     subscribeNever,
     isApplePlatform,
     () => false,
   );
 
-  const normalizedQuery = query.trim().slice(0, SEARCH_MAX_LENGTH);
-  const hasSuggestionQuery = normalizedQuery.length >= 2;
+  const normalizedQuery = query.trim();
+  const hasSuggestionQuery = normalizedQuery.length >= SUGGESTION_MIN_LENGTH;
   const isLoadingSuggestions =
     hasSuggestionQuery && result?.query !== normalizedQuery;
   // Previous results stay visible (dimmed) while the next query loads, so the
   // list doesn't collapse and re-expand on every keystroke.
-  const suggestions = useMemo(
-    () => (hasSuggestionQuery ? (result?.items ?? []) : []),
-    [hasSuggestionQuery, result],
-  );
+  const suggestions = hasSuggestionQuery ? (result?.items ?? []) : [];
 
   const focusInput = useCallback(() => {
     const input = searchInputRef.current;
@@ -173,7 +178,7 @@ function SearchBoxState({
     input.setSelectionRange(end, end);
   }, []);
 
-  // Ctrl/⌘ + K focuses the visible search field (the hint shown in the field).
+  // Ctrl/⌘ + K focuses the visible search field.
   useEffect(() => {
     const handleShortcut = (event: globalThis.KeyboardEvent) => {
       if (
@@ -193,11 +198,6 @@ function SearchBoxState({
       } else if (compact) {
         // The header field is hidden below lg: open the search page instead.
         event.preventDefault();
-        try {
-          sessionStorage.setItem(FOCUS_ON_ARRIVAL_KEY, "1");
-        } catch {
-          // Storage unavailable: the page opens without auto-focus.
-        }
         router.push("/buscar");
       }
     };
@@ -205,23 +205,30 @@ function SearchBoxState({
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [compact, focusInput, router]);
 
+  // The page's field takes focus on arrival: always without a query (ready to
+  // type), with one only after a search from another field. The list waits
+  // for the next keystroke either way.
   useEffect(() => {
     if (compact) return;
+    let takeFocus = !initialQuery;
     try {
       if (sessionStorage.getItem(FOCUS_ON_ARRIVAL_KEY)) {
         sessionStorage.removeItem(FOCUS_ON_ARRIVAL_KEY);
-        focusInput();
+        takeFocus = true;
       }
     } catch {
       // Storage unavailable: nothing to consume.
     }
-  }, [compact, focusInput]);
+    if (!takeFocus) return;
+    isArrivingRef.current = true;
+    focusInput();
+    isArrivingRef.current = false;
+  }, [compact, focusInput, initialQuery]);
 
   // Debounced suggestion fetch, only while the field is focused. Aborting on
   // every change means a stale response can never overwrite a fresher one.
   useEffect(() => {
-    if (!isSearchFocused || !hasSuggestionQuery) return;
-    if (result?.query === normalizedQuery) return;
+    if (!isSearchFocused || !isLoadingSuggestions) return;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => {
       apiFetch<{ data: AnimeSummary[] }>(
@@ -235,7 +242,6 @@ function SearchBoxState({
             query: normalizedQuery,
             failed: false,
             items: response.data.map((anime) => ({
-              id: anime.slug,
               slug: anime.slug,
               label: anime.title,
               meta: anime.category?.name ?? "Anime",
@@ -254,18 +260,14 @@ function SearchBoxState({
       controller.abort();
       window.clearTimeout(timeout);
     };
-  }, [hasSuggestionQuery, isSearchFocused, normalizedQuery, result?.query]);
+  }, [isLoadingSuggestions, isSearchFocused, normalizedQuery]);
 
-  const options = useMemo<SearchOption[]>(
-    () =>
-      hasSuggestionQuery
-        ? [
-            { id: "search-query", kind: "QUERY", label: normalizedQuery },
-            ...suggestions.map((item) => ({ kind: "ANIME" as const, ...item })),
-          ]
-        : [],
-    [hasSuggestionQuery, normalizedQuery, suggestions],
-  );
+  const options: SearchOption[] = normalizedQuery
+    ? [
+        { kind: "QUERY", label: normalizedQuery },
+        ...suggestions.map((item) => ({ kind: "ANIME" as const, ...item })),
+      ]
+    : [];
 
   const isSuggestionsOpen = isSearchFocused && options.length > 0;
   const activeOptionId =
@@ -281,49 +283,43 @@ function SearchBoxState({
         ?.scrollIntoView({ block: "nearest" });
   }, [activeOptionId]);
 
-  const closeSuggestions = useCallback(() => {
+  const closeSuggestions = () => {
     setIsSearchFocused(false);
     setActiveOptionIndex(-1);
-  }, []);
-
-  const submitSearch = useCallback(
-    (value?: string) => {
-      const q = (value ?? query).trim().slice(0, SEARCH_MAX_LENGTH);
-      closeSuggestions();
-      if (q) router.push(`/buscar?q=${encodeURIComponent(q)}`);
-      else if (compact) router.push("/buscar");
-      else focusInput();
-    },
-    [closeSuggestions, compact, focusInput, query, router],
-  );
-
-  const openOption = useCallback(
-    (option: SearchOption) => {
-      if (option.kind === "QUERY") {
-        submitSearch(option.label);
-        return;
-      }
-      closeSuggestions();
-      router.push(`/anime/${option.slug}`);
-    },
-    [closeSuggestions, router, submitSearch],
-  );
+  };
 
   // Enter is handled by SearchField's onSubmit (React Aria runs it before any
   // input onKeyDown), so this is the single place that decides what Enter does.
   const handleSubmit = () => {
-    if (isSuggestionsOpen && activeOptionIndex >= 0)
-      openOption(options[activeOptionIndex]);
-    else submitSearch();
+    closeSuggestions();
+    const option =
+      isSuggestionsOpen && activeOptionIndex >= 0
+        ? options[activeOptionIndex]
+        : undefined;
+    if (option?.kind === "ANIME") router.push(optionHref(option));
+    else if (normalizedQuery) {
+      // The page's field replaces this one, unless the query is unchanged
+      // (compared as /buscar normalizes it): it takes the focus over.
+      if (compact || normalizedQuery.replace(/\s+/g, " ") !== initialQuery) {
+        try {
+          sessionStorage.setItem(FOCUS_ON_ARRIVAL_KEY, "1");
+        } catch {
+          // Storage unavailable: the page opens without auto-focus.
+        }
+      }
+      router.push(searchHref(normalizedQuery));
+    } else if (compact) router.push("/buscar");
+    else focusInput();
   };
 
   const handleInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     if (!isSuggestionsOpen) {
-      if (hasSuggestionQuery) setIsSearchFocused(true);
+      if (normalizedQuery) setIsSearchFocused(true);
       return;
     }
     event.preventDefault();
+    setIsActiveByKeyboard(true);
     setActiveOptionIndex((current) =>
       event.key === "ArrowDown"
         ? current < options.length - 1
@@ -345,45 +341,56 @@ function SearchBoxState({
     closeSuggestions();
   };
 
-  const status = isLoadingSuggestions
-    ? "Buscando sugerencias…"
-    : result?.failed
-      ? "No se pudieron cargar las sugerencias."
-      : suggestions.length === 0
-        ? `Sin sugerencias para «${normalizedQuery}». Pulsa Enter para buscar.`
-        : null;
+  const failed = hasSuggestionQuery && !isLoadingSuggestions && result?.failed;
   const announcement = isLoadingSuggestions
     ? ""
-    : (status ?? plural(suggestions.length, "sugerencia", "sugerencias"));
+    : failed
+      ? "No se pudieron cargar las sugerencias."
+      : plural(suggestions.length, "sugerencia", "sugerencias");
 
   return (
     <div
-      className={
-        compact ? "min-w-0 max-w-xl flex-1 max-lg:hidden" : "w-full max-w-2xl"
-      }
+      className={`relative min-w-0 ${compact ? "max-w-xl flex-1 max-lg:hidden" : "w-full max-w-2xl"}`}
+      onKeyDownCapture={handleKeyDownCapture}
     >
-      <div className="relative min-w-0 flex-1">
-        <div
-          // Same solid 2px focus ring as every other control (≥3:1).
-          className="flex w-full overflow-visible rounded-xl border border-white/10 bg-surface transition-[background-color,box-shadow] duration-200 focus-within:border-transparent focus-within:bg-surface-secondary focus-within:ring-2 focus-within:ring-focus"
-          onKeyDownCapture={handleKeyDownCapture}
-        >
+      {/* The shortcut is an accelerator: it shows on hover, never while the
+          field is in use. The trigger only detects the hover: the field
+          inside is the control, so it is neither a button nor a tab stop.
+          The trigger's focus handlers reach the input too (keyboard focus
+          would open it), hence the check on every open. */}
+      <Tooltip
+        delay={300}
+        isOpen={isShortcutShown}
+        onOpenChange={(open) =>
+          setIsShortcutShown(
+            open && document.activeElement !== searchInputRef.current,
+          )
+        }
+      >
+        <Tooltip.Trigger className="block w-full" role="none" tabIndex={-1}>
           <SearchField
-            aria-label={label}
-            className="w-full min-w-0 flex-1"
+            aria-label="Buscar anime"
+            fullWidth
             value={query}
-            onBlur={() => {
-              window.setTimeout(closeSuggestions, 80);
-            }}
+            onBlur={() => window.setTimeout(closeSuggestions, 80)}
             onChange={(value) => {
               setQuery(value.slice(0, SEARCH_MAX_LENGTH));
               setIsSearchFocused(true);
               setActiveOptionIndex(-1);
             }}
-            onFocus={() => setIsSearchFocused(true)}
+            onFocus={() => {
+              if (!isArrivingRef.current) setIsSearchFocused(true);
+            }}
             onSubmit={handleSubmit}
           >
-            <SearchField.Group className="h-11 w-full rounded-xl border-0 bg-transparent shadow-none focus-within:ring-0 data-[focus-within=true]:ring-0">
+            <SearchField.Group>
+              <SearchField.SearchIcon>
+                {isLoadingSuggestions && isSuggestionsOpen ? (
+                  <Spinner size="sm" color="current" aria-hidden="true" />
+                ) : (
+                  <Search aria-hidden="true" />
+                )}
+              </SearchField.SearchIcon>
               <SearchField.Input
                 ref={searchInputRef}
                 role="combobox"
@@ -391,141 +398,119 @@ function SearchBoxState({
                 aria-expanded={isSuggestionsOpen}
                 aria-controls={isSuggestionsOpen ? listboxId : undefined}
                 aria-activedescendant={activeOptionId}
-                aria-describedby={describedBy}
                 autoComplete="off"
                 autoCapitalize="none"
                 autoCorrect="off"
                 enterKeyHint="search"
                 maxLength={SEARCH_MAX_LENGTH}
                 spellCheck={false}
-                placeholder="Buscar anime"
-                // 16px on touch screens and narrow windows: iOS zooms into
-                // inputs whose text is smaller than that.
-                className="min-w-0 flex-1 px-4 py-0 text-base text-foreground placeholder:text-faint lg:pointer-fine:text-sm"
+                placeholder="Buscar anime…"
                 onKeyDown={handleInputKeyDown}
               />
-              {!query && !isSearchFocused && (
-                <kbd
-                  aria-hidden="true"
-                  className="pointer-events-none mr-1.5 hidden shrink-0 select-none items-center gap-1 rounded-md border border-white/10 bg-surface-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted md:pointer-fine:flex"
-                >
-                  <span>{isApple ? "⌘" : "Ctrl"}</span>
-                  <span>K</span>
-                </kbd>
-              )}
-              <SearchField.ClearButton
-                aria-label="Limpiar búsqueda"
-                className="me-1 size-9 text-muted hover:text-foreground pointer-coarse:size-11 [&_[data-slot=close-button-icon]]:size-3.5"
-              />
-              <Button
-                aria-label="Buscar"
-                isIconOnly
-                size="sm"
-                variant="tertiary"
-                className="h-full min-w-11 rounded-none rounded-r-xl border-l border-white/10 px-0 text-muted shadow-none hover:bg-accent-soft hover:text-foreground"
-                onPress={() => submitSearch()}
-              >
-                <Search aria-hidden="true" className="size-4" />
-              </Button>
+              <Tooltip delay={300}>
+                <SearchField.ClearButton aria-label={CLEAR_LABEL} />
+                <Tooltip.Content>{CLEAR_LABEL}</Tooltip.Content>
+              </Tooltip>
             </SearchField.Group>
           </SearchField>
+        </Tooltip.Trigger>
+        <Tooltip.Content>
+          {/* Light: the tooltip is the only box. */}
+          <Kbd variant="light">
+            {isApple ? (
+              <Kbd.Abbr keyValue="command" />
+            ) : (
+              <Kbd.Content>Ctrl</Kbd.Content>
+            )}
+            <Kbd.Content>K</Kbd.Content>
+          </Kbd>
+        </Tooltip.Content>
+      </Tooltip>
 
-          {isSuggestionsOpen ? (
-            <div
-              className="search-suggestions absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden rounded-xl border border-white/10 bg-surface shadow-[0_22px_70px_rgba(0,0,0,.5)]"
-              onMouseDown={(event) => event.preventDefault()}
-            >
-              <div
-                aria-label="Sugerencias de búsqueda"
-                aria-busy={isLoadingSuggestions}
-                className="max-h-[min(70dvh,26rem)] overflow-y-auto overscroll-contain p-1.5"
-                id={listboxId}
-                role="listbox"
+      {isSuggestionsOpen ? (
+        <div
+          className={`${popoverClass} absolute inset-x-0 top-full z-50 mt-2 overflow-hidden`}
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          <div
+            aria-label="Sugerencias de búsqueda"
+            aria-busy={isLoadingSuggestions}
+            className={`${listboxClass} search-suggestions max-h-96 overflow-y-auto overscroll-contain`}
+            id={listboxId}
+            role="listbox"
+          >
+            {options.map((option, index) => (
+              <Link
+                aria-selected={index === activeOptionIndex}
+                data-focus-visible={
+                  (index === activeOptionIndex && isActiveByKeyboard) ||
+                  undefined
+                }
+                className={`${optionClass} ${option.kind === "ANIME" && isLoadingSuggestions ? "opacity-50" : ""}`}
+                href={optionHref(option)}
+                id={`${listboxId}-option-${index}`}
+                key={option.kind === "QUERY" ? "query" : option.slug}
+                prefetch={false}
+                role="option"
+                tabIndex={-1}
+                onClick={closeSuggestions}
+                // One active option: the pointer moves it like the arrows do.
+                // Moves only, so the list opening under a resting pointer
+                // or scrolling under it never takes it.
+                onPointerMove={(event) => {
+                  if (event.pointerType === "touch") return;
+                  setIsActiveByKeyboard(false);
+                  setActiveOptionIndex(index);
+                }}
               >
-                {options.map((option, index) => {
-                  const isActive = index === activeOptionIndex;
-                  const optionId = `${listboxId}-option-${index}`;
-                  if (option.kind === "QUERY") {
-                    return (
-                      <button
-                        aria-selected={isActive}
-                        className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left text-sm text-subtle outline-none transition-colors hover:bg-surface-hover aria-selected:bg-surface-hover"
-                        id={optionId}
-                        key={option.id}
-                        role="option"
-                        tabIndex={-1}
-                        type="button"
-                        onClick={() => openOption(option)}
-                        onMouseEnter={() => setActiveOptionIndex(index)}
-                      >
-                        <span className="grid size-9 shrink-0 place-items-center rounded-md bg-surface-secondary text-link">
-                          <Search aria-hidden="true" className="size-4" />
-                        </span>
-                        <span className="min-w-0 truncate">
-                          Buscar{" "}
-                          <span className="font-semibold text-foreground">
-                            «{option.label}»
-                          </span>
-                        </span>
-                      </button>
-                    );
-                  }
-                  return (
-                    <button
-                      aria-selected={isActive}
-                      className={`flex w-full min-w-0 items-center gap-3 rounded-lg px-2.5 py-2 text-left outline-none transition-[background-color,opacity] hover:bg-surface-hover aria-selected:bg-surface-hover ${isLoadingSuggestions ? "opacity-55" : ""}`}
-                      id={optionId}
-                      key={option.id}
-                      role="option"
-                      tabIndex={-1}
-                      type="button"
-                      onClick={() => openOption(option)}
-                      onMouseEnter={() => setActiveOptionIndex(index)}
-                    >
-                      <span className="relative block h-12 w-9 shrink-0 overflow-hidden rounded-md bg-surface">
-                        <AnimeImage
-                          src={option.posterUrl}
-                          alt=""
-                          sizes="36px"
+                {option.kind === "QUERY" ? (
+                  <>
+                    {/* In the posters' column, so the text lines up
+                        with the titles. */}
+                    <span className="flex w-9 shrink-0 justify-center">
+                      <Search
+                        aria-hidden="true"
+                        className="size-4 text-muted"
+                      />
+                    </span>
+                    <span className="min-w-0 truncate text-muted">
+                      Buscar{" "}
+                      <span className="font-semibold text-foreground">
+                        «{option.label}»
+                      </span>
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="relative block h-12 w-9 shrink-0 overflow-hidden rounded-md">
+                      <AnimeImage src={option.posterUrl} alt="" sizes="36px" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm text-subtle">
+                        <Highlighted
+                          label={option.label}
+                          query={normalizedQuery}
                         />
                       </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm text-foreground">
-                          <Highlighted
-                            label={option.label}
-                            query={normalizedQuery}
-                          />
-                        </span>
-                        <span className="block truncate text-xs text-muted">
-                          {option.meta}
-                        </span>
+                      <span className="block truncate text-xs text-muted">
+                        {option.meta}
                       </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {/* Outside the listbox (which may only hold options) and outside
-                  the scroll area, so it stays visible however far the list is
-                  scrolled. Screen readers get the summary from the live region
-                  below instead of every intermediate "searching" state. */}
-              {status ? (
-                <div
-                  aria-hidden="true"
-                  className="flex items-center gap-2 border-t border-white/8 px-4 py-2.5 text-xs text-muted"
-                >
-                  {isLoadingSuggestions ? (
-                    <LoaderCircle className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none" />
-                  ) : null}
-                  <span className="min-w-0 truncate">{status}</span>
-                </div>
-              ) : null}
-              <div role="status" className="sr-only">
-                {announcement}
-              </div>
-            </div>
+                    </span>
+                  </>
+                )}
+              </Link>
+            ))}
+          </div>
+          {failed ? (
+            <p aria-hidden="true" className="px-4 pb-3 text-xs text-muted">
+              No se pudieron cargar las sugerencias.
+            </p>
           ) : null}
+          <div role="status" className="sr-only">
+            {announcement}
+          </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }

@@ -1,61 +1,35 @@
 "use client";
 
 import {
+  Alert,
   Button,
   Checkbox,
+  CheckboxGroup,
+  Description,
   InputGroup,
   Label,
+  Radio,
+  RadioGroup,
+  Skeleton,
+  Spinner,
+  TextArea,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
 } from "@heroui/react";
 import { Check, ClipboardCopy, RefreshCw, Send } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
-import { copyLinks, providerLabels } from "./download-client";
-import type {
-  DownloadDestination,
-  DownloadPreferences,
-  DownloadProviderId,
+import { EmptyState } from "../empty-state";
+import { copyLinks } from "./download-client";
+import {
+  providerLabels,
+  type AudioPreference,
+  type DownloadDestination,
+  type DownloadPreferences,
+  type DownloadProviderId,
 } from "./download-types";
 
 export interface MyJdDevice {
   id: string;
   name: string;
-}
-
-// Text actions are pills across the app; fields, list rows and icon
-// squares keep rounded-xl.
-const panelButton =
-  "min-h-11 rounded-full px-4 font-semibold shadow-none outline-none focus-visible:ring-2 focus-visible:ring-focus";
-
-/** "Vas a enviar: One Piece · Ep. 5" — the drawer says what it acts on
- *  ("Enlaces de: …" when it only lists them). */
-export function DrawerSummary({
-  label,
-  summary,
-}: {
-  label: string;
-  summary: string | null;
-}) {
-  if (!summary) return null;
-  return (
-    <p className="rounded-xl bg-surface px-4 py-3 text-sm text-subtle">
-      <span className="text-muted">{label}: </span>
-      <strong className="font-semibold text-foreground">{summary}</strong>
-    </p>
-  );
-}
-
-function ErrorNote({ message }: { message: string | null }) {
-  if (!message) return null;
-  return (
-    <div
-      className="rounded-xl border border-danger/25 bg-danger-soft px-4 py-3 text-sm leading-5 text-danger-soft-foreground"
-      role="alert"
-    >
-      {message}
-    </div>
-  );
 }
 
 export function MyJdPanel({
@@ -90,105 +64,96 @@ export function MyJdPanel({
   onCopyInstead: () => void;
   onUseClickNLoad: () => void;
 }) {
+  // On a computer the device is picked per download; from Preferences the
+  // list only shows what the account has. Phones remember the one picked.
+  const pickable = hasTarget || portable;
   return (
-    <div className="flex flex-col gap-4">
-      <ErrorNote message={deviceError} />
+    <div className="flex flex-col gap-6">
+      {deviceError && (
+        <Alert status="danger">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{deviceError}</Alert.Title>
+          </Alert.Content>
+        </Alert>
+      )}
       {connected ? (
-        <>
+        <div className="flex flex-col gap-4">
           {devicesLoading ? (
-            <div
-              className="flex min-h-24 items-center justify-center gap-2 text-sm text-muted"
-              role="status"
-            >
-              <RefreshCw className="size-4 animate-spin" aria-hidden="true" />
-              Buscando dispositivos…
+            <div className="flex flex-col gap-2" aria-busy="true">
+              <Skeleton className="h-10 rounded-3xl" />
+              <Skeleton className="h-10 rounded-3xl" />
             </div>
-          ) : devices.length > 0 ? (
-            <>
-              <p className="text-sm leading-5 text-muted">
-                {hasTarget
-                  ? "Elige el JDownloader al que enviar los enlaces."
-                  : portable
-                    ? "El dispositivo elegido se recordará durante esta sesión."
-                    : "Al descargar podrás elegir el dispositivo de destino."}
-              </p>
-              <ul className="flex flex-col gap-2">
-                {devices.map((device) => (
-                  <li key={device.id}>
-                    <Button
-                      variant="secondary"
-                      className="min-h-12 w-full justify-between gap-3 rounded-xl bg-surface px-4 text-foreground shadow-none outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-focus"
-                      onPress={() => onSelectDevice(device.id)}
-                      isDisabled={deliveryPending || (!hasTarget && !portable)}
-                    >
-                      <span className="min-w-0 truncate">{device.name}</span>
-                      <Send size={16} aria-hidden="true" className="shrink-0" />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </>
+          ) : devices.length === 0 ? (
+            <EmptyState
+              title="No hay dispositivos conectados"
+              description="Abre JDownloader en el equipo de destino con esta cuenta de MyJDownloader."
+            />
+          ) : pickable ? (
+            <ul className="flex flex-col gap-2" aria-label="Dispositivos">
+              {devices.map((device) => (
+                <li key={device.id}>
+                  <Button
+                    fullWidth
+                    variant="secondary"
+                    className="justify-between"
+                    onPress={() => onSelectDevice(device.id)}
+                    isDisabled={deliveryPending}
+                  >
+                    <span className="min-w-0 truncate">{device.name}</span>
+                    <Send aria-hidden="true" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
           ) : (
-            <div className="rounded-xl bg-surface p-4">
-              <strong className="text-sm text-foreground">
-                No hay dispositivos conectados
-              </strong>
-              <p className="mt-1 text-xs leading-5 text-muted">
-                Abre JDownloader en el equipo de destino, comprueba que use esta
-                cuenta de MyJDownloader y vuelve a buscar.
-              </p>
-            </div>
+            <ul
+              className="flex flex-col gap-2 text-sm"
+              aria-label="Dispositivos"
+            >
+              {devices.map((device) => (
+                <li key={device.id} className="truncate">
+                  {device.name}
+                </li>
+              ))}
+            </ul>
           )}
           <div className="flex flex-wrap gap-2">
             <Button
               variant="secondary"
-              className={`${panelButton} bg-default text-foreground hover:bg-default-hover`}
               onPress={onRefresh}
               isPending={devicesLoading}
             >
-              <RefreshCw size={15} aria-hidden="true" /> Actualizar
+              <RefreshCw aria-hidden="true" />
+              Actualizar
             </Button>
-            <Button
-              variant="ghost"
-              className={`${panelButton} text-muted hover:text-foreground`}
-              onPress={onReset}
-            >
+            <Button variant="ghost" onPress={onReset}>
               Usar otra cuenta
             </Button>
           </div>
-        </>
+        </div>
       ) : (
         <MyJdLoginForm connecting={connecting} onConnect={onConnect} />
       )}
       {hasTarget && (
-        <div className="mt-2 border-t border-white/8 pt-4">
-          <p className="text-sm font-semibold text-foreground">
-            ¿Prefieres otra opción?
-          </p>
-          <p className="mt-1 text-xs leading-5 text-muted">
-            Copia los enlaces y pégalos en tu gestor de descargas
-            {portable ? "." : ", o envíalos al JDownloader de este equipo."}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            onPress={onCopyInstead}
+            isDisabled={deliveryPending}
+          >
+            <ClipboardCopy aria-hidden="true" />
+            Copiar enlaces
+          </Button>
+          {!portable && (
             <Button
               variant="secondary"
-              className={`${panelButton} bg-default text-foreground hover:bg-default-hover`}
-              onPress={onCopyInstead}
+              onPress={onUseClickNLoad}
               isDisabled={deliveryPending}
             >
-              <ClipboardCopy size={15} aria-hidden="true" /> Copiar enlaces
+              Usar Click&apos;n&apos;Load
             </Button>
-            {!portable && (
-              <Button
-                variant="secondary"
-                className={`${panelButton} bg-default text-foreground hover:bg-default-hover`}
-                onPress={onUseClickNLoad}
-                isDisabled={deliveryPending}
-              >
-                Usar Click&apos;n&apos;Load
-              </Button>
-            )}
-          </div>
+          )}
         </div>
       )}
     </div>
@@ -215,12 +180,9 @@ function MyJdLoginForm({
 
   return (
     <form className="flex flex-col gap-4" onSubmit={submit}>
-      <p className="text-sm leading-5 text-muted">
-        Conecta tu cuenta de MyJDownloader para enviar los enlaces a cualquier
-        JDownloader vinculado. La contraseña no se guarda.
-      </p>
       <TextField
         type="email"
+        name="email"
         value={email}
         onChange={setEmail}
         variant="secondary"
@@ -229,11 +191,12 @@ function MyJdLoginForm({
       >
         <Label>Correo</Label>
         <InputGroup>
-          <InputGroup.Input autoComplete="username" />
+          <InputGroup.Input autoComplete="username" spellCheck={false} />
         </InputGroup>
       </TextField>
       <TextField
         type="password"
+        name="password"
         value={password}
         onChange={setPassword}
         variant="secondary"
@@ -244,20 +207,23 @@ function MyJdLoginForm({
         <InputGroup>
           <InputGroup.Input autoComplete="current-password" />
         </InputGroup>
+        <Description>No se guarda en AnimeHub.</Description>
       </TextField>
-      <Button
-        type="submit"
-        isPending={connecting}
-        className={`${panelButton} bg-accent text-accent-foreground hover:bg-accent-hover`}
-      >
-        {connecting ? "Conectando…" : "Conectar"}
+      <Button type="submit" fullWidth isPending={connecting}>
+        {({ isPending }) => (
+          <>
+            {isPending && (
+              <Spinner color="current" size="sm" aria-hidden="true" />
+            )}
+            {isPending ? "Conectando…" : "Conectar"}
+          </>
+        )}
       </Button>
     </form>
   );
 }
 
-/** Manual-copy fallback: the links in a selectable textarea, for browsers
- *  that block the clipboard. */
+/** Manual-copy fallback for browsers that block the clipboard. */
 export function LinksPanel({
   urls,
   onCopied,
@@ -280,59 +246,69 @@ export function LinksPanel({
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm leading-5 text-muted">
-        Un enlace por línea. Pégalos en JDownloader (LinkGrabber) o en tu gestor
-        de descargas.
-      </p>
-      <label className="flex flex-col gap-2">
-        <span className="text-xs font-semibold text-subtle">Enlaces</span>
-        <textarea
+      {copied === "blocked" && (
+        <Alert status="warning">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>El navegador bloqueó el portapapeles</Alert.Title>
+            <Alert.Description>
+              Los enlaces están seleccionados: cópialos con Ctrl+C (⌘C) o mantén
+              pulsado el texto.
+            </Alert.Description>
+          </Alert.Content>
+        </Alert>
+      )}
+      <TextField isReadOnly value={urls.join("\n")} variant="secondary">
+        <Label>Enlaces</Label>
+        <TextArea
           ref={areaRef}
-          readOnly
-          value={urls.join("\n")}
           rows={Math.min(10, Math.max(4, urls.length))}
           onFocus={(event) => event.currentTarget.select()}
-          className="min-h-28 w-full resize-y rounded-xl border border-white/10 bg-field p-3 font-mono text-xs leading-5 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          className="font-mono"
         />
-      </label>
-      <Button
-        className={`${panelButton} bg-accent text-accent-foreground hover:bg-accent-hover`}
-        onPress={() => void copy()}
-      >
+      </TextField>
+      <Button fullWidth onPress={() => void copy()}>
         {copied === "done" ? (
           <>
-            <Check size={15} aria-hidden="true" /> Copiados
+            <Check aria-hidden="true" />
+            Copiados
           </>
         ) : (
           <>
-            <ClipboardCopy size={15} aria-hidden="true" /> Copiar enlaces
+            <ClipboardCopy aria-hidden="true" />
+            Copiar enlaces
           </>
         )}
       </Button>
-      <p className="text-xs leading-5 text-muted" role="status">
-        {copied === "blocked"
-          ? "El navegador bloqueó el portapapeles. Los enlaces están seleccionados: cópialos con Ctrl+C (⌘C) o mantén pulsado el texto."
-          : copied === "done"
-            ? "Enlaces copiados al portapapeles."
-            : ""}
+      <p className="sr-only" role="status">
+        {copied === "done" ? "Enlaces copiados al portapapeles." : ""}
       </p>
     </div>
   );
 }
 
-const destinationHelp: Record<DownloadDestination, string> = {
-  CNL: "Envía los enlaces al JDownloader de este equipo. Necesita JDownloader abierto con Click'n'Load activo (puerto 9666).",
-  MYJD: "Envía los enlaces a un JDownloader de tu cuenta de MyJDownloader, esté donde esté.",
-  COPY: "Copia los enlaces al portapapeles para pegarlos donde quieras. Funciona en cualquier dispositivo.",
-};
-
-const toggleClass =
-  "min-h-11 w-full rounded-lg px-3 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-focus data-[selected=true]:bg-accent-soft data-[selected=true]:text-accent-soft-foreground data-[selected=true]:shadow-[inset_0_0_0_1px_var(--brand)]";
+// Both JDownloader options send to a JDownloader: where tells them apart.
+const destinationOptions: Array<{
+  id: DownloadDestination;
+  label: string;
+  description?: string;
+}> = [
+  {
+    id: "CNL",
+    label: "Click'n'Load",
+    description: "Al JDownloader de este equipo.",
+  },
+  {
+    id: "MYJD",
+    label: "MyJDownloader",
+    description: "A cualquier JDownloader de tu cuenta.",
+  },
+  { id: "COPY", label: "Copiar enlaces" },
+];
 
 export function PreferencesPanel({
   preferences,
   savePreferences,
-  toggleProvider,
   portable,
   effectiveDestination,
   selectedDeviceName,
@@ -341,7 +317,6 @@ export function PreferencesPanel({
 }: {
   preferences: DownloadPreferences;
   savePreferences: (next: DownloadPreferences) => void;
-  toggleProvider: (provider: DownloadProviderId) => void;
   portable: boolean;
   effectiveDestination: DownloadDestination;
   selectedDeviceName: string | null;
@@ -349,133 +324,118 @@ export function PreferencesPanel({
   myJdConnected: boolean;
   openDeviceSettings: () => void;
 }) {
-  const destinations: DownloadDestination[] = portable
-    ? ["MYJD", "COPY"]
-    : ["CNL", "MYJD", "COPY"];
-  const destinationLabels: Record<DownloadDestination, string> = {
-    CNL: "Click'n'Load",
-    MYJD: "MyJDownloader",
-    COPY: "Copiar enlaces",
-  };
   return (
     <div className="flex flex-col gap-6">
-      <fieldset className="border-b border-white/8 pb-5">
-        <legend className="mb-3 text-sm font-semibold text-foreground">
-          Audio preferido
-        </legend>
-        <ToggleButtonGroup
-          aria-label="Audio preferido"
-          selectionMode="single"
-          disallowEmptySelection
-          selectedKeys={new Set([preferences.audio])}
-          onSelectionChange={(keys) => {
-            const audio = Array.from(keys)[0] as "SUB" | "DUB" | undefined;
-            if (audio) savePreferences({ ...preferences, audio });
-          }}
-          className="grid w-full grid-cols-2 gap-2"
-        >
-          <ToggleButton id="SUB" className={toggleClass}>
-            Subtitulado (SUB)
-          </ToggleButton>
-          <ToggleButton id="DUB" className={toggleClass}>
-            Doblado (DUB)
-          </ToggleButton>
-        </ToggleButtonGroup>
-        <p className="mt-2 text-xs leading-5 text-muted">
-          Si un episodio no está disponible así, se usará el otro audio.
-        </p>
-      </fieldset>
-      <fieldset className="border-b border-white/8 pb-5">
-        <legend className="mb-1 text-sm font-semibold text-foreground">
-          Proveedores
-        </legend>
-        <p className="mb-2 text-xs leading-5 text-muted">
-          Se envían todos los espejos disponibles de los proveedores marcados.
-        </p>
-        <div className="grid grid-cols-2 gap-x-3">
-          {(Object.keys(providerLabels) as DownloadProviderId[]).map(
-            (provider) => (
-              <Checkbox
-                key={provider}
-                isSelected={preferences.providers.includes(provider)}
-                onChange={() => toggleProvider(provider)}
-                className="checkbox-visible min-h-11 justify-center text-sm text-subtle"
-              >
-                <Checkbox.Content className="gap-2.5">
-                  <Checkbox.Control>
-                    <Checkbox.Indicator />
-                  </Checkbox.Control>
-                  {providerLabels[provider]}
-                </Checkbox.Content>
-              </Checkbox>
-            ),
-          )}
-        </div>
-      </fieldset>
-      <fieldset className="pb-1">
-        <legend className="mb-3 text-sm font-semibold text-foreground">
-          Destino
-        </legend>
-        <ToggleButtonGroup
-          aria-label="Destino de los enlaces"
-          selectionMode="single"
-          disallowEmptySelection
-          selectedKeys={new Set([effectiveDestination])}
-          onSelectionChange={(keys) => {
-            const destination = Array.from(keys)[0] as
-              DownloadDestination | undefined;
-            if (destination) savePreferences({ ...preferences, destination });
-          }}
-          className={`grid w-full gap-2 ${portable ? "grid-cols-2" : "grid-cols-3 max-[26rem]:grid-cols-1"}`}
-        >
-          {destinations.map((destination) => (
-            <ToggleButton
-              key={destination}
-              id={destination}
-              className={toggleClass}
+      <RadioGroup
+        variant="secondary"
+        value={preferences.audio}
+        onChange={(audio) =>
+          savePreferences({ ...preferences, audio: audio as AudioPreference })
+        }
+      >
+        <Label>Audio preferido</Label>
+        <OptionRadio value="SUB" label="Subtitulado (SUB)" />
+        <OptionRadio value="DUB" label="Doblado (DUB)" />
+      </RadioGroup>
+      <CheckboxGroup
+        variant="secondary"
+        value={preferences.providers}
+        onChange={(providers) =>
+          savePreferences({
+            ...preferences,
+            providers: providers as DownloadProviderId[],
+          })
+        }
+      >
+        <Label>Proveedores</Label>
+        <div className="grid grid-cols-2 gap-x-4">
+          {Object.entries(providerLabels).map(([provider, label]) => (
+            <Checkbox
+              key={provider}
+              value={provider}
+              // At least one provider stays marked.
+              isDisabled={
+                preferences.providers.length === 1 &&
+                preferences.providers[0] === provider
+              }
+              className="checkbox-visible"
             >
-              {destinationLabels[destination]}
-            </ToggleButton>
+              <Checkbox.Content>
+                <Checkbox.Control>
+                  <Checkbox.Indicator />
+                </Checkbox.Control>
+                {label}
+              </Checkbox.Content>
+            </Checkbox>
           ))}
-        </ToggleButtonGroup>
-        <p className="mt-2 text-xs leading-5 text-muted">
-          {destinationHelp[effectiveDestination]}
-        </p>
+        </div>
+      </CheckboxGroup>
+      <div className="flex flex-col gap-4">
+        <RadioGroup
+          variant="secondary"
+          value={effectiveDestination}
+          onChange={(destination) =>
+            savePreferences({
+              ...preferences,
+              destination: destination as DownloadDestination,
+            })
+          }
+        >
+          <Label>Destino</Label>
+          {destinationOptions
+            .filter((option) => !(portable && option.id === "CNL"))
+            .map((option) => (
+              <OptionRadio key={option.id} value={option.id} {...option} />
+            ))}
+        </RadioGroup>
         {effectiveDestination === "MYJD" && (
-          // Phones remember one device; on a computer the device is picked
-          // per download, so this row is about the account.
-          <div className="mt-3 flex min-h-14 items-center gap-3 rounded-xl bg-surface px-4 py-2.5">
-            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-surface-tertiary text-link">
-              <Send size={16} aria-hidden="true" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <strong className="block text-sm text-foreground">
+          <div className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-foreground">
                 {portable ? "Dispositivo" : "Cuenta de MyJDownloader"}
-              </strong>
-              <span className="block truncate text-xs text-muted">
+              </p>
+              <p className="truncate text-xs text-muted">
                 {portable
-                  ? (selectedDeviceName ?? "Sin dispositivo elegido")
+                  ? (selectedDeviceName ?? "Sin elegir")
                   : myJdConnected
-                    ? "Conectada: eliges el equipo al descargar"
+                    ? "Conectada"
                     : "Sin conectar"}
-              </span>
-            </span>
-            <Button
-              variant="ghost"
-              className="min-h-11 shrink-0 rounded-full px-3 text-xs font-semibold text-link outline-none focus-visible:ring-2 focus-visible:ring-focus"
-              onPress={openDeviceSettings}
-            >
+              </p>
+            </div>
+            <Button size="sm" variant="secondary" onPress={openDeviceSettings}>
               {portable
                 ? selectedDeviceName
                   ? "Cambiar"
-                  : "Configurar"
+                  : "Elegir"
                 : myJdConnected
                   ? "Ver dispositivos"
                   : "Conectar"}
             </Button>
           </div>
         )}
-      </fieldset>
+      </div>
     </div>
+  );
+}
+
+function OptionRadio({
+  value,
+  label,
+  description,
+}: {
+  value: string;
+  label: string;
+  description?: string;
+}) {
+  return (
+    <Radio value={value}>
+      <Radio.Content>
+        <Radio.Control>
+          <Radio.Indicator />
+        </Radio.Control>
+        {label}
+      </Radio.Content>
+      {description && <Description>{description}</Description>}
+    </Radio>
   );
 }

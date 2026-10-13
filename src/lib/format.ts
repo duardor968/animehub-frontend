@@ -1,44 +1,47 @@
-const numberFormatter = new Intl.NumberFormat("es", {
-  // Spanish CLDR data skips grouping for 4-digit numbers ("1180"); the UI
-  // always groups thousands ("1.180") so counts read the same at any size.
-  useGrouping: "always",
+// Spanish formats from Intl: four-digit numbers are not grouped ("1180"),
+// larger ones are ("59.112").
+const numberFormatter = new Intl.NumberFormat("es");
+const episodeFormatter = new Intl.NumberFormat("es", { useGrouping: false });
+const relativeFormatter = new Intl.RelativeTimeFormat("es", {
+  numeric: "auto",
+  style: "short",
 });
 
-/** Formats an integer with Spanish thousands separators: 1180 → "1.180". */
 export function formatNumber(value: number) {
   return numberFormatter.format(value);
 }
 
+/** An episode number identifies it, so it is never grouped: "1151", "12,5". */
+export function formatEpisodeNumber(value: number) {
+  return episodeFormatter.format(value);
+}
+
 /**
  * Returns the count followed by the right noun form:
- * plural(1, "episodio", "episodios") → "1 episodio";
- * plural(1180, "episodio", "episodios") → "1.180 episodios".
+ * plural(1, "episodio", "episodios") → "1 episodio".
  */
 export function plural(count: number, singular: string, pluralForm: string) {
   return `${formatNumber(count)} ${count === 1 ? singular : pluralForm}`;
 }
 
-export function formatRelativeTime(value?: string | null) {
-  if (!value) return "Publicado recientemente";
-  const timestamp = new Date(value).getTime();
-  if (Number.isNaN(timestamp)) return "Publicado recientemente";
-  const elapsed = Math.max(0, Date.now() - timestamp);
-  const minutes = Math.floor(elapsed / 60_000);
-  if (minutes < 1) return "ahora";
-  if (minutes < 60) return `hace ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `hace ${hours} h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `hace ${days} d`;
-  return new Intl.DateTimeFormat("es", {
-    day: "numeric",
-    month: "short",
-  }).format(timestamp);
-}
+const relativeUnits: [Intl.RelativeTimeFormatUnit, number][] = [
+  ["year", 31_536_000],
+  ["month", 2_592_000],
+  ["week", 604_800],
+  ["day", 86_400],
+  ["hour", 3_600],
+  ["minute", 60],
+];
 
-/** Episode numbers read like every other number: 12,5 and 1.084. */
-export function formatEpisodeNumber(value: number) {
-  return formatNumber(value);
+/** Time since a date: "hace 5 min", "hace 3 h", "ayer", "hace 2 sem.". */
+export function formatRelativeTime(value: string, now = Date.now()) {
+  const seconds = Math.max(0, (now - new Date(value).getTime()) / 1000);
+  for (const [unit, size] of relativeUnits) {
+    // Whole units elapsed: 23 h 40 min is "hace 23 h", never "hace 24 h".
+    if (seconds >= size)
+      return relativeFormatter.format(-Math.floor(seconds / size), unit);
+  }
+  return relativeFormatter.format(0, "second");
 }
 
 export function formatStatus(status: string) {

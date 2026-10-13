@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  isRememberedDeviceAvailable,
-  planDownloadDispatch,
-} from "./download-policy";
+import { needsConfirmation, planDownloadDispatch } from "./download-policy";
 
 describe("planDownloadDispatch", () => {
   it("never dispatches Click'n'Load from a portable device", () => {
@@ -71,9 +68,39 @@ describe("planDownloadDispatch with the copy destination", () => {
   });
 });
 
-describe("isRememberedDeviceAvailable", () => {
-  it("detects an offline or removed remembered device", () => {
-    expect(isRememberedDeviceAvailable("a", ["a", "b"])).toBe(true);
-    expect(isRememberedDeviceAvailable("a", ["b", "c"])).toBe(false);
+describe("needsConfirmation", () => {
+  const base = { slug: "a", title: "A" };
+  const list = (count: number) =>
+    Array.from({ length: count }, (_, index) => index + 1);
+
+  it("asks from 25 episodes, however they were chosen", () => {
+    expect(
+      needsConfirmation({ ...base, episodeNumbers: list(24) }, "CNL"),
+    ).toBe(false);
+    expect(
+      needsConfirmation({ ...base, episodeNumbers: list(25) }, "CNL"),
+    ).toBe(true);
+    expect(
+      needsConfirmation({ ...base, from: 1, to: 24, total: 24 }, "CNL"),
+    ).toBe(false);
+    expect(needsConfirmation({ ...base, all: true, total: 25 }, "CNL")).toBe(
+      true,
+    );
+    expect(needsConfirmation({ ...base, all: true, total: 12 }, "CNL")).toBe(
+      false,
+    );
+  });
+
+  it("counts a range of unknown size by its whole numbers", () => {
+    expect(needsConfirmation({ ...base, from: 50, to: 26 }, "CNL")).toBe(true);
+    expect(needsConfirmation({ ...base, from: 1, to: 24.5 }, "CNL")).toBe(
+      false,
+    );
+    expect(needsConfirmation({ ...base, all: true }, "CNL")).toBe(true);
+  });
+
+  it("never asks before copying to the clipboard", () => {
+    expect(needsConfirmation({ ...base, all: true }, "COPY")).toBe(false);
+    expect(needsConfirmation({ ...base, all: true }, "MYJD")).toBe(true);
   });
 });

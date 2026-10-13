@@ -45,6 +45,10 @@ const { carousel, state } = vi.hoisted(() => {
 vi.mock("embla-carousel-react", () => ({ default: () => [vi.fn(), carousel] }));
 vi.mock("../anime-image", () => ({ AnimeImage: () => <span /> }));
 vi.mock("@heroui/react", () => ({
+  Tooltip: Object.assign(
+    ({ children }: { children: ReactNode }) => <>{children}</>,
+    { Content: () => null },
+  ),
   Button: (props: {
     children: ReactNode;
     onPress?: () => void;
@@ -202,7 +206,7 @@ describe("FeaturedHero", () => {
       .getAllByRole("link")
       .find((link) => link.getAttribute("href")?.includes("youtube"));
     expect(trailer).toHaveAccessibleName(
-      "Tráiler de A (se abre en otra pestaña)",
+      "Ver tráiler de A (se abre en otra pestaña)",
     );
     expect(trailer).toHaveAttribute("target", "_blank");
     expect(
@@ -220,7 +224,7 @@ describe("FeaturedHero", () => {
       />,
     );
     expect(screen.queryByText("Estado por confirmar")).toBeNull();
-    expect(screen.getByText("1.180 episodios")).toBeInTheDocument();
+    expect(screen.getByText("1180 episodios")).toBeInTheDocument();
     expect(screen.getByText("1 episodio")).toBeInTheDocument();
   });
 

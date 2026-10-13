@@ -33,6 +33,7 @@ beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   push.mockReset();
   pathname = "/";
+  sessionStorage.clear();
   vi.mocked(apiFetch)
     .mockReset()
     .mockResolvedValue({
@@ -49,6 +50,12 @@ afterEach(() => {
 });
 
 const combobox = () => screen.getByRole("combobox", { name: "Buscar anime" });
+
+/** Hovers like a mouse: React Aria only counts hovers in pointer modality. */
+function hover(element: Element) {
+  fireEvent.pointerMove(element, { pointerType: "mouse" });
+  fireEvent.pointerEnter(element, { pointerType: "mouse" });
+}
 
 async function typeAndLoad(value: string) {
   vi.useFakeTimers();
@@ -79,14 +86,13 @@ describe("SearchBox", () => {
     expect(combobox()).toHaveValue("");
   });
 
-  it("localizes the clear control and avoids iOS zoom and spellcheck", () => {
+  it("localizes the clear control and avoids spellcheck", () => {
     render(<SearchBox initialQuery="one" />);
 
     expect(
       screen.getByRole("button", { name: "Limpiar búsqueda" }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
-    expect(combobox()).toHaveClass("text-base", "lg:pointer-fine:text-sm");
     expect(combobox()).toHaveAttribute("spellcheck", "false");
     expect(combobox()).toHaveAttribute("autocomplete", "off");
     expect(combobox()).toHaveAttribute("maxlength", "100");
@@ -125,6 +131,111 @@ describe("SearchBox", () => {
     expect(push).toHaveBeenCalledWith("/anime/sousou-no-frieren");
   });
 
+  it("keeps one active option, moved by the pointer as by the arrows", async () => {
+    render(<SearchBox compact />);
+    const input = await typeAndLoad("fr");
+    const options = screen.getAllByRole("option");
+    const active = () =>
+      options.filter(
+        (option) => option.getAttribute("aria-selected") === "true",
+      );
+
+    fireEvent.pointerMove(options[2], { pointerType: "mouse" });
+    expect(input).toHaveAttribute("aria-activedescendant", options[2].id);
+    expect(active()).toEqual([options[2]]);
+    expect(options[2]).not.toHaveAttribute("data-focus-visible");
+
+    // From the keyboard it also carries the focus ring.
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    expect(active()).toEqual([options[1]]);
+    expect(options[1]).toHaveAttribute("data-focus-visible", "true");
+
+    // A finger scrolling the list doesn't pick the row under it.
+    fireEvent.pointerMove(options[0], { pointerType: "touch" });
+    expect(active()).toEqual([options[1]]);
+  });
+
+  it("hands the focus to the /buscar field after a header search, list closed", () => {
+    const { unmount } = render(<SearchBox compact />);
+    const header = combobox();
+    fireEvent.focus(header);
+    fireEvent.change(header, { target: { value: "naruto" } });
+    fireEvent.keyDown(header, { key: "Enter" });
+    expect(push).toHaveBeenCalledWith("/buscar?q=naruto");
+
+    // /buscar hides the header field: the page's field takes over.
+    unmount();
+    render(<SearchBox initialQuery="naruto" />);
+    const field = combobox() as HTMLInputElement;
+    expect(field).toHaveFocus();
+    expect(field.selectionStart).toBe("naruto".length);
+    expect(field).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.change(field, { target: { value: "naruto s" } });
+    expect(field).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("takes the focus on /buscar without a query, not with one", () => {
+    const { unmount } = render(<SearchBox initialQuery="naruto" />);
+    expect(combobox()).not.toHaveFocus();
+    unmount();
+
+    render(<SearchBox />);
+    expect(combobox()).toHaveFocus();
+    expect(combobox()).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("asks for the focus on arrival only when the /buscar field is replaced", () => {
+    render(<SearchBox initialQuery="naruto" />);
+    const input = combobox();
+    fireEvent.focus(input);
+
+    // Same query: the field stays mounted and keeps its focus.
+    fireEvent.change(input, { target: { value: "naruto  " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(push).toHaveBeenLastCalledWith("/buscar?q=naruto");
+    expect(sessionStorage.getItem("animehub:focus-search")).toBeNull();
+
+    // A new query remounts it.
+    fireEvent.change(input, { target: { value: "bleach" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(push).toHaveBeenLastCalledWith("/buscar?q=bleach");
+    expect(sessionStorage.getItem("animehub:focus-search")).toBe("1");
+  });
+
+  it("labels the clear button with a tooltip", async () => {
+    vi.useFakeTimers();
+    render(<SearchBox initialQuery="one" />);
+
+    hover(screen.getByRole("button", { name: "Limpiar búsqueda" }));
+    await act(() => vi.advanceTimersByTimeAsync(300));
+
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Limpiar búsqueda");
+  });
+
+  it("never shows the shortcut while the field is in use", () => {
+    render(<SearchBox compact />);
+
+    // Keyboard focus reaches the tooltip trigger's handlers through the field.
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    act(() => combobox().focus());
+
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("renders every suggestion as a link, so it can open in a new tab", async () => {
+    render(<SearchBox compact />);
+    await typeAndLoad("fr");
+
+    expect(screen.getByRole("option", { name: /Buscar «fr»/ })).toHaveAttribute(
+      "href",
+      "/buscar?q=fr",
+    );
+    expect(
+      screen.getByRole("option", { name: /Sousou no Frieren/ }),
+    ).toHaveAttribute("href", "/anime/sousou-no-frieren");
+  });
+
   it("closes the suggestions on the first Escape and clears on the second", async () => {
     render(<SearchBox />);
     const input = await typeAndLoad("fr");
@@ -146,9 +257,37 @@ describe("SearchBox", () => {
     fireEvent.change(input, { target: { value: "fru" } });
     expect(screen.getByRole("listbox")).toHaveAttribute("aria-busy", "true");
     expect(screen.getByRole("option", { name: /Fruits Basket/ })).toHaveClass(
-      "opacity-55",
+      "opacity-50",
     );
-    expect(screen.getByText("Buscando sugerencias…")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("");
+  });
+
+  it("offers the search itself without restating it when nothing is suggested", async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ data: [] });
+    render(<SearchBox />);
+    await typeAndLoad("zzzz");
+
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(
+      screen.getByRole("option", { name: "Buscar «zzzz»" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Pulsa Enter|Sin sugerencias/)).toBeNull();
+  });
+
+  it("searches a single character without asking for suggestions", async () => {
+    render(<SearchBox compact />);
+    const input = await typeAndLoad("x");
+
+    expect(apiFetch).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(push).toHaveBeenCalledWith("/buscar?q=x");
+  });
+
+  it("keeps the shortcut out of the field", () => {
+    render(<SearchBox compact />);
+
+    expect(combobox().closest("[data-slot=tooltip-trigger]")).not.toBeNull();
+    expect(document.querySelector("kbd")).toBeNull();
   });
 
   it("only requests suggestions while focused and caps the query length", async () => {

@@ -30,25 +30,18 @@ const activity = (overrides: Partial<Activity> = {}): Activity => ({
 
 describe("presentActivity copy", () => {
   it("agrees with a single link", () => {
-    expect(presentActivity(activity(), { portable: false }).detail).toBe(
-      "1 enlace de 1 episodio enviado a JDownloader. Aparecerá en LinkGrabber.",
-    );
+    expect(presentActivity(activity(), { portable: false })).toMatchObject({
+      title: "1 enlace enviado a JDownloader",
+      detail: undefined,
+    });
     expect(
       presentActivity(activity({ status: "ready", copyBlocked: true }), {
         portable: false,
-      }).detail,
-    ).toBe(
-      "1 enlace de 1 episodio. El navegador no permitió copiarlo automáticamente.",
-    );
-  });
-
-  it("splits the summary so a long title can be truncated alone", () => {
-    const view = presentActivity(activity(), { portable: false });
-    expect(view.summary).toBe("Tensei Goblin · Ep. 1");
-    expect([view.summaryTitle, view.summaryEpisodes]).toEqual([
-      "Tensei Goblin",
-      "Ep. 1",
-    ]);
+      }),
+    ).toMatchObject({
+      title: "1 enlace listo para copiar",
+      detail: "El navegador no permitió copiarlo automáticamente.",
+    });
   });
 
   it("formats progress counts and offers no retry for invalid requests", () => {
@@ -66,5 +59,31 @@ describe("presentActivity copy", () => {
       { portable: false },
     );
     expect(rejected.actions).toEqual([]);
+  });
+
+  it("states results once, without instructions", () => {
+    const copied = presentActivity(activity({ deliveredVia: "COPY" }), {
+      portable: false,
+    });
+    expect(copied).toMatchObject({
+      title: "1 enlace copiado",
+      detail: undefined,
+    });
+    expect(
+      presentActivity(activity({ status: "ready" }), { portable: false }).title,
+    ).toBe("1 enlace listo");
+    expect(
+      presentActivity(activity({ status: "waiting-device" }), {
+        portable: false,
+      }).detail,
+    ).toBeUndefined();
+  });
+
+  it("names the provider of a single-provider copy", () => {
+    expect(
+      presentActivity(activity({ deliveredVia: "COPY", provider: "MEGA" }), {
+        portable: false,
+      }).title,
+    ).toBe("1 enlace de Mega copiado");
   });
 });

@@ -1,8 +1,9 @@
-import { Card } from "@heroui/react";
+import { Typography } from "@heroui/react";
 import {
   CalendarDays,
   ExternalLink,
   Film,
+  ListVideo,
   ShieldAlert,
   Star,
 } from "lucide-react";
@@ -11,8 +12,19 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 import { AnimeImage } from "@/components/anime-image";
-import { MediaCard } from "@/components/media-card";
-import { EpisodeBrowser } from "@/components/anime/episode-browser";
+import { ButtonLink } from "@/components/button-link";
+import { pageMainClass } from "@/components/page-header";
+import {
+  MediaCard,
+  MediaCardBody,
+  MediaCardLabel,
+  MediaCardMedia,
+  MediaCardOverlay,
+} from "@/components/media-card";
+import {
+  EpisodeBrowser,
+  MovieDownloadButton,
+} from "@/components/anime/episode-browser";
 import {
   isSameTitle,
   MAX_EPISODE_PAGE,
@@ -44,14 +56,13 @@ const getAnime = cache((slug: string) => loadAnime(slug));
 const isMovie = (anime: Pick<AnimeDetail, "category">) =>
   anime.category?.slug === "pelicula";
 
-/** Phones show the whole title beside the poster (never clamped): long
- *  titles get a smaller size instead, like the home hero. */
-function phoneTitleClass(title: string) {
-  if (title.length > 72) return "max-sm:text-lg max-sm:leading-[1.2]";
-  if (title.length > 48) return "max-sm:text-xl max-sm:leading-[1.15]";
-  if (title.length > 24) return "max-sm:text-2xl max-sm:leading-[1.1]";
-  return "max-sm:text-[1.75rem] max-sm:leading-[1.05]";
-}
+const scoreFormatter = new Intl.NumberFormat("es", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+const yearOf = (date: string | null | undefined) =>
+  date ? new Date(date).getUTCFullYear() : null;
 
 export async function generateMetadata({
   params,
@@ -122,188 +133,172 @@ export default async function AnimePage({
         : `/anime/${anime.slug}#episodios`,
     );
   }
-  // Range limits come from the whole anime (a movie can be episode 0).
-  const firstNumber = episodes.meta.firstNumber ?? 1;
-  const lastNumber = episodes.meta.lastNumber ?? firstNumber;
-  const movie = isMovie(anime);
+  // A movie is downloaded from its header, without an episode list.
+  const movieEpisode =
+    isMovie(anime) && totalRecords === 1 ? episodes.data[0] : undefined;
   const jsonLd = {
     "@context": "https://schema.org",
-    "@type": movie ? "Movie" : "TVSeries",
+    "@type": isMovie(anime) ? "Movie" : "TVSeries",
     name: anime.title,
     description: anime.synopsis,
     image: anime.posterUrl,
     url: `${siteUrl}/anime/${anime.slug}`,
   };
-  const year = anime.startDate
-    ? new Date(anime.startDate).getUTCFullYear()
-    : null;
-  // The API returns genres sorted by name.
-  const genres = anime.genres;
+  const year = yearOf(anime.startDate);
+  const synopsis = anime.synopsis?.trim();
   const showAlternative =
     anime.alternativeTitle && !isSameTitle(anime.alternativeTitle, anime.title);
-  const rated = typeof anime.score === "number" && anime.score > 0;
 
   return (
-    <main id={MAIN_CONTENT_ID} tabIndex={-1} className="outline-none">
+    <main id={MAIN_CONTENT_ID} tabIndex={-1} className={pageMainClass}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
           __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c"),
         }}
       />
-      <section className="relative overflow-hidden border-b border-white/6 bg-background">
-        <div
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_78%_18%,color-mix(in_srgb,var(--brand)_11%,transparent),transparent_34%)]"
-          aria-hidden="true"
-        />
-        <div className="page-container relative grid grid-cols-[minmax(270px,330px)_minmax(0,1fr)] grid-rows-[auto_1fr] items-start gap-x-[clamp(2.5rem,6vw,6.5rem)] py-14 max-lg:grid-cols-[240px_minmax(0,1fr)] max-lg:gap-x-10 max-md:grid-cols-[190px_minmax(0,1fr)] max-md:gap-x-6 max-md:py-10 max-sm:grid-cols-[112px_minmax(0,1fr)] max-sm:grid-rows-none max-sm:gap-x-4 max-sm:py-6">
-          <div className="relative row-span-2 aspect-[2/3] overflow-hidden rounded-[1.35rem] bg-surface shadow-[0_28px_84px_rgb(0_0_0/0.48)] max-sm:row-span-1 max-sm:self-start max-sm:rounded-xl">
-            <AnimeImage
-              src={anime.posterUrl}
-              alt={`Póster de ${anime.title}`}
-              priority
-              sizes="(max-width: 639px) 112px, (max-width: 1023px) 240px, 330px"
-            />
-          </div>
-          <div className="min-w-0 max-sm:self-center">
-            <span className="eyebrow">
-              {movie ? "Película" : "Ficha de anime"}
-            </span>
-            <h1
-              className={`mt-3 max-w-[1020px] font-display text-[clamp(2.65rem,5vw,5.2rem)] font-semibold leading-[.98] tracking-[-.055em] text-foreground [overflow-wrap:anywhere] max-md:text-[clamp(2.25rem,5.8vw,3.7rem)] max-sm:mt-1.5 max-sm:tracking-[-.03em] ${phoneTitleClass(anime.title)}`}
-            >
-              {anime.title}
-            </h1>
-            {showAlternative && (
-              <p
-                className="mt-3 line-clamp-2 max-w-[900px] text-sm italic leading-6 text-muted max-sm:mt-1.5 max-sm:text-xs max-sm:leading-5"
-                title={anime.alternativeTitle ?? undefined}
-              >
-                {anime.alternativeTitle}
-              </p>
+      {/* Phones: poster and title side by side, the rest below. */}
+      <header className="grid grid-cols-[7rem_minmax(0,1fr)] items-start gap-4 sm:grid-cols-[12rem_minmax(0,1fr)] sm:grid-rows-[auto_1fr] sm:gap-x-8 lg:grid-cols-[15rem_minmax(0,1fr)]">
+        <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-surface sm:row-span-2">
+          <AnimeImage
+            src={anime.posterUrl}
+            alt={`Póster de ${anime.title}`}
+            priority
+            sizes="(max-width: 639px) 112px, (max-width: 1023px) 192px, 240px"
+          />
+        </div>
+        <div className="min-w-0 self-center sm:self-start">
+          <Typography type="h1" className="text-balance break-words">
+            {anime.title}
+          </Typography>
+          {showAlternative && (
+            <p className="mt-2 text-sm break-words text-muted">
+              {anime.alternativeTitle}
+            </p>
+          )}
+        </div>
+        <div className="col-span-2 min-w-0 sm:col-span-1 sm:col-start-2">
+          <ul className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted [&>li]:inline-flex [&>li]:items-center [&>li]:gap-1.5">
+            {anime.status !== "UNKNOWN" && (
+              <li className={anime.status === "AIRING" ? "text-success" : ""}>
+                {formatStatus(anime.status)}
+              </li>
             )}
-          </div>
-          <div className="col-start-2 min-w-0 max-sm:col-span-2 max-sm:col-start-1">
-            <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3 border-y border-white/8 py-3.5 text-xs font-medium text-subtle max-sm:mt-5 [&>span]:inline-flex [&>span]:items-center [&>span]:gap-1.5">
-              {anime.status !== "UNKNOWN" && (
-                <span>
-                  {anime.status === "AIRING" && (
-                    <i
-                      className="relative mr-1 inline-flex size-2.5 items-center justify-center"
-                      aria-hidden="true"
-                    >
-                      <i className="absolute inset-0 animate-ping rounded-full bg-success/45 motion-reduce:hidden" />
-                      <i className="relative inline-flex size-1.5 rounded-full bg-success" />
-                    </i>
-                  )}
-                  {formatStatus(anime.status)}
+            {typeof anime.score === "number" && anime.score > 0 && (
+              <li>
+                <Star size={14} fill="currentColor" aria-hidden="true" />
+                <span className="sr-only">Puntuación:</span>
+                <span className="text-foreground">
+                  {scoreFormatter.format(anime.score)}
                 </span>
-              )}
-              {rated && (
-                <span>
-                  <Star size={14} fill="currentColor" aria-hidden="true" />
-                  <span className="sr-only">Puntuación:</span>
-                  {anime.score?.toLocaleString("es", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                  {anime.votes ? (
-                    <small className="text-[11px] text-muted">
-                      ({plural(anime.votes, "voto", "votos")})
-                    </small>
-                  ) : null}
-                </span>
-              )}
-              {year && (
-                <span>
-                  <CalendarDays size={14} aria-hidden="true" />
-                  {year}
-                </span>
-              )}
-              {anime.category && (
-                <span>
-                  <Film size={14} aria-hidden="true" /> {anime.category.name}
-                </span>
-              )}
-              {anime.episodeCount && !movie ? (
-                <span>
-                  {plural(anime.episodeCount, "episodio", "episodios")}
-                </span>
-              ) : null}
-              {anime.mature && (
-                <span className="text-warning">
-                  <ShieldAlert size={14} aria-hidden="true" /> Contenido
-                  sensible
-                </span>
-              )}
-            </div>
-            {genres.length > 0 && (
-              <ul className="mt-3 flex flex-wrap gap-2" aria-label="Géneros">
-                {genres.map((genre) => (
-                  <li key={genre.id}>
-                    <Link
-                      className="inline-flex min-h-8 items-center rounded-full bg-default/82 px-3 text-xs font-medium text-subtle outline-none transition-colors hover:bg-default-hover hover:text-link focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background [@media(pointer:coarse)]:min-h-11"
-                      href={`/catalogo?genre=${genre.slug}`}
-                    >
-                      {genre.name}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+                {anime.votes ? `(${plural(anime.votes, "voto", "votos")})` : ""}
+              </li>
             )}
-            {anime.synopsis?.trim() && (
-              <ExpandableSynopsis
-                text={anime.synopsis.trim()}
-                className="mt-5"
+            {year && (
+              <li>
+                <CalendarDays size={14} aria-hidden="true" />
+                {year}
+              </li>
+            )}
+            {anime.category && (
+              <li>
+                <Film size={14} aria-hidden="true" />
+                {anime.category.name}
+              </li>
+            )}
+            {!movieEpisode && totalRecords > 0 && (
+              <li>
+                <ListVideo size={14} aria-hidden="true" />
+                {plural(totalRecords, "episodio", "episodios")}
+              </li>
+            )}
+            {anime.mature && (
+              <li className="text-warning">
+                <ShieldAlert size={14} aria-hidden="true" />
+                Contenido sensible
+              </li>
+            )}
+          </ul>
+          {anime.genres.length > 0 && (
+            <ul className="mt-4 flex flex-wrap gap-2" aria-label="Géneros">
+              {anime.genres.map((genre) => (
+                <li key={genre.id}>
+                  <ButtonLink
+                    href={`/catalogo?genre=${genre.slug}`}
+                    prefetch={false}
+                    variant="tertiary"
+                    size="sm"
+                  >
+                    {genre.name}
+                  </ButtonLink>
+                </li>
+              ))}
+            </ul>
+          )}
+          {synopsis && <ExpandableSynopsis text={synopsis} />}
+          <div className="mt-6 flex flex-wrap gap-3">
+            {movieEpisode && (
+              <MovieDownloadButton
+                slug={anime.slug}
+                title={anime.title}
+                episodeNumber={movieEpisode.number}
               />
             )}
-            <div className="mt-6 flex flex-wrap gap-3 max-sm:mt-4">
-              {anime.trailerUrl && (
-                <a
-                  className="inline-flex min-h-11 items-center gap-2 rounded-full bg-accent px-6 text-sm font-semibold text-accent-foreground shadow-lg shadow-accent/25 outline-none transition-colors hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                  href={anime.trailerUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Ver tráiler <ExternalLink size={14} aria-hidden="true" />
-                  <span className="sr-only">(se abre en otra pestaña)</span>
-                </a>
-              )}
-              <a
-                className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white/10 px-6 text-sm font-semibold text-foreground outline-none backdrop-blur-md transition-colors hover:bg-white/16 focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                href={anime.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Ficha original <ExternalLink size={14} aria-hidden="true" />
-                <span className="sr-only">(se abre en otra pestaña)</span>
-              </a>
-            </div>
+            {anime.trailerUrl && (
+              <ExternalButtonLink href={anime.trailerUrl} variant="secondary">
+                Ver tráiler
+              </ExternalButtonLink>
+            )}
+            <ExternalButtonLink href={anime.sourceUrl} variant="tertiary">
+              Ficha original
+            </ExternalButtonLink>
           </div>
         </div>
-      </section>
-      <div className="page-container flex flex-col gap-16 pt-12 pb-12">
-        {anime.relations.length > 0 && (
-          <RelatedAnime
-            relations={anime.relations}
-            current={{ title: anime.title, posterUrl: anime.posterUrl, year }}
+      </header>
+      <div className="mt-8 flex flex-col gap-12">
+        {anime.relations.length > 0 && <RelatedAnime anime={anime} />}
+        {!movieEpisode && (
+          <EpisodeBrowser
+            slug={anime.slug}
+            title={anime.title}
+            posterUrl={anime.posterUrl}
+            backdropUrl={anime.backdropUrl}
+            initial={episodes.data}
+            initialPage={requestedPage}
+            totalRecords={totalRecords}
+            // Range bounds come from the whole anime (a special can be 0).
+            firstNumber={episodes.meta.firstNumber ?? 1}
+            lastNumber={
+              episodes.meta.lastNumber ?? episodes.meta.firstNumber ?? 1
+            }
+            nextEpisodeAt={anime.nextEpisodeAt}
           />
         )}
-        <EpisodeBrowser
-          slug={anime.slug}
-          title={anime.title}
-          posterUrl={anime.posterUrl}
-          backdropUrl={anime.backdropUrl}
-          initial={episodes.data}
-          initialPage={requestedPage}
-          totalRecords={totalRecords}
-          firstNumber={firstNumber}
-          lastNumber={lastNumber}
-          isMovie={movie}
-          nextEpisodeAt={anime.nextEpisodeAt}
-        />
       </div>
     </main>
+  );
+}
+
+function ExternalButtonLink({
+  href,
+  variant,
+  children,
+}: {
+  href: string;
+  variant: "secondary" | "tertiary";
+  children: string;
+}) {
+  return (
+    <ButtonLink
+      href={href}
+      variant={variant}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {children}
+      <ExternalLink size={16} aria-hidden="true" />
+      <span className="sr-only">(se abre en otra pestaña)</span>
+    </ButtonLink>
   );
 }
 
@@ -317,162 +312,111 @@ const RELATION_LABELS: Record<Relation["kind"], string | null> = {
   SUMMARY: "Resumen",
   ALTERNATIVE: "Versión alternativa",
   ALTERNATIVE_SETTING: "Ambientación alternativa",
-  // "Otro" is the source's generic link (One Piece has 22): repeating it on
-  // every card adds noise, so those cards show no relation label.
+  // The source's generic link (One Piece has 22): on every card it is noise.
   OTHER: null,
 };
 
-const yearOf = (date: string | null | undefined) =>
-  date ? new Date(date).getUTCFullYear() : null;
+const POSTER_SIZES = "(min-width: 1024px) 192px, 160px";
 
-// A year timeline: each year heads a column with its axis line running to the
-// right (like the source's histogram-style axis). Cards reuse the catalog
-// treatment — relation badge and a hover overlay with the synopsis — sized
-// down for the row. The current anime is marked in its own year.
-function RelatedAnime({
-  relations,
-  current,
-}: {
-  relations: Relation[];
-  current: { title: string; posterUrl?: string | null; year: number | null };
-}) {
-  type Entry = { kind: "relation"; relation: Relation } | { kind: "current" };
-  const groups = new Map<number | null, Entry[]>();
-  const push = (year: number | null, entry: Entry) => {
-    const bucket = groups.get(year);
-    if (bucket) bucket.push(entry);
-    else groups.set(year, [entry]);
-  };
-  for (const relation of relations)
-    push(yearOf(relation.anime.startDate), { kind: "relation", relation });
-  if (current.year !== null) push(current.year, { kind: "current" });
-  const columns = [...groups.entries()].sort(([a], [b]) => {
-    if (a === null) return 1;
-    if (b === null) return -1;
-    return a - b;
-  });
+/** Related anime and this one, in release order (undated ones last). */
+function RelatedAnime({ anime }: { anime: AnimeDetail }) {
+  const time = (date?: string | null) =>
+    date ? new Date(date).getTime() : Number.POSITIVE_INFINITY;
+  const entries = [
+    ...anime.relations.map((relation) => ({
+      key: `${relation.kind}-${relation.anime.slug}`,
+      time: time(relation.anime.startDate),
+      relation,
+    })),
+    { key: "current", time: time(anime.startDate), relation: null },
+  ].sort((a, b) => a.time - b.time);
 
   return (
-    <section aria-labelledby="relacionados-titulo">
-      <span className="eyebrow">Cronología</span>
-      <h2
-        id="relacionados-titulo"
-        className="mt-1 mb-6 font-display text-3xl font-semibold tracking-tight text-foreground"
-      >
-        Relacionados
-      </h2>
-      <RelatedScroller label="Anime relacionados">
-        <ol className="flex min-w-max items-start gap-3 pt-1">
-          {columns.map(([year, items]) => (
-            <li key={year ?? "sin-fecha"} className="flex flex-col gap-3.5">
-              <div className="flex items-center gap-2.5" aria-hidden="true">
-                <span className="font-display text-lg font-semibold tabular-nums text-muted">
-                  {year ?? "Sin fecha"}
-                </span>
-                <span className="h-px flex-1 bg-white/12" />
-              </div>
-              <ul
-                className="flex gap-3"
-                aria-label={year ? String(year) : "Sin fecha"}
-              >
-                {items.map((entry) =>
-                  entry.kind === "current" ? (
-                    <li key="current">
-                      <CurrentCard
-                        title={current.title}
-                        posterUrl={current.posterUrl}
-                      />
-                    </li>
-                  ) : (
-                    <li
-                      key={`${entry.relation.kind}-${entry.relation.anime.slug}`}
-                    >
-                      <RelatedCard relation={entry.relation} />
-                    </li>
-                  ),
-                )}
-              </ul>
-            </li>
-          ))}
-        </ol>
-      </RelatedScroller>
-    </section>
+    <RelatedScroller title="Relacionados">
+      {entries.map(({ key, relation }, index) => {
+        // The first posters show in the first viewport (on phones, one of
+        // them is the largest image).
+        const loading = index < 6 ? "eager" : "lazy";
+        return (
+          <li key={key} className="w-40 shrink-0 snap-start lg:w-48">
+            {relation ? (
+              <RelatedCard relation={relation} loading={loading} />
+            ) : (
+              <CurrentCard anime={anime} loading={loading} />
+            )}
+          </li>
+        );
+      })}
+    </RelatedScroller>
   );
 }
 
-function RelatedCard({ relation }: { relation: Relation }) {
+const factsOf = (anime: Pick<AnimeDetail, "startDate" | "category">) =>
+  [yearOf(anime.startDate), anime.category?.name].filter(Boolean).join(" · ");
+
+type ImageLoading = "eager" | "lazy";
+
+function RelatedCard({
+  relation,
+  loading,
+}: {
+  relation: Relation;
+  loading: ImageLoading;
+}) {
+  const { anime } = relation;
   const label = RELATION_LABELS[relation.kind];
-  const year = yearOf(relation.anime.startDate);
-  const meta = [year, relation.anime.category?.name]
-    .filter(Boolean)
-    .join(" · ");
+  const synopsis = anime.synopsis?.trim();
   return (
-    <MediaCard className="touch-card group w-[152px] min-w-0 shrink-0 gap-0 rounded-xl bg-surface p-0 outline-offset-2 outline-focus transition-shadow duration-300 hover:shadow-[0_18px_42px_rgb(0_0_0/0.3)] has-[a:focus-visible]:outline-2">
+    <MediaCard className="h-full">
       <Link
-        href={`/anime/${relation.anime.slug}`}
-        aria-label={[relation.anime.title, label, year]
+        href={`/anime/${anime.slug}`}
+        prefetch={false}
+        aria-label={[anime.title, label, yearOf(anime.startDate)]
           .filter(Boolean)
           .join(", ")}
-        className="block outline-none"
+        className="flex flex-1 flex-col outline-none"
       >
-        <div className="touch-static-media relative aspect-[2/3] overflow-hidden bg-surface [&_.anime-image_img]:transition-transform [&_.anime-image_img]:duration-700 [&_.anime-image_img]:ease-[cubic-bezier(.22,1,.36,1)] group-hover:[&_.anime-image_img]:scale-[1.04] group-has-[:focus-visible]:[&_.anime-image_img]:scale-[1.04]">
-          <AnimeImage src={relation.anime.posterUrl} alt="" sizes="152px" />
-          {label && (
-            <span className="touch-category-label absolute bottom-0 left-0 rounded-tr-lg bg-surface px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[.08em] text-link transition-opacity duration-300 group-hover:opacity-0 group-has-[:focus-visible]:opacity-0">
-              {label}
-            </span>
-          )}
-          {relation.anime.synopsis?.trim() ? (
-            <div
-              aria-hidden="true"
-              className="touch-hover-panel absolute inset-0 flex flex-col justify-end bg-background-secondary/92 p-3 opacity-0 transition-opacity duration-250 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100"
-            >
-              <p className="line-clamp-[9] text-[11px] leading-4 text-subtle">
-                {relation.anime.synopsis}
+        <MediaCardMedia aspect="poster">
+          <AnimeImage
+            src={anime.posterUrl}
+            alt=""
+            sizes={POSTER_SIZES}
+            loading={loading}
+          />
+          {synopsis && (
+            <MediaCardOverlay>
+              <p className="line-clamp-8 text-xs leading-5 text-subtle">
+                {synopsis}
               </p>
-            </div>
-          ) : null}
-        </div>
-        <Card.Content className="gap-0.5 px-3 py-3">
-          {/* Two reserved lines keep every card the same height. */}
-          <Card.Title className="line-clamp-2 min-h-8 text-xs font-semibold leading-4 text-foreground">
-            {relation.anime.title}
-          </Card.Title>
-          {meta && (
-            <Card.Description className="text-[11px] leading-4 text-muted">
-              {meta}
-            </Card.Description>
+            </MediaCardOverlay>
           )}
-        </Card.Content>
+          {label && <MediaCardLabel>{label}</MediaCardLabel>}
+        </MediaCardMedia>
+        <MediaCardBody title={anime.title} meta={factsOf(anime)} />
       </Link>
     </MediaCard>
   );
 }
 
 function CurrentCard({
-  title,
-  posterUrl,
+  anime,
+  loading,
 }: {
-  title: string;
-  posterUrl?: string | null;
+  anime: AnimeDetail;
+  loading: ImageLoading;
 }) {
   return (
-    <div
-      className="w-[152px] shrink-0 overflow-hidden rounded-xl bg-surface ring-2 ring-brand/70"
-      aria-current="page"
-    >
-      <div className="relative aspect-[2/3] overflow-hidden bg-surface">
-        <AnimeImage src={posterUrl} alt="" sizes="152px" />
-        <span className="absolute bottom-0 left-0 rounded-tr-lg bg-accent px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[.08em] text-accent-foreground">
-          Este anime
-        </span>
-      </div>
-      <div className="px-3 py-3">
-        <p className="line-clamp-2 min-h-8 text-xs font-semibold leading-4 text-foreground">
-          {title}
-        </p>
-        <p className="text-[11px] leading-4 text-muted">Estás aquí</p>
-      </div>
-    </div>
+    <MediaCard className="h-full" aria-current="page">
+      <MediaCardMedia aspect="poster">
+        <AnimeImage
+          src={anime.posterUrl}
+          alt=""
+          sizes={POSTER_SIZES}
+          loading={loading}
+        />
+        <MediaCardLabel tone="accent">Este anime</MediaCardLabel>
+      </MediaCardMedia>
+      <MediaCardBody title={anime.title} meta={factsOf(anime)} />
+    </MediaCard>
   );
 }

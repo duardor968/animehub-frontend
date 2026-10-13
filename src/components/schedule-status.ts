@@ -9,11 +9,25 @@ export type ScheduleStatus =
  * week the way the viewer will see it. */
 export const TIME_ZONE_COOKIE = "tz";
 
+export const days = [
+  "domingo",
+  "lunes",
+  "martes",
+  "miércoles",
+  "jueves",
+  "viernes",
+  "sábado",
+];
+/** `?dia=` values: "lunes", "miercoles", "sabado"… */
+export const daySlugs = days.map((day) =>
+  day.normalize("NFD").replace(/\p{Diacritic}/gu, ""),
+);
+
 /** Once the expected hour passes, wait this long before calling it late. */
-export const DELAY_GRACE_MINUTES = 3 * 60;
+const DELAY_GRACE_MINUTES = 3 * 60;
 
 /** Same cut-off as the API: older entries no longer describe a weekly slot. */
-export const SCHEDULE_MAX_AGE_MS = 21 * 24 * 60 * 60_000;
+const SCHEDULE_MAX_AGE_MS = 21 * 24 * 60 * 60_000;
 
 const MINUTES_PER_DAY = 24 * 60;
 const partsFormatters = new Map<string, Intl.DateTimeFormat>();

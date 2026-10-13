@@ -1,92 +1,100 @@
 "use client";
 
+import { Button, Tooltip, Typography } from "@heroui/react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 /**
- * Horizontal strip for the related-anime timeline: edge fades show there is
- * more content, and previous/next buttons page through it with a mouse
- * (touch users swipe; the buttons are hidden on coarse pointers).
+ * Titled horizontal list. Cards snap to the start edge, so paging never
+ * leaves a cut card on the left; touch users swipe, mouse users get
+ * previous/next buttons beside the title.
  */
 export function RelatedScroller({
+  title,
   children,
-  label,
 }: {
+  title: string;
+  /** The `<li>` items, each with `snap-start`. */
   children: ReactNode;
-  label: string;
 }) {
-  const scrollerRef = useRef<HTMLDivElement>(null);
-  const [edges, setEdges] = useState({ start: true, end: true });
+  const titleId = useId();
+  const listRef = useRef<HTMLUListElement>(null);
+  // Booleans, so a scroll that stays between the edges doesn't re-render.
+  const [atStart, setAtStart] = useState(true);
+  const [atEnd, setAtEnd] = useState(true);
 
   useEffect(() => {
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
+    const list = listRef.current;
+    if (!list) return;
     const update = () => {
-      const max = scroller.scrollWidth - scroller.clientWidth;
-      setEdges({
-        start: scroller.scrollLeft <= 2,
-        end: scroller.scrollLeft >= max - 2,
-      });
+      setAtStart(list.scrollLeft <= 1);
+      setAtEnd(list.scrollLeft >= list.scrollWidth - list.clientWidth - 1);
     };
     update();
-    scroller.addEventListener("scroll", update, { passive: true });
-    const observer =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
-    observer?.observe(scroller);
+    list.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(list);
     return () => {
-      scroller.removeEventListener("scroll", update);
-      observer?.disconnect();
+      list.removeEventListener("scroll", update);
+      observer.disconnect();
     };
   }, []);
 
   function page(direction: 1 | -1) {
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
-    const reduce = window.matchMedia?.(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    scroller.scrollBy({
-      left: direction * scroller.clientWidth * 0.8,
-      behavior: reduce ? "auto" : "smooth",
+    const list = listRef.current;
+    if (!list) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+    list.scrollBy({
+      left: direction * list.clientWidth,
+      behavior: reduce.matches ? "auto" : "smooth",
     });
   }
 
-  const button =
-    "grid size-11 place-items-center rounded-full bg-surface-secondary text-foreground shadow-[0_10px_30px_rgb(0_0_0/0.4)] outline-none transition-[opacity,background-color] hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-focus disabled:pointer-events-none disabled:opacity-0 [@media(pointer:coarse)]:hidden";
+  const arrow = (direction: 1 | -1) => {
+    const label = direction < 0 ? "Anteriores" : "Siguientes";
+    return (
+      <Tooltip delay={300}>
+        <Button
+          isIconOnly
+          size="sm"
+          variant="tertiary"
+          aria-label={label}
+          isDisabled={direction < 0 ? atStart : atEnd}
+          onPress={() => page(direction)}
+        >
+          {direction < 0 ? (
+            <ChevronLeft aria-hidden="true" />
+          ) : (
+            <ChevronRight aria-hidden="true" />
+          )}
+        </Button>
+        <Tooltip.Content>{label}</Tooltip.Content>
+      </Tooltip>
+    );
+  };
 
   return (
-    <div className="relative">
-      <div
-        ref={scrollerRef}
-        role="region"
-        aria-label={label}
-        tabIndex={0}
-        data-fade-start={!edges.start || undefined}
-        data-fade-end={!edges.end || undefined}
-        className="related-scroller -mx-1 overflow-x-auto px-1 pb-3 outline-none [scrollbar-width:thin] focus-visible:ring-2 focus-visible:ring-focus"
+    <section aria-labelledby={titleId}>
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <Typography type="h2" id={titleId}>
+          {title}
+        </Typography>
+        {!(atStart && atEnd) && (
+          <div className="flex gap-2 pointer-coarse:hidden">
+            {arrow(-1)}
+            {arrow(1)}
+          </div>
+        )}
+      </div>
+      {/* The 4px padding keeps the cards' focus outline inside the
+          scrollport; the negative margin and scroll padding cancel it. */}
+      <ul
+        ref={listRef}
+        aria-labelledby={titleId}
+        className="-m-1 flex snap-x snap-mandatory scroll-px-1 gap-4 overflow-x-auto p-1 scrollbar-none"
       >
         {children}
-      </div>
-      <div className="pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center justify-between">
-        <button
-          type="button"
-          aria-label="Ver anteriores"
-          disabled={edges.start}
-          onClick={() => page(-1)}
-          className={`pointer-events-auto -ml-3 ${button}`}
-        >
-          <ChevronLeft size={18} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          aria-label="Ver siguientes"
-          disabled={edges.end}
-          onClick={() => page(1)}
-          className={`pointer-events-auto -mr-3 ${button}`}
-        >
-          <ChevronRight size={18} aria-hidden="true" />
-        </button>
-      </div>
-    </div>
+      </ul>
+    </section>
   );
 }

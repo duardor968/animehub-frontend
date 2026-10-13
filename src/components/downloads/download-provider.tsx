@@ -1,6 +1,12 @@
 "use client";
 
-import { Button, ProgressCircle, toast, useOverlayState } from "@heroui/react";
+import {
+  AlertDialog,
+  Button,
+  ProgressCircle,
+  toast,
+  useOverlayState,
+} from "@heroui/react";
 import { Download } from "lucide-react";
 import dynamic from "next/dynamic";
 import {
@@ -8,6 +14,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useRef,
   useState,
@@ -23,8 +30,10 @@ import type { components } from "@/lib/api/generated";
 import { formatNumber, plural } from "@/lib/format";
 import {
   ActivityToastBody,
+  RequestTitle,
   activeStatuses,
   deliverableEpisodes,
+  deliveredSentence,
   formatProgress,
   presentActivity,
   unfinishedStatuses,
@@ -44,6 +53,7 @@ import {
 } from "./download-client";
 import {
   collectUrls,
+  describeConfirmation,
   describeLinks,
   describeRequest,
   failedEpisodeNumbers,
@@ -61,10 +71,7 @@ import {
   getEffectiveDestination,
   type DeviceProfile,
 } from "./device-profile";
-import {
-  isRememberedDeviceAvailable,
-  planDownloadDispatch,
-} from "./download-policy";
+import { needsConfirmation, planDownloadDispatch } from "./download-policy";
 import {
   loadActiveDownloadJobs,
   saveActiveDownloadJobs,
@@ -72,6 +79,7 @@ import {
 } from "./download-job-storage";
 import type { MyJdDevice } from "./download-panels";
 import type {
+  AudioPreference,
   DownloadActivityStatus,
   DownloadDestination,
   DownloadPreferences,
@@ -92,7 +100,7 @@ const DownloadDrawer = dynamic(
 );
 
 /** The resolve endpoint accepts up to 50 episodes; more need a background job. */
-export const MAX_QUICK_EPISODES = 50;
+const MAX_QUICK_EPISODES = 50;
 /** Largest explicit list a job accepts (scope EPISODES). */
 export const MAX_JOB_EPISODES = 5_000;
 
@@ -102,6 +110,9 @@ type JobRequestBody =
   | components["schemas"]["EpisodesDownloadJobRequestDto"];
 type JobReceipt = components["schemas"]["DownloadJobReceiptDto"];
 type JobData = components["schemas"]["DownloadJobDataDto"];
+type ResolvedLinks = {
+  data: { packageName: string; episodes: ResolvedEpisode[] };
+};
 
 /** Poll less often as a job grows: every poll returns all its items. */
 export function jobPollInterval(totalItems: number) {
@@ -133,6 +144,27 @@ function retryable(error: unknown) {
   );
 }
 
+function resolveLinks(
+  request: DownloadRequest,
+  { audio, providers }: DownloadPreferences,
+  signal?: AbortSignal,
+) {
+  return apiFetch<ResolvedLinks>(
+    `/anime/${encodeURIComponent(request.slug)}/downloads/resolve`,
+    {
+      method: "POST",
+      signal,
+      body: JSON.stringify({
+        episodeNumbers: request.episodeNumbers,
+        audio,
+        providers,
+        refresh: request.refresh,
+      }),
+    },
+    true,
+  );
+}
+
 function postJob(
   slug: string,
   body: string,
@@ -144,6 +176,15 @@ function postJob(
     { method: "POST", signal, headers: { "idempotency-key": key }, body },
     true,
     { timeoutMs },
+  );
+}
+
+/** A call on a job, authorized by its receipt's capability token. */
+function jobApi<T>(receipt: SavedJob, path = "", method?: "POST") {
+  return apiFetch<T>(
+    `/download-jobs/${receipt.jobId}${path}`,
+    { method, headers: { authorization: `Bearer ${receipt.accessToken}` } },
+    true,
   );
 }
 
@@ -171,19 +212,10 @@ async function cancelAbandonedJob(slug: string, body: string, key: string) {
 }
 
 /** A request that can't be expressed as a bounded job. */
-export class SelectionTooLargeError extends Error {
-  constructor() {
-    super(`Selection above ${MAX_JOB_EPISODES} episodes or unbounded range`);
-    this.name = "SelectionTooLargeError";
-  }
-}
+class SelectionTooLargeError extends Error {}
 
 interface DownloadContextValue {
   openDownload: (request: DownloadRequest) => void;
-  getEpisodeStatus: (
-    slug: string,
-    episodeNumber: number,
-  ) => DownloadActivityStatus | undefined;
   /** Status of the latest activity for exactly this request, if any. */
   getRequestStatus: (
     request: DownloadRequest,
@@ -191,9 +223,47 @@ interface DownloadContextValue {
   openSettings: () => void;
   preferences: DownloadPreferences;
   deviceProfile: DeviceProfile;
+  /** Where links go on this device (a phone sends Click'n'Load to
+   *  MyJDownloader). */
+  destination: DownloadDestination;
   /** Fixed bottom stack where page-level bars (episode selection) portal in,
    *  so they never overlap the pending-download button. */
   dockSlot: HTMLElement | null;
+  /** An episode's links for the current preferences, if already resolved. */
+  cachedEpisodeLinks: (request: DownloadRequest) => EpisodeLinks | undefined;
+  /** Resolves (once, then from cache) an episode's links. A failure or an
+   *  episode without links is reported with a toast and gives null. */
+  resolveEpisodeLinks: (
+    request: DownloadRequest,
+  ) => Promise<EpisodeLinks | null>;
+  /** Copies resolved links (one provider's or all) with the usual toast. */
+  copyEpisodeLinks: (
+    request: DownloadRequest,
+    links: EpisodeLinks,
+    provider?: DownloadProviderId,
+  ) => void;
+}
+
+export interface EpisodeLinks {
+  packageName: string;
+  episode: ResolvedEpisode;
+}
+
+/** How long an episode's resolved links are reused (the API keeps them at
+ *  least 15 minutes). */
+const EPISODE_LINKS_TTL = 10 * 60_000;
+
+interface EpisodeLinksEntry {
+  promise: Promise<EpisodeLinks | null>;
+  value?: EpisodeLinks;
+}
+
+/** Resolved links depend on the audio and providers they were asked with. */
+function episodeLinksKey(
+  request: DownloadRequest,
+  { audio, providers }: DownloadPreferences,
+) {
+  return `${requestKey(request)}|${audio}|${[...providers].sort().join(",")}`;
 }
 
 const defaults: DownloadPreferences = {
@@ -236,6 +306,47 @@ function jobBody(
   };
 }
 
+/** A new activity for `request`; what isn't given starts empty. */
+function newActivity(
+  request: DownloadRequest,
+  preferredAudio: AudioPreference,
+  fields: Pick<Activity, "status" | "destination" | "isJob"> &
+    Partial<Activity>,
+): Activity {
+  return {
+    id: crypto.randomUUID(),
+    key: requestKey(request),
+    request,
+    current: 0,
+    total: requestEpisodeCount(request),
+    packageName: request.title,
+    episodes: [],
+    preferredAudio,
+    createdAt: Date.now(),
+    ...fields,
+  };
+}
+
+/** The links reached `via`: done, or partial while episodes failed (the job
+ *  receipt stays so they can be retried). */
+function delivered(
+  activity: Activity,
+  via: DownloadDestination,
+): Partial<Activity> {
+  const failed =
+    failedEpisodeNumbers(deliverableEpisodes(activity)).length > 0 ||
+    (!activity.onlyEpisodes && (activity.failedCount ?? 0) > 0);
+  return {
+    status: failed ? "partial" : "handed-off",
+    deliveredVia: via,
+    receipt: failed ? activity.receipt : undefined,
+    deliveryFailed: false,
+    failure: undefined,
+    interrupted: false,
+    copyBlocked: false,
+  };
+}
+
 const resumableStatuses = new Set<DownloadActivityStatus>([
   "processing",
   "ready",
@@ -243,12 +354,30 @@ const resumableStatuses = new Set<DownloadActivityStatus>([
   "sending",
 ]);
 
-function isResumableActivity(activity: Activity) {
-  return Boolean(activity.receipt && resumableStatuses.has(activity.status));
+/** What a reload needs to pick a background job up again. */
+function persistable(activity: Activity): PersistedDownloadJob[] {
+  const { id, request, receipt, destination, createdAt, current, total } =
+    activity;
+  if (!receipt || !resumableStatuses.has(activity.status)) return [];
+  return [
+    {
+      id,
+      request,
+      receipt,
+      destination,
+      createdAt,
+      current,
+      total,
+      deliveryAttempted: activity.deliveryAttempted === true,
+      deliveryFailed: activity.deliveryFailed === true,
+    },
+  ];
 }
 
-function getBrowserStorage(name: "localStorage" | "sessionStorage") {
-  if (typeof window === "undefined") return null;
+type StorageName = "localStorage" | "sessionStorage";
+
+/** Web storage where the browser allows it: downloads work without it. */
+function webStorage(name: StorageName): Storage | null {
   try {
     return window[name];
   } catch {
@@ -256,55 +385,50 @@ function getBrowserStorage(name: "localStorage" | "sessionStorage") {
   }
 }
 
-function readBrowserStorage(
-  name: "localStorage" | "sessionStorage",
-  key: string,
-) {
+function store(name: StorageName, key: string, value: string | null) {
   try {
-    return getBrowserStorage(name)?.getItem(key) ?? null;
+    if (value === null) webStorage(name)?.removeItem(key);
+    else webStorage(name)?.setItem(key, value);
   } catch {
+    // Full or blocked: the live state still works.
+  }
+}
+
+function storedPreferences(): DownloadPreferences | null {
+  const raw = webStorage("localStorage")?.getItem(storageKey);
+  if (!raw) return null;
+  try {
+    const stored = JSON.parse(raw) as Partial<DownloadPreferences>;
+    return {
+      audio: stored.audio === "DUB" ? "DUB" : defaults.audio,
+      providers: stored.providers?.length
+        ? stored.providers
+        : defaults.providers,
+      destination:
+        stored.destination === "MYJD" || stored.destination === "COPY"
+          ? stored.destination
+          : defaults.destination,
+    };
+  } catch {
+    store("localStorage", storageKey, null);
     return null;
   }
 }
 
-function writeBrowserStorage(
-  name: "localStorage" | "sessionStorage",
-  key: string,
-  value: string | null,
-) {
-  try {
-    const storage = getBrowserStorage(name);
-    if (!storage) return;
-    if (value === null) storage.removeItem(key);
-    else storage.setItem(key, value);
-  } catch {
-    // Storage is best effort; the live provider remains usable without it.
-  }
-}
-
-function persistedJobFromActivity(
-  activity: Activity,
-): PersistedDownloadJob | null {
-  if (!isResumableActivity(activity) || !activity.receipt) return null;
-  return {
-    id: activity.id,
-    request: activity.request,
-    receipt: activity.receipt,
-    destination: activity.destination,
-    createdAt: activity.createdAt,
-    current: activity.current,
-    total: activity.total,
-    deliveryAttempted: activity.deliveryAttempted === true,
-    deliveryFailed: activity.deliveryFailed === true,
-  };
-}
-
-function isUserAbort(signal: AbortSignal | undefined) {
-  return Boolean(signal?.aborted && signal.reason === "user-cancel");
-}
-
 function findIn(list: Activity[], id: string | null | undefined) {
   return id ? list.find((activity) => activity.id === id) : undefined;
+}
+
+/** State plus a ref to its latest value, for work that outlives a render
+ *  (requests, polls, toasts). */
+function useStateRef<T>(initial: T) {
+  const [value, setValue] = useState(initial);
+  const ref = useRef(initial);
+  const set = useCallback((next: T) => {
+    ref.current = next;
+    setValue(next);
+  }, []);
+  return [value, set, ref] as const;
 }
 
 export function useDownloads() {
@@ -313,1200 +437,847 @@ export function useDownloads() {
   return value;
 }
 
-type DrawerMode = "settings" | "devices" | "links";
+/** What the drawer shows and, for devices or links, what it acts on. */
+interface DrawerPanel {
+  mode: "settings" | "devices" | "links";
+  /** A download waiting for a device before it starts. */
+  request?: DownloadRequest;
+  activityId?: string;
+}
 
+/**
+ * Downloads, their toasts and the drawer. Handlers read the latest state
+ * through refs, never from the render: toasts and requests keep the closures
+ * of the render that started them.
+ */
 export function DownloadProvider({ children }: { children: ReactNode }) {
-  const [preferences, setPreferences] = useState(defaults);
-  const preferencesRef = useRef(defaults);
-  const [mode, setModeState] = useState<DrawerMode>("settings");
-  const modeRef = useRef<DrawerMode>("settings");
-  const setMode = useCallback((next: DrawerMode) => {
-    modeRef.current = next;
-    setModeState(next);
-  }, []);
-  const [activities, setActivities] = useState<Activity[]>([]);
-  const activitiesRef = useRef<Activity[]>([]);
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(
-    () => new Set(),
+  const [preferences, setPreferences, preferencesRef] = useStateRef(defaults);
+  const [activities, setActivities, activitiesRef] = useStateRef<Activity[]>(
+    [],
   );
-  const dismissedIdsRef = useRef(new Set<string>());
-  const toastIds = useRef(new Map<string, string>());
-  const actionRef = useRef<(id: string, action: ActivityAction) => void>(
-    () => {},
+  const [dismissedIds, setDismissedIds, dismissedIdsRef] = useStateRef(
+    new Set<string>(),
   );
-  const publishActivityRef = useRef<(activity: Activity) => void>(() => {});
-  const pollJobRef = useRef<
-    (id: string, receipt: SavedJob, deferDelivery?: boolean) => Promise<void>
-  >(async () => {});
-  const pollSessionsRef = useRef(new Map<string, symbol>());
-  const pollTimeoutsRef = useRef(new Map<string, number>());
-  const deliverySessionsRef = useRef(new Set<string>());
-  const abortersRef = useRef(new Map<string, AbortController>());
-  const mountedRef = useRef(false);
+  const [deviceProfile, setDeviceProfile, deviceProfileRef] =
+    useStateRef<DeviceProfile>("unknown");
+  const [selectedDeviceId, setSelectedDeviceId, selectedDeviceIdRef] =
+    useStateRef<string | null>(null);
+  const [panel, setPanel, panelRef] = useStateRef<DrawerPanel>({
+    mode: "settings",
+  });
   const [devices, setDevices] = useState<MyJdDevice[]>([]);
-  const [deviceActivityId, setDeviceActivityId] = useState<string | null>(null);
-  const deviceActivityIdRef = useRef<string | null>(null);
-  const [linksActivityId, setLinksActivityId] = useState<string | null>(null);
-  const linksActivityIdRef = useRef<string | null>(null);
-  const [deviceProfile, setDeviceProfile] = useState<DeviceProfile>("unknown");
-  const deviceProfileRef = useRef<DeviceProfile>("unknown");
-  const [pendingRequest, setPendingRequest] = useState<DownloadRequest | null>(
-    null,
-  );
-  const pendingRequestRef = useRef<DownloadRequest | null>(null);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-  const selectedDeviceIdRef = useRef<string | null>(null);
   const [myJdConnected, setMyJdConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [deviceError, setDeviceError] = useState<string | null>(null);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [dockSlot, setDockSlot] = useState<HTMLElement | null>(null);
-  const drawerOpenRef = useRef(false);
-
-  const setActivityDismissed = useCallback(
-    (activityId: string, dismissed: boolean) => {
-      if (dismissedIdsRef.current.has(activityId) === dismissed) return;
-      const next = new Set(dismissedIdsRef.current);
-      if (dismissed) next.add(activityId);
-      else next.delete(activityId);
-      dismissedIdsRef.current = next;
-      setDismissedIds(next);
-    },
-    [],
-  );
-
-  const drawer = useOverlayState({
-    onOpenChange: (isOpen) => {
-      drawerOpenRef.current = isOpen;
-      if (isOpen) return;
-      // The links panel stood in for its activity's toast: bring it back.
-      const linksActivity = activitiesRef.current.find(
-        (activity) =>
-          modeRef.current === "links" &&
-          activity.id === linksActivityIdRef.current,
-      );
-      linksActivityIdRef.current = null;
-      if (linksActivity) publishActivityRef.current(linksActivity);
-      // Closing the picker leaves the job recoverable from the dock button.
-      const waiting = activitiesRef.current.find(
-        (activity) =>
-          activity.id === deviceActivityIdRef.current &&
-          activity.status === "waiting-device",
-      );
-      if (waiting) setActivityDismissed(waiting.id, true);
-      pendingRequestRef.current = null;
-      setPendingRequest(null);
-      deviceActivityIdRef.current = null;
-      setDeviceActivityId(null);
-      setDeviceError(null);
-    },
-  });
   // The drawer mounts the first time it opens (fetching its code then) and
   // stays mounted, so closing still animates and reopening is instant.
   const [drawerLoaded, setDrawerLoaded] = useState(false);
-  if (drawer.isOpen && !drawerLoaded) setDrawerLoaded(true);
+  const [confirmRequest, setConfirmRequest] = useState<DownloadRequest | null>(
+    null,
+  );
+  const confirmDialog = useOverlayState();
+  const toastIds = useRef(new Map<string, string>());
+  const pollsRef = useRef(new Map<string, { timeout?: number }>());
+  const deliveringRef = useRef(new Set<string>());
+  const abortersRef = useRef(new Map<string, AbortController>());
+  const episodeLinksRef = useRef(new Map<string, EpisodeLinksEntry>());
+  const mountedRef = useRef(false);
+  const drawerOpenRef = useRef(false);
 
-  const replaceActivities = useCallback((next: Activity[]) => {
+  const drawer = useOverlayState({
+    onOpenChange: (isOpen) => {
+      const wasOpen = drawerOpenRef.current;
+      drawerOpenRef.current = isOpen;
+      if (isOpen || !wasOpen) return;
+      const { mode, activityId } = panelRef.current;
+      const activity = findIn(activitiesRef.current, activityId);
+      if (!activity) return;
+      // The links panel stood in for its activity's toast: bring it back.
+      if (mode === "links") publishActivity(activity);
+      // Closing the picker leaves the job recoverable from the dock button.
+      else if (activity.status === "waiting-device")
+        setActivityDismissed(activity.id, true);
+    },
+  });
+  const { open: openDrawer, close: closeDrawer } = drawer;
+
+  function showDrawer(next: DrawerPanel) {
+    setPanel(next);
+    setDrawerLoaded(true);
+    openDrawer();
+  }
+
+  function setActivityDismissed(id: string, dismissed: boolean) {
+    if (dismissedIdsRef.current.has(id) === dismissed) return;
+    const next = new Set(dismissedIdsRef.current);
+    if (dismissed) next.add(id);
+    else next.delete(id);
+    setDismissedIds(next);
+  }
+
+  function replaceActivities(next: Activity[]) {
     if (!mountedRef.current) return;
-    activitiesRef.current = next;
     setActivities(next);
-    const storage = getBrowserStorage("sessionStorage");
-    if (storage) {
-      saveActiveDownloadJobs(
-        storage,
-        next
-          .map(persistedJobFromActivity)
-          .filter((job): job is PersistedDownloadJob => job !== null),
-      );
-    }
-  }, []);
+    const session = webStorage("sessionStorage");
+    if (session) saveActiveDownloadJobs(session, next.flatMap(persistable));
+  }
 
-  const stopPolling = useCallback((id: string) => {
-    pollSessionsRef.current.delete(id);
-    const timeout = pollTimeoutsRef.current.get(id);
-    if (timeout !== undefined) window.clearTimeout(timeout);
-    pollTimeoutsRef.current.delete(id);
-  }, []);
+  function stopPolling(id: string) {
+    window.clearTimeout(pollsRef.current.get(id)?.timeout);
+    pollsRef.current.delete(id);
+  }
 
-  useLayoutEffect(() => {
-    const pollSessions = pollSessionsRef.current;
-    const deliverySessions = deliverySessionsRef.current;
-    const activeToastIds = toastIds.current;
-    const aborters = abortersRef.current;
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      for (const id of [...pollSessions.keys()]) stopPolling(id);
-      for (const controller of aborters.values()) controller.abort();
-      aborters.clear();
-      deliverySessions.clear();
-      const visibleToasts = [...activeToastIds.values()];
-      activeToastIds.clear();
-      visibleToasts.forEach((toastId) => toast.close(toastId));
-    };
-  }, [stopPolling]);
-
-  const closeToast = useCallback((activityId: string) => {
+  function closeToast(activityId: string) {
     const toastId = toastIds.current.get(activityId);
     if (!toastId) return;
     // Forget it first so the close callback treats this as programmatic.
     toastIds.current.delete(activityId);
     toast.close(toastId);
-  }, []);
+  }
 
-  const removeActivity = useCallback(
-    (id: string) => {
-      stopPolling(id);
-      abortersRef.current.get(id)?.abort("user-cancel");
-      abortersRef.current.delete(id);
-      setActivityDismissed(id, false);
-      closeToast(id);
-      replaceActivities(
-        activitiesRef.current.filter((activity) => activity.id !== id),
-      );
-    },
-    [closeToast, replaceActivities, setActivityDismissed, stopPolling],
-  );
-
-  const handleToastClosed = useCallback(
-    (activityId: string, toastId: string) => {
-      if (toastIds.current.get(activityId) !== toastId) return;
-      toastIds.current.delete(activityId);
-      const activity = activitiesRef.current.find(
-        (entry) => entry.id === activityId,
-      );
-      if (!activity) return;
-      // Unfinished work stays reachable from the dock button.
-      if (unfinishedStatuses.has(activity.status)) {
-        setActivityDismissed(activity.id, true);
-        return;
-      }
-      removeActivity(activity.id);
-    },
-    [removeActivity, setActivityDismissed],
-  );
+  function removeActivity(id: string) {
+    stopPolling(id);
+    abortersRef.current.get(id)?.abort("user-cancel");
+    abortersRef.current.delete(id);
+    setActivityDismissed(id, false);
+    closeToast(id);
+    replaceActivities(
+      activitiesRef.current.filter((activity) => activity.id !== id),
+    );
+  }
 
   /** Shows or updates the activity's single toast in place. */
-  const publishActivity = useCallback(
-    (activity: Activity) => {
-      if (!mountedRef.current) return;
-      const quietlyRunning = activeStatuses.has(activity.status);
-      if (quietlyRunning && dismissedIdsRef.current.has(activity.id)) return;
-      // While the device picker or the links panel is open, it is the UI
-      // for this activity: no toast on top of (or under) the drawer.
-      if (
-        drawerOpenRef.current &&
-        ((activity.status === "waiting-device" &&
-          deviceActivityIdRef.current === activity.id) ||
-          (modeRef.current === "links" &&
-            linksActivityIdRef.current === activity.id))
-      ) {
-        closeToast(activity.id);
-        return;
-      }
-      setActivityDismissed(activity.id, false);
-      const view = presentActivity(activity, {
-        portable: deviceProfileRef.current === "portable",
-      });
-      const existing = toastIds.current.get(activity.id);
-      const holder = { id: existing ?? "" };
-      const options = {
-        description: (
-          <ActivityToastBody
-            view={view}
-            onAction={(action) => actionRef.current(activity.id, action)}
-          />
-        ),
-        variant: view.variant,
-        isLoading: view.isLoading,
-        timeout: view.timeout,
-        onClose: () => handleToastClosed(activity.id, holder.id),
-      };
-      holder.id = existing
-        ? toast.update(existing, view.title, options)
-        : toast(view.title, options);
-      toastIds.current.set(activity.id, holder.id);
-    },
-    [closeToast, handleToastClosed, setActivityDismissed],
-  );
+  function publishActivity(activity: Activity) {
+    if (!mountedRef.current) return;
+    if (
+      activeStatuses.has(activity.status) &&
+      dismissedIdsRef.current.has(activity.id)
+    )
+      return;
+    // While the device picker or the links panel is open, it is the UI for
+    // this activity: no toast on top of (or under) the drawer.
+    const shown = panelRef.current;
+    if (
+      drawerOpenRef.current &&
+      shown.activityId === activity.id &&
+      (shown.mode === "links" || activity.status === "waiting-device")
+    ) {
+      closeToast(activity.id);
+      return;
+    }
+    setActivityDismissed(activity.id, false);
+    const view = presentActivity(activity, {
+      portable: deviceProfileRef.current === "portable",
+    });
+    const title = <RequestTitle request={activity.request} />;
+    const existing = toastIds.current.get(activity.id);
+    let toastId = existing ?? "";
+    const options = {
+      description: (
+        <ActivityToastBody
+          view={view}
+          onAction={(action) => runAction(activity.id, action)}
+        />
+      ),
+      variant: view.variant,
+      isLoading: view.isLoading,
+      timeout: view.timeout,
+      onClose: () => {
+        if (toastIds.current.get(activity.id) !== toastId) return;
+        toastIds.current.delete(activity.id);
+        const current = findIn(activitiesRef.current, activity.id);
+        if (!current) return;
+        // Unfinished work stays reachable from the dock button.
+        if (unfinishedStatuses.has(current.status))
+          setActivityDismissed(current.id, true);
+        else removeActivity(current.id);
+      },
+    };
+    toastId = existing
+      ? toast.update(existing, title, options)
+      : toast(title, options);
+    toastIds.current.set(activity.id, toastId);
+  }
 
-  const addActivity = useCallback(
-    (activity: Activity) => {
-      if (!mountedRef.current) return;
-      replaceActivities([activity, ...activitiesRef.current]);
-      publishActivity(activity);
-    },
-    [publishActivity, replaceActivities],
-  );
+  /** Brings an activity's toast back, even one the user closed. */
+  function surface(activity: Activity) {
+    setActivityDismissed(activity.id, false);
+    publishActivity(activity);
+  }
 
-  const updateActivity = useCallback(
-    (id: string, changes: Partial<Activity>, publish = true) => {
-      if (!mountedRef.current) return;
-      const existing = activitiesRef.current.find(
-        (activity) => activity.id === id,
-      );
-      if (!existing) return;
-      const updated = { ...existing, ...changes };
-      replaceActivities(
-        activitiesRef.current.map((activity) =>
-          activity.id === id ? updated : activity,
-        ),
-      );
-      if (publish) publishActivity(updated);
-    },
-    [publishActivity, replaceActivities],
-  );
+  function addActivity(activity: Activity) {
+    replaceActivities([activity, ...activitiesRef.current]);
+    publishActivity(activity);
+  }
 
-  useLayoutEffect(() => {
-    let active = true;
-    const profile = getDeviceProfile();
-    deviceProfileRef.current = profile;
-    document.documentElement.dataset.device = profile;
-
-    const storedDeviceId = readBrowserStorage(
-      "sessionStorage",
-      selectedDeviceStorageKey,
+  /** Frees a request's key for a new attempt. A running one is surfaced
+   *  instead, and nothing new starts. */
+  function claimKey(key: string) {
+    const existing = activitiesRef.current.find(
+      (activity) => activity.key === key,
     );
-    selectedDeviceIdRef.current = storedDeviceId;
-    queueMicrotask(() => {
-      if (!active) return;
-      setDeviceProfile(profile);
-      setSelectedDeviceId(storedDeviceId);
-      setMyJdConnected(isMyJdConnected());
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
+    if (existing && activeStatuses.has(existing.status)) {
+      surface(existing);
+      return false;
+    }
+    if (existing) removeActivity(existing.id);
+    return true;
+  }
 
-  useEffect(() => {
-    let active = true;
-    queueMicrotask(() => {
-      if (!active) return;
-      const stored = readBrowserStorage("localStorage", storageKey);
-      if (!stored) return;
-      try {
-        const legacy = JSON.parse(stored) as Partial<DownloadPreferences> & {
-          quickSend?: boolean;
-          confirmSingleEpisode?: boolean;
-        };
-        const destination: DownloadDestination =
-          legacy.destination === "MYJD" || legacy.destination === "COPY"
-            ? legacy.destination
-            : defaults.destination;
-        const next: DownloadPreferences = {
-          audio: legacy.audio === "DUB" ? "DUB" : defaults.audio,
-          providers: legacy.providers?.length
-            ? legacy.providers
-            : defaults.providers,
-          destination,
-        };
-        preferencesRef.current = next;
-        setPreferences(next);
-        writeBrowserStorage("localStorage", storageKey, JSON.stringify(next));
-      } catch {
-        writeBrowserStorage("localStorage", storageKey, null);
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
+  function updateActivity(
+    id: string,
+    changes: Partial<Activity>,
+    publish = true,
+  ) {
+    const existing = findIn(activitiesRef.current, id);
+    if (!existing) return;
+    const updated = { ...existing, ...changes };
+    replaceActivities(
+      activitiesRef.current.map((activity) =>
+        activity.id === id ? updated : activity,
+      ),
+    );
+    if (publish) publishActivity(updated);
+  }
 
-  const savePreferences = useCallback((next: DownloadPreferences) => {
-    preferencesRef.current = next;
+  function savePreferences(next: DownloadPreferences) {
     setPreferences(next);
-    writeBrowserStorage("localStorage", storageKey, JSON.stringify(next));
-  }, []);
+    store("localStorage", storageKey, JSON.stringify(next));
+  }
 
-  const rememberDevice = useCallback((deviceId: string | null) => {
-    selectedDeviceIdRef.current = deviceId;
+  function rememberDevice(deviceId: string | null) {
     setSelectedDeviceId(deviceId);
-    writeBrowserStorage("sessionStorage", selectedDeviceStorageKey, deviceId);
-  }, []);
+    store("sessionStorage", selectedDeviceStorageKey, deviceId);
+  }
 
-  const refreshDevices = useCallback(async (preserveError = false) => {
+  /** Drops the MyJDownloader session here, whatever the API answers. */
+  async function dropMyJd(error: string | null) {
+    await disconnectMyJd().catch(() => undefined);
+    setMyJdConnected(false);
+    setDevices([]);
+    setDeviceError(error);
+  }
+
+  async function refreshDevices(keepError = false) {
     if (!isMyJdConnected()) {
       setMyJdConnected(false);
       setDevices([]);
-      return [] as MyJdDevice[];
+      return;
     }
     setDevicesLoading(true);
-    if (!preserveError) setDeviceError(null);
+    if (!keepError) setDeviceError(null);
     try {
-      const available = await listMyJdDevices();
-      const next = available.map(({ id, name }) => ({ id, name }));
-      setDevices(next);
+      setDevices(await listMyJdDevices());
       setMyJdConnected(true);
-      return next;
     } catch (error) {
-      await disconnectMyJd().catch(() => undefined);
-      setMyJdConnected(false);
-      setDevices([]);
-      setDeviceError(describeMyJdError(error));
-      return [] as MyJdDevice[];
+      await dropMyJd(describeMyJdError(error));
     } finally {
       setDevicesLoading(false);
     }
-  }, []);
+  }
 
-  const showDevicePanel = useCallback(
-    (
-      target: { request?: DownloadRequest; activityId?: string },
-      error?: string,
-    ) => {
-      pendingRequestRef.current = target.request ?? null;
-      setPendingRequest(target.request ?? null);
-      deviceActivityIdRef.current = target.activityId ?? null;
-      setDeviceActivityId(target.activityId ?? null);
-      setDeviceError(error ?? null);
-      setMyJdConnected(isMyJdConnected());
-      setMode("devices");
-      drawerOpenRef.current = true;
-      drawer.open();
-      if (isMyJdConnected()) void refreshDevices(Boolean(error));
-    },
-    [drawer, refreshDevices, setMode],
-  );
+  function showDevicePanel(
+    target: Pick<DrawerPanel, "request" | "activityId">,
+    error?: string,
+  ) {
+    setDeviceError(error ?? null);
+    setMyJdConnected(isMyJdConnected());
+    showDrawer({ mode: "devices", ...target });
+    if (isMyJdConnected()) void refreshDevices(Boolean(error));
+  }
 
-  const requestDevice = useCallback(
-    (activityId: string, error?: string) => {
-      showDevicePanel({ activityId }, error);
-      updateActivity(activityId, {
-        status: "waiting-device",
-        destination: "MYJD",
-        failure: undefined,
-      });
-    },
-    [showDevicePanel, updateActivity],
-  );
+  function requestDevice(activityId: string, error?: string) {
+    showDevicePanel({ activityId }, error);
+    updateActivity(activityId, {
+      status: "waiting-device",
+      destination: "MYJD",
+      failure: undefined,
+    });
+  }
 
-  const showLinks = useCallback(
-    (activityId: string) => {
-      setLinksActivityId(activityId);
-      linksActivityIdRef.current = activityId;
-      setMode("links");
-      drawerOpenRef.current = true;
-      closeToast(activityId);
-      drawer.open();
-    },
-    [closeToast, drawer, setMode],
-  );
+  function showLinks(activityId: string) {
+    closeToast(activityId);
+    showDrawer({ mode: "links", activityId });
+  }
 
-  const deliver = useCallback(
-    async (
-      id: string,
-      overrides: {
-        destination?: DownloadDestination;
-        deviceId?: string;
-      } = {},
-    ) => {
-      const activity = findIn(activitiesRef.current, id);
-      if (!activity) return;
-      const destination = overrides.destination ?? activity.destination;
-      const episodes = deliverableEpisodes(activity);
-      const urls = collectUrls(episodes);
-      if (!urls.length) {
-        updateActivity(id, {
-          receipt: activity.status === "partial" ? activity.receipt : undefined,
-          status: "error",
-          noLinks: true,
-          destination,
-        });
-        return;
-      }
-      const failedNumbers = failedEpisodeNumbers(episodes);
-      const failedCount = Math.max(
-        failedNumbers.length,
-        activity.onlyEpisodes ? 0 : (activity.failedCount ?? 0),
-      );
-      const finish = (via: DownloadDestination) =>
-        updateActivity(id, {
-          // Keep the job receipt while episodes failed so they can be retried.
-          receipt: failedCount > 0 ? activity.receipt : undefined,
-          status: failedCount > 0 ? "partial" : "handed-off",
-          deliveredVia: via,
-          destination,
-          deliveryFailed: false,
-          failure: undefined,
-          interrupted: false,
-          copyBlocked: false,
-        });
+  function openSettings() {
+    showDrawer({ mode: "settings" });
+  }
 
-      if (deliverySessionsRef.current.has(id)) return;
-
-      if (destination === "COPY") {
-        const copied = await copyLinks(urls);
-        if (copied) finish("COPY");
-        else
-          updateActivity(id, {
-            status: "ready",
-            destination,
-            copyBlocked: true,
-            failure: undefined,
-          });
-        return;
-      }
-
-      if (destination === "MYJD") {
-        const deviceId = overrides.deviceId ?? selectedDeviceIdRef.current;
-        if (!deviceId || !isMyJdConnected()) {
-          requestDevice(id);
-          return;
-        }
-        deliverySessionsRef.current.add(id);
-        updateActivity(id, {
-          status: "sending",
-          destination,
-          deliveryAttempted: true,
-          deliveryFailed: false,
-          failure: undefined,
-        });
-        try {
-          await sendToMyJd(deviceId, activity.packageName, urls);
-          finish("MYJD");
-        } catch (error) {
-          if (deviceProfileRef.current === "portable") rememberDevice(null);
-          updateActivity(
-            id,
-            { deliveryFailed: true, deliveryAttempted: false },
-            false,
-          );
-          requestDevice(id, describeMyJdError(error));
-        } finally {
-          deliverySessionsRef.current.delete(id);
-        }
-        return;
-      }
-
-      deliverySessionsRef.current.add(id);
+  /** Sends the links to the activity's destination (set it before). */
+  async function deliver(id: string, deviceId?: string) {
+    const activity = findIn(activitiesRef.current, id);
+    if (!activity) return;
+    const { destination } = activity;
+    const urls = collectUrls(deliverableEpisodes(activity));
+    if (!urls.length) {
       updateActivity(id, {
-        status: "sending",
-        destination,
-        deliveryAttempted: true,
-        deliveryFailed: false,
-        failure: undefined,
-        interrupted: false,
+        receipt: activity.status === "partial" ? activity.receipt : undefined,
+        status: "error",
+        noLinks: true,
       });
-      try {
-        await sendToClickNLoad(activity.packageName, urls);
-      } catch (error) {
+      return;
+    }
+    if (deliveringRef.current.has(id)) return;
+
+    if (destination === "COPY") {
+      // A closed toast hid the work; it didn't allow overwriting the
+      // clipboard unannounced. The links wait for an explicit copy.
+      if (dismissedIdsRef.current.has(id))
+        updateActivity(id, { status: "ready" });
+      else if (await copyLinks(urls))
+        updateActivity(id, delivered(activity, "COPY"));
+      else
+        updateActivity(id, {
+          status: "ready",
+          copyBlocked: true,
+          failure: undefined,
+        });
+      return;
+    }
+
+    const device = deviceId ?? selectedDeviceIdRef.current;
+    if (destination === "MYJD" && (!device || !isMyJdConnected())) {
+      requestDevice(id);
+      return;
+    }
+    deliveringRef.current.add(id);
+    updateActivity(id, {
+      status: "sending",
+      deliveryAttempted: true,
+      deliveryFailed: false,
+      failure: undefined,
+      interrupted: false,
+    });
+    try {
+      await (destination === "MYJD" && device
+        ? sendToMyJd(device, activity.packageName, urls)
+        : sendToClickNLoad(activity.packageName, urls));
+    } catch (error) {
+      if (destination === "MYJD") {
+        if (deviceProfileRef.current === "portable") rememberDevice(null);
+        updateActivity(
+          id,
+          { deliveryFailed: true, deliveryAttempted: false },
+          false,
+        );
+        requestDevice(id, describeMyJdError(error));
+      } else {
+        // A refused connection proves nothing was delivered; a lost reply
+        // after sending stays "attempted" so a reload warns about duplicates.
         const uncertain =
           error instanceof ClickNLoadError && error.maybeDelivered;
         updateActivity(id, {
           status: "ready",
           failure: describeClickNLoadError(error),
-          // A refused connection proves nothing was delivered; a lost reply
-          // after sending stays "attempted" so a reload warns about duplicates.
           deliveryFailed: !uncertain,
           deliveryAttempted: uncertain,
         });
-        return;
-      } finally {
-        deliverySessionsRef.current.delete(id);
       }
-      finish("CNL");
-    },
-    [rememberDevice, requestDevice, updateActivity],
-  );
+      return;
+    } finally {
+      deliveringRef.current.delete(id);
+    }
+    updateActivity(id, delivered(activity, destination));
+  }
 
-  const pollJob = useCallback(
-    async function startPolling(
-      id: string,
-      receipt: SavedJob,
-      deferDelivery = false,
-    ) {
-      stopPolling(id);
-      const session = Symbol(receipt.jobId);
-      pollSessionsRef.current.set(id, session);
-
-      const isCurrentSession = () =>
-        pollSessionsRef.current.get(id) === session;
-      const scheduleNextPoll = (delay: number) => {
-        if (!isCurrentSession()) return;
-        const timeout = window.setTimeout(() => {
-          pollTimeoutsRef.current.delete(id);
-          void poll();
-        }, delay);
-        pollTimeoutsRef.current.set(id, timeout);
-      };
-
-      async function poll() {
-        if (!isCurrentSession()) return;
-        if (Date.parse(receipt.expiresAt) <= Date.now()) {
-          stopPolling(id);
-          updateActivity(id, {
-            receipt: undefined,
-            status: "error",
-            failure: {
-              title: "La descarga caducó",
-              detail: "Vuelve a iniciarla para obtener enlaces actuales.",
-            },
-          });
-          return;
-        }
-        try {
-          const response = await apiFetch<{
-            data: Omit<JobData, "episodes"> & { episodes: ResolvedEpisode[] };
-          }>(
-            `/download-jobs/${receipt.jobId}`,
-            { headers: { authorization: `Bearer ${receipt.accessToken}` } },
-            true,
-          );
-          if (!isCurrentSession()) return;
-          const job = response.data;
-          const processed = job.completedItems + job.failedItems;
-          const finished = [
-            "COMPLETED",
-            "PARTIAL",
-            "FAILED",
-            "CANCELLED",
-          ].includes(job.status);
-          updateActivity(
-            id,
-            {
-              status: "processing",
-              reconnecting: false,
-              restored: false,
-              current: processed,
-              total: job.totalItems,
-              episodes: job.episodes,
-              packageName: job.packageName,
-              failedCount: job.failedItems,
-            },
-            !finished,
-          );
-          if (!finished) {
-            scheduleNextPoll(jobPollInterval(job.totalItems));
-            return;
-          }
-          stopPolling(id);
-          if (job.status === "CANCELLED") {
-            updateActivity(id, {
-              receipt: undefined,
-              status: "cancelled",
-              cancelling: false,
-            });
-            return;
-          }
-          const activity = findIn(activitiesRef.current, id);
-          const deliverable = activity
-            ? collectUrls(deliverableEpisodes(activity))
-            : [];
-          if (deferDelivery && deliverable.length > 0 && activity) {
-            const interrupted =
-              activity.deliveryAttempted === true &&
-              activity.deliveryFailed !== true;
-            updateActivity(id, {
-              status: "ready",
-              retrying: false,
-              interrupted,
-            });
-            return;
-          }
-          updateActivity(id, { retrying: false }, false);
-          await deliver(id);
-        } catch (error) {
-          if (!isCurrentSession()) return;
-          const capabilityRejected =
-            error instanceof ApiResponseError &&
-            (error.status === 401 || error.status === 404);
-          if (
-            capabilityRejected ||
-            Date.parse(receipt.expiresAt) <= Date.now()
-          ) {
-            stopPolling(id);
-            updateActivity(id, {
-              receipt: undefined,
-              status: "error",
-              failure: {
-                title: "La descarga ya no está disponible",
-                detail:
-                  "La autorización caducó. Vuelve a iniciar la descarga para continuar.",
-              },
-            });
-            return;
-          }
-          const current = findIn(activitiesRef.current, id);
-          const retryAfter =
-            error instanceof ApiResponseError ? (error.retryAfterMs ?? 0) : 0;
-          if (error instanceof ApiResponseError && error.status === 429) {
-            // Rate limited: the job keeps running on the API. Wait as asked
-            // and keep showing progress, not a lost connection.
-            if (current?.reconnecting)
-              updateActivity(id, { reconnecting: false });
-            scheduleNextPoll(
-              Math.max(retryAfter, jobPollInterval(current?.total ?? 0)),
-            );
-            return;
-          }
-          updateActivity(id, { status: "processing", reconnecting: true });
-          scheduleNextPoll(Math.max(retryAfter, 3_000));
-        }
-      }
-
-      await poll();
-    },
-    [deliver, stopPolling, updateActivity],
-  );
-
-  useLayoutEffect(() => {
-    publishActivityRef.current = publishActivity;
-    pollJobRef.current = pollJob;
-  }, [pollJob, publishActivity]);
-
-  useEffect(() => {
-    let active = true;
-    const storage = getBrowserStorage("sessionStorage");
-    const restoredJobs = storage ? loadActiveDownloadJobs(storage) : [];
-    if (restoredJobs.length === 0) return;
-    const restoredActivities = restoredJobs.map((job): Activity => ({
-      id: job.id,
-      key: requestKey(job.request),
-      request: job.request,
-      status: "processing",
-      current: job.current,
-      total: job.total,
-      packageName: job.request.title,
-      episodes: [],
-      receipt: job.receipt,
-      destination: job.destination,
-      preferredAudio: preferencesRef.current.audio,
-      createdAt: job.createdAt,
-      isJob: true,
-      restored: true,
-      deliveryAttempted: job.deliveryAttempted,
-      deliveryFailed: job.deliveryFailed,
-    }));
-    const restoredIds = new Set(
-      restoredActivities.map((activity) => activity.id),
-    );
-    queueMicrotask(() => {
-      if (!active) return;
-      replaceActivities([
-        ...restoredActivities,
-        ...activitiesRef.current.filter(
-          (activity) => !restoredIds.has(activity.id),
-        ),
-      ]);
-      for (const activity of restoredActivities) {
-        publishActivityRef.current(activity);
-        void pollJobRef.current(
-          activity.id,
-          activity.receipt as SavedJob,
-          true,
-        );
-      }
-    });
-    return () => {
-      active = false;
-      for (const activity of restoredActivities) stopPolling(activity.id);
+  async function pollJob(id: string, receipt: SavedJob, deferDelivery = false) {
+    stopPolling(id);
+    const session: { timeout?: number } = {};
+    pollsRef.current.set(id, session);
+    const live = () => pollsRef.current.get(id) === session;
+    const pollIn = (delay: number) => {
+      if (live()) session.timeout = window.setTimeout(() => void poll(), delay);
     };
-  }, [replaceActivities, stopPolling]);
+    const end = (changes: Partial<Activity>) => {
+      stopPolling(id);
+      updateActivity(id, { receipt: undefined, ...changes });
+    };
+    const expired = () => Date.parse(receipt.expiresAt) <= Date.now();
 
-  const startOperation = useCallback(
-    async (
-      next: DownloadRequest,
-      options?: {
-        destination?: DownloadDestination;
-        preferredDeviceId?: string;
-        /** Repeats an earlier job POST whose outcome is unknown. */
-        idempotencyKey?: string;
-      },
-    ) => {
-      const snapshot = preferencesRef.current;
-      const destination =
-        options?.destination ??
-        getEffectiveDestination(deviceProfileRef.current, snapshot.destination);
-      const key = requestKey(next);
-      const existing = activitiesRef.current.find(
-        (activity) => activity.key === key,
-      );
-      if (existing) {
-        // The same request is still running: surface it instead of sending
-        // a duplicate. A finished one is replaced by the new attempt.
-        if (activeStatuses.has(existing.status)) {
-          setActivityDismissed(existing.id, false);
-          publishActivity(existing);
-          return;
-        }
-        removeActivity(existing.id);
-      }
-      const id = crypto.randomUUID();
-      const isJob = requiresBackgroundJob(next);
-      // One Idempotency-Key per user action: a retry of the same action
-      // reuses it, so the API returns the job it may already have created.
-      let idempotencyKey = options?.idempotencyKey ?? crypto.randomUUID();
-      let jobRequest: string | null = null;
-      // One controller serves the user's Cancel and the 25 s deadline.
-      const controller = new AbortController();
-      const deadline = window.setTimeout(
-        () =>
-          controller.abort(
-            new DOMException("Resolve deadline exceeded", "TimeoutError"),
-          ),
-        25_000,
-      );
-      abortersRef.current.set(id, controller);
-      addActivity({
-        id,
-        key,
-        request: next,
-        status: "resolving",
-        current: 0,
-        total: requestEpisodeCount(next),
-        packageName: next.title,
-        episodes: [],
-        destination,
-        preferredAudio: snapshot.audio,
-        createdAt: Date.now(),
-        isJob,
-      });
-      const signal = controller.signal;
-      try {
-        if (isJob) {
-          jobRequest = JSON.stringify(jobBody(next, snapshot));
-          let response: { data: JobReceipt };
-          try {
-            response = await postJob(next.slug, jobRequest, idempotencyKey, {
-              signal,
-            });
-          } catch (error) {
-            // 409/422: the key is spent (too many repeats) or belongs to a
-            // different body (preferences changed). This is a new attempt.
-            if (
-              !(error instanceof ApiResponseError) ||
-              (error.status !== 409 && error.status !== 422)
-            )
-              throw error;
-            idempotencyKey = crypto.randomUUID();
-            response = await postJob(next.slug, jobRequest, idempotencyKey, {
-              signal,
-            });
-          }
-          abortersRef.current.delete(id);
-          const { missingEpisodeNumbers, ...receipt } = response.data;
-          updateActivity(id, {
-            receipt,
-            status: "processing",
-            missingNumbers: missingEpisodeNumbers?.length
-              ? missingEpisodeNumbers
-              : undefined,
-          });
-          void pollJob(id, receipt);
-          return;
-        }
-        const response = await apiFetch<{
-          data: { packageName: string; episodes: ResolvedEpisode[] };
-        }>(
-          `/anime/${encodeURIComponent(next.slug)}/downloads/resolve`,
-          {
-            method: "POST",
-            signal,
-            body: JSON.stringify({
-              episodeNumbers: next.episodeNumbers,
-              audio: snapshot.audio,
-              providers: snapshot.providers,
-              ...(next.refresh ? { refresh: true } : {}),
-            }),
+    async function poll() {
+      if (!live()) return;
+      if (expired())
+        return end({
+          status: "error",
+          failure: {
+            title: "La descarga caducó",
+            detail: "Vuelve a iniciarla para obtener enlaces actuales.",
           },
-          true,
-        );
-        abortersRef.current.delete(id);
+        });
+      try {
+        const { data: job } = await jobApi<{
+          data: Omit<JobData, "episodes"> & { episodes: ResolvedEpisode[] };
+        }>(receipt);
+        if (!live()) return;
+        const finished = !["QUEUED", "RUNNING"].includes(job.status);
         updateActivity(
           id,
           {
-            packageName: response.data.packageName,
-            episodes: response.data.episodes,
-            current: response.data.episodes.length,
+            status: "processing",
+            reconnecting: false,
+            restored: false,
+            current: job.completedItems + job.failedItems,
+            total: job.totalItems,
+            episodes: job.episodes,
+            packageName: job.packageName,
+            failedCount: job.failedItems,
           },
-          false,
+          !finished,
         );
-        await deliver(id, { deviceId: options?.preferredDeviceId });
-      } catch (error) {
-        abortersRef.current.delete(id);
-        const abandoned =
-          isUserAbort(signal) || error instanceof ApiTimeoutError;
-        // The job POST may have reached the API anyway: cancel that job.
-        if (abandoned && jobRequest)
-          void cancelAbandonedJob(next.slug, jobRequest, idempotencyKey);
-        if (isUserAbort(signal)) {
-          updateActivity(id, { status: "cancelled" });
+        if (!finished) return pollIn(jobPollInterval(job.totalItems));
+        stopPolling(id);
+        if (job.status === "CANCELLED")
+          return end({ status: "cancelled", cancelling: false });
+        const activity = findIn(activitiesRef.current, id);
+        if (
+          deferDelivery &&
+          activity &&
+          collectUrls(deliverableEpisodes(activity)).length > 0
+        ) {
+          updateActivity(id, {
+            status: "ready",
+            retrying: false,
+            interrupted:
+              activity.deliveryAttempted === true &&
+              activity.deliveryFailed !== true,
+          });
           return;
         }
-        updateActivity(id, {
-          status: "error",
-          retryable:
-            !(error instanceof SelectionTooLargeError) && retryable(error),
-          // Unknown outcome: "Reintentar" repeats the same job request.
-          retryKey:
-            jobRequest && outcomeUnknown(error) ? idempotencyKey : undefined,
-          failure:
-            error instanceof SelectionTooLargeError
-              ? {
-                  title: "Selección demasiado grande",
-                  detail: `Puedes enviar hasta ${formatNumber(MAX_JOB_EPISODES)} episodios a la vez. Usa «Descargar todo» o un rango.`,
-                }
-              : describeApiError(error),
-        });
-      } finally {
-        window.clearTimeout(deadline);
+        updateActivity(id, { retrying: false }, false);
+        await deliver(id);
+      } catch (error) {
+        if (!live()) return;
+        const status = error instanceof ApiResponseError ? error.status : 0;
+        if (status === 401 || status === 404 || expired())
+          return end({
+            status: "error",
+            failure: {
+              title: "La descarga ya no está disponible",
+              detail:
+                "La autorización caducó. Vuelve a iniciar la descarga para continuar.",
+            },
+          });
+        const retryAfter =
+          error instanceof ApiResponseError ? (error.retryAfterMs ?? 0) : 0;
+        if (status === 429) {
+          // Rate limited: the job keeps running on the API. Wait as asked
+          // and keep showing progress, not a lost connection.
+          const current = findIn(activitiesRef.current, id);
+          if (current?.reconnecting)
+            updateActivity(id, { reconnecting: false });
+          return pollIn(
+            Math.max(retryAfter, jobPollInterval(current?.total ?? 0)),
+          );
+        }
+        updateActivity(id, { status: "processing", reconnecting: true });
+        pollIn(Math.max(retryAfter, 3_000));
       }
-    },
-    [
-      addActivity,
-      deliver,
-      pollJob,
-      publishActivity,
-      removeActivity,
-      setActivityDismissed,
-      updateActivity,
-    ],
-  );
+    }
 
-  const preparePortableDownload = useCallback(
-    async (next: DownloadRequest) => {
-      const deviceId = selectedDeviceIdRef.current;
-      if (!isMyJdConnected() || !deviceId) {
-        showDevicePanel({ request: next });
+    await poll();
+  }
+
+  async function startOperation(
+    next: DownloadRequest,
+    options: {
+      destination?: DownloadDestination;
+      preferredDeviceId?: string;
+      /** Repeats an earlier job POST whose outcome is unknown. */
+      idempotencyKey?: string;
+    } = {},
+  ) {
+    const snapshot = preferencesRef.current;
+    if (!claimKey(requestKey(next))) return;
+    const activity = newActivity(next, snapshot.audio, {
+      status: "resolving",
+      destination:
+        options.destination ??
+        getEffectiveDestination(deviceProfileRef.current, snapshot.destination),
+      isJob: requiresBackgroundJob(next),
+    });
+    const { id } = activity;
+    // One Idempotency-Key per user action: a retry of the same action
+    // reuses it, so the API returns the job it may already have created.
+    let idempotencyKey = options.idempotencyKey ?? crypto.randomUUID();
+    let jobRequest: string | null = null;
+    // One controller serves the user's Cancel and the 25 s deadline.
+    const controller = new AbortController();
+    const { signal } = controller;
+    const deadline = window.setTimeout(
+      () =>
+        controller.abort(
+          new DOMException("Resolve deadline exceeded", "TimeoutError"),
+        ),
+      25_000,
+    );
+    abortersRef.current.set(id, controller);
+    addActivity(activity);
+    try {
+      if (activity.isJob) {
+        const body = JSON.stringify(jobBody(next, snapshot));
+        jobRequest = body;
+        const response = await postJob(next.slug, body, idempotencyKey, {
+          signal,
+        }).catch((error: unknown) => {
+          // 409/422: the key is spent (too many repeats) or belongs to a
+          // different body (preferences changed). This is a new attempt.
+          if (
+            !(error instanceof ApiResponseError) ||
+            (error.status !== 409 && error.status !== 422)
+          )
+            throw error;
+          idempotencyKey = crypto.randomUUID();
+          return postJob(next.slug, body, idempotencyKey, { signal });
+        });
+        abortersRef.current.delete(id);
+        const { missingEpisodeNumbers, ...receipt } = response.data;
+        updateActivity(id, {
+          receipt,
+          status: "processing",
+          missingNumbers: missingEpisodeNumbers?.length
+            ? missingEpisodeNumbers
+            : undefined,
+        });
+        void pollJob(id, receipt);
         return;
       }
-      setDevicesLoading(true);
-      try {
-        const available = await listMyJdDevices();
-        const normalized = available.map(({ id, name }) => ({ id, name }));
-        setDevices(normalized);
-        if (
-          !isRememberedDeviceAvailable(
-            deviceId,
-            normalized.map((device) => device.id),
-          )
-        ) {
-          rememberDevice(null);
-          showDevicePanel(
-            { request: next },
-            "El dispositivo guardado ya no está disponible. Elige otro.",
-          );
-          return;
-        }
+      const { data } = await resolveLinks(next, snapshot, signal);
+      abortersRef.current.delete(id);
+      updateActivity(
+        id,
+        {
+          packageName: data.packageName,
+          episodes: data.episodes,
+          current: data.episodes.length,
+        },
+        false,
+      );
+      await deliver(id, options.preferredDeviceId);
+    } catch (error) {
+      abortersRef.current.delete(id);
+      const cancelled = signal.aborted && signal.reason === "user-cancel";
+      // The job POST may have reached the API anyway: cancel that job.
+      if (jobRequest && (cancelled || error instanceof ApiTimeoutError))
+        void cancelAbandonedJob(next.slug, jobRequest, idempotencyKey);
+      if (cancelled) {
+        updateActivity(id, { status: "cancelled" });
+        return;
+      }
+      const tooLarge = error instanceof SelectionTooLargeError;
+      updateActivity(id, {
+        status: "error",
+        retryable: !tooLarge && retryable(error),
+        // Unknown outcome: "Reintentar" repeats the same job request.
+        retryKey:
+          jobRequest && outcomeUnknown(error) ? idempotencyKey : undefined,
+        failure: tooLarge
+          ? {
+              title: "Selección demasiado grande",
+              detail: `Puedes enviar hasta ${formatNumber(MAX_JOB_EPISODES)} episodios a la vez. Usa «Descargar todo» o un rango.`,
+            }
+          : describeApiError(error),
+      });
+    } finally {
+      window.clearTimeout(deadline);
+    }
+  }
+
+  async function preparePortableDownload(
+    next: DownloadRequest,
+    deviceId: string,
+  ) {
+    setDevicesLoading(true);
+    try {
+      const available = await listMyJdDevices();
+      setDevices(available);
+      if (available.some((device) => device.id === deviceId)) {
         void startOperation(next, {
           destination: "MYJD",
           preferredDeviceId: deviceId,
         });
-      } catch (error) {
-        await disconnectMyJd().catch(() => undefined);
-        setMyJdConnected(false);
-        showDevicePanel({ request: next }, describeMyJdError(error));
-      } finally {
-        setDevicesLoading(false);
+        return;
       }
-    },
-    [rememberDevice, showDevicePanel, startOperation],
-  );
-
-  const openDownload = useCallback(
-    (next: DownloadRequest) => {
-      // Device picker, link list and fallbacks all live in the drawer.
-      preloadDownloadDrawer();
-      const profile = getDeviceProfile();
-      deviceProfileRef.current = profile;
-      setDeviceProfile(profile);
-      document.documentElement.dataset.device = profile;
-      const running = activitiesRef.current.find(
-        (activity) =>
-          activity.key === requestKey(next) &&
-          activeStatuses.has(activity.status),
+      rememberDevice(null);
+      showDevicePanel(
+        { request: next },
+        "El dispositivo guardado ya no está disponible. Elige otro.",
       );
-      if (running) {
-        setActivityDismissed(running.id, false);
-        publishActivity(running);
-        return;
-      }
-      const dispatch = planDownloadDispatch({
-        profile,
-        storedDestination: preferencesRef.current.destination,
-        myJdConnected: isMyJdConnected(),
-        selectedDeviceId: selectedDeviceIdRef.current,
-      });
-      if (dispatch.action === "configure-myjd") {
-        showDevicePanel({ request: next });
-        return;
-      }
-      if (profile === "portable" && dispatch.destination === "MYJD") {
-        void preparePortableDownload(next);
-        return;
-      }
-      void startOperation(next, { destination: dispatch.destination });
-    },
-    [
-      preparePortableDownload,
-      publishActivity,
-      setActivityDismissed,
-      showDevicePanel,
-      startOperation,
-    ],
-  );
+    } catch (error) {
+      const message = describeMyJdError(error);
+      await dropMyJd(message);
+      showDevicePanel({ request: next }, message);
+    } finally {
+      setDevicesLoading(false);
+    }
+  }
 
-  const openSettings = useCallback(() => {
-    setMode("settings");
-    drawerOpenRef.current = true;
-    drawer.open();
-  }, [drawer, setMode]);
+  function dispatchDownload(next: DownloadRequest) {
+    const plan = planDownloadDispatch({
+      profile: deviceProfileRef.current,
+      storedDestination: preferencesRef.current.destination,
+      myJdConnected: isMyJdConnected(),
+      selectedDeviceId: selectedDeviceIdRef.current,
+    });
+    if (plan.action === "configure-myjd") showDevicePanel({ request: next });
+    // Only a phone sending to MyJDownloader checks its remembered device.
+    else if (plan.preferredDeviceId)
+      void preparePortableDownload(next, plan.preferredDeviceId);
+    else void startOperation(next, { destination: plan.destination });
+  }
 
-  const openDeviceSettings = useCallback(() => {
-    showDevicePanel({});
-  }, [showDevicePanel]);
+  function openDownload(next: DownloadRequest) {
+    // Device picker, link list and fallbacks all live in the drawer.
+    preloadDownloadDrawer();
+    const running = activitiesRef.current.find(
+      (activity) =>
+        activity.key === requestKey(next) &&
+        activeStatuses.has(activity.status),
+    );
+    if (running) surface(running);
+    else if (
+      needsConfirmation(
+        next,
+        getEffectiveDestination(
+          deviceProfileRef.current,
+          preferencesRef.current.destination,
+        ),
+      )
+    ) {
+      setConfirmRequest(next);
+      confirmDialog.open();
+    } else dispatchDownload(next);
+  }
 
-  const cancelActivity = useCallback(
-    async (id: string) => {
-      const activity = findIn(activitiesRef.current, id);
-      if (!activity) return;
-      const controller = abortersRef.current.get(id);
-      if (controller) {
-        controller.abort("user-cancel");
-        return;
-      }
-      const receipt = activity.receipt;
-      if (!receipt || activity.cancelling) return;
-      updateActivity(id, { cancelling: true });
-      try {
-        const response = await apiFetch<{ data: Pick<JobData, "status"> }>(
-          `/download-jobs/${receipt.jobId}/cancel`,
-          {
-            method: "POST",
-            headers: { authorization: `Bearer ${receipt.accessToken}` },
-          },
-          true,
-        );
-        const current = findIn(activitiesRef.current, id);
-        if (!current) return;
-        // Only a job still being resolved can be cancelled. If it finished
-        // first, the API returns its final status unchanged: its links are
-        // (being) delivered, so the cancel changes nothing here.
-        if (
-          response.data?.status !== "CANCELLED" ||
-          current.status !== "processing"
-        ) {
-          const stillPolling = current.status === "processing";
-          updateActivity(id, { cancelling: false }, stillPolling);
-          // Pick up the final state now instead of at the next poll.
-          if (stillPolling && current.receipt)
-            void pollJob(id, current.receipt);
-          return;
-        }
+  async function cancelActivity(id: string) {
+    const activity = findIn(activitiesRef.current, id);
+    if (!activity) return;
+    const controller = abortersRef.current.get(id);
+    if (controller) return controller.abort("user-cancel");
+    const { receipt } = activity;
+    if (!receipt || activity.cancelling) return;
+    updateActivity(id, { cancelling: true });
+    try {
+      const response = await jobApi<{ data: Pick<JobData, "status"> }>(
+        receipt,
+        "/cancel",
+        "POST",
+      );
+      const current = findIn(activitiesRef.current, id);
+      if (!current) return;
+      if (
+        response.data?.status === "CANCELLED" &&
+        current.status === "processing"
+      ) {
         stopPolling(id);
         updateActivity(id, {
           receipt: undefined,
           status: "cancelled",
           cancelling: false,
         });
+        return;
+      }
+      // Only a job still being resolved can be cancelled. If it finished
+      // first, the API returns its final status unchanged: its links are
+      // (being) delivered, so the cancel changes nothing here.
+      const stillPolling = current.status === "processing";
+      updateActivity(id, { cancelling: false }, stillPolling);
+      // Pick up the final state now instead of at the next poll.
+      if (stillPolling && current.receipt) void pollJob(id, current.receipt);
+    } catch (error) {
+      const current = findIn(activitiesRef.current, id);
+      if (!current) return;
+      updateActivity(
+        id,
+        { cancelling: false },
+        current.status === "processing",
+      );
+      toast.danger(<RequestTitle request={activity.request} />, {
+        description: `No se pudo cancelar. ${describeApiError(error).detail}`,
+        timeout: 8_000,
+      });
+    }
+  }
+
+  async function retryFailed(id: string) {
+    const activity = findIn(activitiesRef.current, id);
+    if (!activity) return;
+    const failed = failedEpisodeNumbers(deliverableEpisodes(activity));
+    const { receipt } = activity;
+    if (receipt) {
+      updateActivity(id, { retrying: true });
+      try {
+        await jobApi(receipt, "/retry", "POST");
+        updateActivity(id, {
+          status: "processing",
+          onlyEpisodes: failed.length ? failed : undefined,
+          deliveredVia: undefined,
+          current: 0,
+        });
+        void pollJob(id, receipt);
       } catch (error) {
-        const current = findIn(activitiesRef.current, id);
-        if (!current) return;
-        updateActivity(
-          id,
-          { cancelling: false },
-          current.status === "processing",
-        );
-        const friendly = describeApiError(error);
-        toast.danger("No se pudo cancelar", {
-          description: `${describeRequest(activity.request)}. ${friendly.detail}`,
+        updateActivity(id, { retrying: false });
+        toast.danger(<RequestTitle request={activity.request} />, {
+          description: `No se pudo reintentar. ${describeApiError(error).detail}`,
           timeout: 8_000,
         });
       }
-    },
-    [pollJob, stopPolling, updateActivity],
-  );
-
-  const retryFailed = useCallback(
-    async (id: string) => {
-      const activity = findIn(activitiesRef.current, id);
-      if (!activity) return;
-      const failed = failedEpisodeNumbers(deliverableEpisodes(activity));
-      if (activity.receipt) {
-        updateActivity(id, { retrying: true });
-        try {
-          await apiFetch(
-            `/download-jobs/${activity.receipt.jobId}/retry`,
-            {
-              method: "POST",
-              headers: {
-                authorization: `Bearer ${activity.receipt.accessToken}`,
-              },
-            },
-            true,
-          );
-          updateActivity(id, {
-            status: "processing",
-            onlyEpisodes: failed.length ? failed : undefined,
-            deliveredVia: undefined,
-            current: 0,
-          });
-          void pollJob(id, activity.receipt);
-        } catch (error) {
-          updateActivity(id, { retrying: false });
-          toast.danger("No se pudo reintentar", {
-            description: describeApiError(error).detail,
-            timeout: 8_000,
-          });
-        }
-        return;
-      }
-      if (!failed.length) return;
-      removeActivity(id);
-      void startOperation(
-        {
-          slug: activity.request.slug,
-          title: activity.request.title,
-          episodeNumbers: failed,
-          refresh: true,
-        },
-        { destination: activity.deliveredVia ?? activity.destination },
-      );
-    },
-    [pollJob, removeActivity, startOperation, updateActivity],
-  );
-
-  const copyActivityLinks = useCallback(
-    async (id: string) => {
-      const activity = findIn(activitiesRef.current, id);
-      if (!activity) return;
-      const episodes = deliverableEpisodes(activity);
-      const urls = collectUrls(episodes);
-      if (!urls.length) return;
-      const copied = await copyLinks(urls);
-      if (!copied) {
-        showLinks(id);
-        return;
-      }
-      if (activity.status === "handed-off" || activity.status === "partial") {
-        toast.success("Enlaces copiados", {
-          description: `${describeRequest(activity.request)} · ${describeLinks(episodes)}.`,
-          timeout: 4_000,
-        });
-        return;
-      }
-      const failedCount = failedEpisodeNumbers(episodes).length;
-      updateActivity(id, {
-        status: failedCount > 0 ? "partial" : "handed-off",
-        deliveredVia: "COPY",
-        failure: undefined,
-        copyBlocked: false,
-        interrupted: false,
-        receipt: failedCount > 0 ? activity.receipt : undefined,
-      });
-      if (deviceActivityIdRef.current === id) drawer.close();
-    },
-    [drawer, showLinks, updateActivity],
-  );
-
-  /** The links panel copied them by hand: record the delivery. */
-  const markCopied = useCallback(
-    (id: string) => {
-      const activity = findIn(activitiesRef.current, id);
-      if (!activity || !unfinishedStatuses.has(activity.status)) return;
-      const failedCount = failedEpisodeNumbers(
-        deliverableEpisodes(activity),
-      ).length;
-      updateActivity(id, {
-        status: failedCount > 0 ? "partial" : "handed-off",
-        deliveredVia: "COPY",
-        failure: undefined,
-        copyBlocked: false,
-        interrupted: false,
-        receipt: failedCount > 0 ? activity.receipt : undefined,
-      });
-    },
-    [updateActivity],
-  );
-
-  const runAction = useCallback(
-    (id: string, action: ActivityAction) => {
-      const activity = findIn(activitiesRef.current, id);
-      if (!activity) return;
-      switch (action) {
-        case "cancel":
-          void cancelActivity(id);
-          return;
-        case "deliver":
-          void deliver(id);
-          return;
-        case "copy":
-          void copyActivityLinks(id);
-          return;
-        case "show-links":
-          showLinks(id);
-          return;
-        case "use-myjd":
-          updateActivity(id, { destination: "MYJD" }, false);
-          void deliver(id, { destination: "MYJD" });
-          return;
-        case "use-cnl":
-          updateActivity(id, { destination: "CNL" }, false);
-          void deliver(id, { destination: "CNL" });
-          return;
-        case "choose-device":
-          requestDevice(id);
-          return;
-        case "retry":
-          removeActivity(id);
-          void startOperation(activity.request, {
-            idempotencyKey: activity.retryKey,
-          });
-          return;
-        case "retry-failed":
-          void retryFailed(id);
-          return;
-        case "preferences":
-          openSettings();
-          return;
-      }
-    },
-    [
-      cancelActivity,
-      copyActivityLinks,
-      deliver,
-      openSettings,
-      removeActivity,
-      requestDevice,
-      retryFailed,
-      showLinks,
-      startOperation,
-      updateActivity,
-    ],
-  );
-
-  useEffect(() => {
-    actionRef.current = runAction;
-  }, [runAction]);
-
-  const reopenDismissedActivity = useCallback(
-    (activityId: string) => {
-      const activity = findIn(activitiesRef.current, activityId);
-      if (!activity) return;
-      setActivityDismissed(activity.id, false);
-      if (activity.status === "waiting-device") {
-        requestDevice(activity.id);
-        return;
-      }
-      publishActivity(activity);
-    },
-    [publishActivity, requestDevice, setActivityDismissed],
-  );
-
-  function toggleProvider(provider: DownloadProviderId) {
-    const current = preferencesRef.current;
-    const providers = current.providers.includes(provider)
-      ? current.providers.filter((entry) => entry !== provider)
-      : [...current.providers, provider];
-    if (!providers.length) {
-      toast.warning("Mantén al menos un proveedor", {
-        description: "Necesitas al menos uno para buscar los enlaces.",
-        timeout: 4_000,
-      });
       return;
     }
-    savePreferences({ ...current, providers });
+    if (!failed.length) return;
+    removeActivity(id);
+    const { slug, title } = activity.request;
+    void startOperation(
+      { slug, title, episodeNumbers: failed, refresh: true },
+      { destination: activity.deliveredVia ?? activity.destination },
+    );
+  }
+
+  /** Records links copied outside deliver (a toast or panel button). */
+  function markCopied(id: string) {
+    const activity = findIn(activitiesRef.current, id);
+    if (activity && unfinishedStatuses.has(activity.status))
+      updateActivity(id, delivered(activity, "COPY"));
+  }
+
+  async function copyActivityLinks(id: string) {
+    const activity = findIn(activitiesRef.current, id);
+    const episodes = activity ? deliverableEpisodes(activity) : [];
+    const urls = collectUrls(episodes);
+    if (!activity || !urls.length) return;
+    if (!(await copyLinks(urls))) return showLinks(id);
+    if (unfinishedStatuses.has(activity.status)) {
+      markCopied(id);
+      if (drawerOpenRef.current && panelRef.current.activityId === id)
+        closeDrawer();
+      return;
+    }
+    toast.success(<RequestTitle request={activity.request} />, {
+      description: deliveredSentence(episodes, "COPY", activity.provider),
+      timeout: 4_000,
+    });
+  }
+
+  function cachedEpisodeLinks(request: DownloadRequest) {
+    return episodeLinksRef.current.get(
+      episodeLinksKey(request, preferencesRef.current),
+    )?.value;
+  }
+
+  function resolveEpisodeLinks(request: DownloadRequest) {
+    const snapshot = preferencesRef.current;
+    const key = episodeLinksKey(request, snapshot);
+    const cache = episodeLinksRef.current;
+    const cached = cache.get(key);
+    if (cached) return cached.promise;
+    const forget = () => {
+      if (cache.get(key) === entry) cache.delete(key);
+    };
+    // A failed lookup shows as the episode's toast, offering the usual
+    // retry (a full copy) or, without links, the preferences.
+    const fail = (changes: Partial<Activity>) => {
+      forget();
+      if (claimKey(requestKey(request)))
+        addActivity(
+          newActivity(request, snapshot.audio, {
+            status: "error",
+            destination: "COPY",
+            isJob: false,
+            ...changes,
+          }),
+        );
+      return null;
+    };
+    const entry: EpisodeLinksEntry = {
+      promise: resolveLinks(request, snapshot).then(
+        ({ data }) => {
+          const episode = data.episodes[0];
+          if (!episode?.links.length) return fail({ noLinks: true });
+          entry.value = { packageName: data.packageName, episode };
+          return entry.value;
+        },
+        (error: unknown) =>
+          fail({
+            failure: describeApiError(error),
+            retryable: retryable(error),
+          }),
+      ),
+    };
+    cache.set(key, entry);
+    window.setTimeout(forget, EPISODE_LINKS_TTL);
+    return entry.promise;
+  }
+
+  function copyEpisodeLinks(
+    request: DownloadRequest,
+    links: EpisodeLinks,
+    provider?: DownloadProviderId,
+  ) {
+    if (!claimKey(requestKey(request))) return;
+    const episode = provider
+      ? {
+          ...links.episode,
+          links: links.episode.links.filter(
+            (link) => link.provider === provider,
+          ),
+        }
+      : links.episode;
+    const activity = newActivity(request, preferencesRef.current.audio, {
+      status: "ready",
+      current: 1,
+      packageName: links.packageName,
+      episodes: [episode],
+      destination: "COPY",
+      isJob: false,
+      provider,
+    });
+    replaceActivities([activity, ...activitiesRef.current]);
+    // Synchronous up to the clipboard write: still inside the user's press.
+    void deliver(activity.id);
+  }
+
+  function runAction(id: string, action: ActivityAction) {
+    const activity = findIn(activitiesRef.current, id);
+    if (!activity) return;
+    switch (action) {
+      case "cancel":
+        return void cancelActivity(id);
+      case "deliver":
+        return void deliver(id);
+      case "copy":
+        return void copyActivityLinks(id);
+      case "show-links":
+        return showLinks(id);
+      case "use-myjd":
+      case "use-cnl":
+        updateActivity(
+          id,
+          { destination: action === "use-myjd" ? "MYJD" : "CNL" },
+          false,
+        );
+        return void deliver(id);
+      case "choose-device":
+        return requestDevice(id);
+      case "retry":
+        removeActivity(id);
+        return void startOperation(activity.request, {
+          idempotencyKey: activity.retryKey,
+        });
+      case "retry-failed":
+        return void retryFailed(id);
+      case "preferences":
+        return openSettings();
+    }
+  }
+
+  function reopenDismissed(id: string) {
+    const activity = findIn(activitiesRef.current, id);
+    if (activity?.status === "waiting-device") {
+      setActivityDismissed(id, false);
+      requestDevice(id);
+    } else if (activity) surface(activity);
   }
 
   async function connect(email: string, password: string) {
@@ -1514,159 +1285,226 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     setDeviceError(null);
     setConnecting(true);
     try {
-      const available = await connectMyJd(email, password);
+      setDevices(await connectMyJd(email, password));
       setMyJdConnected(true);
-      setDevices(available.map(({ id, name }) => ({ id, name })));
     } catch (error) {
-      await disconnectMyJd().catch(() => undefined);
-      setMyJdConnected(false);
-      setDeviceError(describeMyJdError(error));
+      await dropMyJd(describeMyJdError(error));
     } finally {
       setConnecting(false);
     }
   }
 
-  async function sendDevice(deviceId: string) {
+  function sendDevice(deviceId: string) {
     const portable = deviceProfileRef.current === "portable";
-    const stagedRequest = pendingRequestRef.current;
-    const activity = deviceActivityId
-      ? findIn(activitiesRef.current, deviceActivityId)
-      : null;
+    const { request } = panel;
+    const activity = findIn(activitiesRef.current, panel.activityId);
     if (activity && !["waiting-device", "ready"].includes(activity.status))
       return;
-    if (portable || stagedRequest) rememberDevice(deviceId);
-    if (stagedRequest) {
-      pendingRequestRef.current = null;
-      setPendingRequest(null);
-      drawer.close();
-      void startOperation(stagedRequest, {
+    if (portable || request) rememberDevice(deviceId);
+    if (request) {
+      closeDrawer();
+      void startOperation(request, {
         destination: "MYJD",
         preferredDeviceId: deviceId,
       });
       return;
     }
     if (!activity) {
-      if (portable) drawer.close();
+      if (portable) closeDrawer();
       return;
     }
-    drawer.close();
-    void deliver(activity.id, { destination: "MYJD", deviceId });
+    closeDrawer();
+    updateActivity(activity.id, { destination: "MYJD" }, false);
+    void deliver(activity.id, deviceId);
   }
 
   function chooseAlternative(destination: "COPY" | "CNL") {
-    const stagedRequest = pendingRequestRef.current;
-    const activityId = deviceActivityIdRef.current;
-    pendingRequestRef.current = null;
-    setPendingRequest(null);
-    if (stagedRequest) {
-      drawer.close();
-      void startOperation(stagedRequest, { destination });
+    const { request, activityId } = panel;
+    if (request) {
+      closeDrawer();
+      void startOperation(request, { destination });
       return;
     }
     if (!activityId) return;
     updateActivity(activityId, { destination }, false);
-    if (destination === "COPY") {
-      // Copy first (still inside the click) and let the result close it.
-      void copyActivityLinks(activityId);
-      return;
-    }
-    drawer.close();
-    void deliver(activityId, { destination });
+    // Copy first (still inside the click) and let the result close it.
+    if (destination === "COPY") return void copyActivityLinks(activityId);
+    closeDrawer();
+    void deliver(activityId);
   }
 
-  async function resetMyJdConnection() {
-    try {
-      await disconnectMyJd();
-    } catch {
-      // The local session is dropped either way.
-    } finally {
-      setMyJdConnected(false);
-      setDevices([]);
-      setDeviceError(null);
-      rememberDevice(null);
-    }
+  async function resetMyJd() {
+    await dropMyJd(null);
+    rememberDevice(null);
   }
 
-  const getRequestStatus = useCallback(
-    (request: DownloadRequest) => {
-      const key = requestKey(request);
-      return activities.find((activity) => activity.key === key)?.status;
-    },
-    [activities],
-  );
-  const getEpisodeStatus = useCallback(
-    (slug: string, episodeNumber: number) =>
-      getRequestStatus({ slug, title: "", episodeNumbers: [episodeNumber] }),
-    [getRequestStatus],
-  );
+  // Browser-only state (device, MyJDownloader session, preferences) and the
+  // jobs a reload interrupted.
+  const restoreSession = useEffectEvent((profile: DeviceProfile) => {
+    const session = webStorage("sessionStorage");
+    setDeviceProfile(profile);
+    setSelectedDeviceId(session?.getItem(selectedDeviceStorageKey) ?? null);
+    setMyJdConnected(isMyJdConnected());
+    const stored = storedPreferences();
+    if (stored) savePreferences(stored);
+    const restored = (session ? loadActiveDownloadJobs(session) : []).map(
+      (job) =>
+        newActivity(job.request, preferencesRef.current.audio, {
+          id: job.id,
+          status: "processing",
+          current: job.current,
+          total: job.total,
+          receipt: job.receipt,
+          destination: job.destination,
+          createdAt: job.createdAt,
+          isJob: true,
+          restored: true,
+          deliveryAttempted: job.deliveryAttempted,
+          deliveryFailed: job.deliveryFailed,
+        }),
+    );
+    if (!restored.length) return;
+    replaceActivities(restored);
+    for (const activity of restored) {
+      publishActivity(activity);
+      void pollJob(activity.id, activity.receipt as SavedJob, true);
+    }
+  });
 
-  const dismissedPending = activities.filter(
-    (activity) =>
-      dismissedIds.has(activity.id) && unfinishedStatuses.has(activity.status),
-  );
-  const deviceActivity = deviceActivityId
-    ? activities.find((activity) => activity.id === deviceActivityId)
-    : undefined;
-  const deviceDeliveryPending = deviceActivity?.status === "sending";
-  const linksActivity = linksActivityId
-    ? activities.find((activity) => activity.id === linksActivityId)
-    : undefined;
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    const profile = getDeviceProfile();
+    document.documentElement.dataset.device = profile;
+    let active = true;
+    queueMicrotask(() => {
+      if (active) restoreSession(profile);
+    });
+    const polls = pollsRef.current;
+    const aborters = abortersRef.current;
+    const toasts = toastIds.current;
+    return () => {
+      active = false;
+      mountedRef.current = false;
+      polls.forEach((poll) => window.clearTimeout(poll.timeout));
+      polls.clear();
+      aborters.forEach((controller) => controller.abort());
+      aborters.clear();
+      const open = [...toasts.values()];
+      toasts.clear();
+      open.forEach((toastId) => toast.close(toastId));
+    };
+  }, []);
+
+  function getRequestStatus(request: DownloadRequest) {
+    const key = requestKey(request);
+    return activities.find((activity) => activity.key === key)?.status;
+  }
+
   const portable = deviceProfile === "portable";
   const effectiveDestination = getEffectiveDestination(
     deviceProfile,
     preferences.destination,
   );
-  const drawerTitle =
-    mode === "settings"
-      ? "Preferencias de descarga"
-      : mode === "links"
-        ? "Enlaces de descarga"
-        : myJdConnected
-          ? "Elegir dispositivo"
-          : "Conectar MyJDownloader";
-  const drawerSummary =
-    mode === "devices"
-      ? pendingRequest
-        ? describeRequest(pendingRequest)
-        : deviceActivity
-          ? describeRequest(deviceActivity.request)
-          : null
-      : mode === "links" && linksActivity
-        ? `${describeRequest(linksActivity.request)} · ${describeLinks(deliverableEpisodes(linksActivity))}`
-        : null;
+  const target = findIn(activities, panel.activityId);
+  const targetRequest = panel.request ?? target?.request;
+  const confirmation = confirmRequest &&
+    effectiveDestination !== "COPY" && {
+      request: confirmRequest,
+      ...describeConfirmation(
+        confirmRequest,
+        effectiveDestination,
+        preferences.providers,
+      ),
+    };
 
   return (
     <DownloadContext.Provider
       value={{
         openDownload,
-        getEpisodeStatus,
         getRequestStatus,
         openSettings,
         preferences,
         deviceProfile,
+        destination: effectiveDestination,
         dockSlot,
+        cachedEpisodeLinks,
+        resolveEpisodeLinks,
+        copyEpisodeLinks,
       }}
     >
       {children}
       <DownloadDock
         onSlot={setDockSlot}
-        pending={dismissedPending}
-        portable={deviceProfile === "portable"}
-        onReopen={reopenDismissedActivity}
+        pending={activities.filter(
+          (activity) =>
+            dismissedIds.has(activity.id) &&
+            unfinishedStatuses.has(activity.status),
+        )}
+        portable={portable}
+        onReopen={reopenDismissed}
       />
+      {confirmation && (
+        <AlertDialog.Backdrop
+          isOpen={confirmDialog.isOpen}
+          onOpenChange={confirmDialog.setOpen}
+          isDismissable
+          isKeyboardDismissDisabled={false}
+        >
+          <AlertDialog.Container size="sm">
+            <AlertDialog.Dialog>
+              <AlertDialog.Header>
+                <AlertDialog.Icon status="accent">
+                  <Download aria-hidden="true" />
+                </AlertDialog.Icon>
+                <AlertDialog.Heading>
+                  {confirmation.heading}
+                </AlertDialog.Heading>
+              </AlertDialog.Header>
+              <AlertDialog.Body>
+                <p>{confirmation.body}</p>
+              </AlertDialog.Body>
+              <AlertDialog.Footer>
+                <Button slot="close" variant="tertiary">
+                  Cancelar
+                </Button>
+                <Button
+                  slot="close"
+                  onPress={() => dispatchDownload(confirmation.request)}
+                >
+                  Descargar
+                </Button>
+              </AlertDialog.Footer>
+            </AlertDialog.Dialog>
+          </AlertDialog.Container>
+        </AlertDialog.Backdrop>
+      )}
       {drawerLoaded && (
         <DownloadDrawer
           state={drawer}
-          title={drawerTitle}
-          summary={drawerSummary}
+          title={
+            panel.mode === "settings"
+              ? "Preferencias de descarga"
+              : panel.mode === "links"
+                ? "Enlaces de descarga"
+                : myJdConnected
+                  ? "Elegir dispositivo"
+                  : "Conectar MyJDownloader"
+          }
+          summary={
+            targetRequest
+              ? describeRequest(targetRequest) +
+                (panel.mode === "links" && target
+                  ? ` · ${describeLinks(deliverableEpisodes(target))}`
+                  : "")
+              : null
+          }
           content={
-            mode === "settings"
+            panel.mode === "settings"
               ? {
-                  mode,
+                  mode: "settings",
                   props: {
                     preferences,
                     savePreferences,
-                    toggleProvider,
                     portable,
                     effectiveDestination,
                     selectedDeviceName:
@@ -1674,23 +1512,21 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                         ?.name ??
                       (selectedDeviceId ? "Dispositivo recordado" : null),
                     myJdConnected,
-                    openDeviceSettings,
+                    openDeviceSettings: () => showDevicePanel({}),
                   },
                 }
-              : mode === "links"
+              : panel.mode === "links"
                 ? {
-                    mode,
+                    mode: "links",
                     props: {
-                      urls: linksActivity
-                        ? collectUrls(deliverableEpisodes(linksActivity))
+                      urls: target
+                        ? collectUrls(deliverableEpisodes(target))
                         : [],
-                      onCopied: () => {
-                        if (linksActivity) markCopied(linksActivity.id);
-                      },
+                      onCopied: () => target && markCopied(target.id),
                     },
                   }
                 : {
-                    mode,
+                    mode: "devices",
                     props: {
                       portable,
                       connected: myJdConnected,
@@ -1698,13 +1534,13 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                       devices,
                       devicesLoading,
                       deviceError,
-                      hasTarget: Boolean(pendingRequest || deviceActivity),
-                      deliveryPending: deviceDeliveryPending,
+                      hasTarget: Boolean(targetRequest),
+                      deliveryPending: target?.status === "sending",
                       onConnect: (email, password) =>
                         void connect(email, password),
                       onRefresh: () => void refreshDevices(),
-                      onReset: () => void resetMyJdConnection(),
-                      onSelectDevice: (deviceId) => void sendDevice(deviceId),
+                      onReset: () => void resetMyJd(),
+                      onSelectDevice: sendDevice,
                       onCopyInstead: () => chooseAlternative("COPY"),
                       onUseClickNLoad: () => chooseAlternative("CNL"),
                     },
@@ -1758,32 +1594,32 @@ function DownloadDock({
   }, []);
 
   const first = pending[0];
+  const count = plural(
+    pending.length,
+    "descarga pendiente",
+    "descargas pendientes",
+  );
   return (
     <div
       ref={dockRef}
       role={occupied ? "region" : undefined}
       aria-label={occupied ? "Descargas y selección" : undefined}
-      className="download-dock pointer-events-none fixed inset-x-0 bottom-[calc(var(--bottom-nav-clearance)+1rem)] z-40 mx-auto flex w-full max-w-[1600px] flex-col items-end gap-3 px-4 sm:px-6"
+      className="download-dock page-container pointer-events-none flex flex-col items-end gap-3"
     >
       {first && (
         <Button
-          className="pointer-events-auto min-h-11 gap-2.5 rounded-full bg-surface-tertiary px-4 text-sm font-semibold text-accent-soft-foreground shadow-[0_16px_40px_rgb(0_0_0/0.4)] outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-focus"
+          variant="secondary"
+          className="pointer-events-auto max-w-full"
           onPress={() => onReopen(first.id)}
           aria-label={
             pending.length === 1
               ? `Mostrar descarga: ${describeRequest(first.request)}`
-              : `Mostrar ${plural(pending.length, "descarga pendiente", "descargas pendientes")}`
+              : `Mostrar ${count}`
           }
         >
           <DockIcon activity={first} />
-          <span className="max-w-[60vw] truncate">
-            {pending.length > 1
-              ? plural(
-                  pending.length,
-                  "descarga pendiente",
-                  "descargas pendientes",
-                )
-              : dockLabel(first, portable)}
+          <span className="min-w-0 truncate">
+            {pending.length > 1 ? count : dockLabel(first, portable)}
           </span>
         </Button>
       )}
@@ -1808,14 +1644,13 @@ function DockIcon({ activity }: { activity: Activity }) {
         value={activity.current}
         maxValue={activity.total}
         size="sm"
-        className="size-5"
       >
-        <ProgressCircle.Track className="size-5">
-          <ProgressCircle.TrackCircle className="stroke-white/20" />
-          <ProgressCircle.FillCircle className="stroke-brand" />
+        <ProgressCircle.Track>
+          <ProgressCircle.TrackCircle />
+          <ProgressCircle.FillCircle />
         </ProgressCircle.Track>
       </ProgressCircle>
     );
   }
-  return <Download size={16} aria-hidden="true" />;
+  return <Download aria-hidden="true" />;
 }

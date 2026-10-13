@@ -5,6 +5,14 @@ export type DownloadProviderId =
  *  device, or the clipboard (works everywhere, including phones). */
 export type DownloadDestination = "CNL" | "MYJD" | "COPY";
 
+/** Every provider, in the order the UI lists them. */
+export const providerLabels: Record<DownloadProviderId, string> = {
+  MEGA: "Mega",
+  PIXELDRAIN: "Pixeldrain",
+  MP4UPLOAD: "MP4Upload",
+  ONE_FICHIER: "1Fichier",
+};
+
 export interface DownloadPreferences {
   audio: AudioPreference;
   providers: DownloadProviderId[];
@@ -18,7 +26,6 @@ export type DownloadActivityStatus =
   | "sending"
   | "handed-off"
   | "waiting-device"
-  | "success"
   | "partial"
   | "error"
   | "cancelled";
@@ -32,6 +39,8 @@ export interface DownloadRequest {
   to?: number;
   /** Known episode count for an `all` request, used only for copy. */
   total?: number;
+  /** The anime's only video (a movie): its title alone names it. */
+  movie?: boolean;
   /** Ask the API to re-scrape instead of reusing cached links (retries). */
   refresh?: boolean;
 }

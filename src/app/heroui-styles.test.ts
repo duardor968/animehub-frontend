@@ -8,38 +8,50 @@ import { describe, expect, it } from "vitest";
  * imports: a new component without its stylesheet would render unstyled.
  */
 
-/** Stylesheets each @heroui/react export needs, including the ones its parts
- *  render (close buttons, spinners…). Exports that render nothing styled map
- *  to an empty list. */
+/** Stylesheets each @heroui/react export (or @heroui/styles variant function)
+ *  needs, including the ones its parts render (close buttons, spinners…).
+ *  Exports that render nothing styled map to an empty list. */
 const stylesheets: Record<string, string[]> = {
+  Alert: ["alert"],
   AlertDialog: ["alert-dialog", "close-button"],
   Button: ["button"],
   Card: ["card"],
   Checkbox: ["checkbox"],
   CheckboxGroup: ["checkbox-group"],
   Chip: ["chip"],
-  Disclosure: ["disclosure"],
+  Description: ["description"],
   Drawer: ["drawer", "close-button"],
   I18nProvider: [],
   InputGroup: ["input-group"],
+  Kbd: ["kbd"],
   Label: ["label"],
+  Link: ["link"],
   ListBox: ["list-box", "list-box-item"],
-  Pagination: ["pagination"],
+  NumberField: ["number-field"],
+  ProgressBar: ["progress-bar"],
   ProgressCircle: ["progress-circle"],
   Radio: ["radio"],
   RadioGroup: ["radio-group"],
   SearchField: ["search-field", "close-button"],
   Select: ["select"],
+  Separator: ["separator"],
+  Skeleton: ["skeleton"],
   Slider: ["slider"],
   Spinner: ["spinner"],
-  Tabs: ["tabs"],
+  Tabs: ["tabs", "scroll-shadow"],
   Tag: ["tag", "close-button"],
   TagGroup: ["tag-group"],
+  TextArea: ["textarea"],
   TextField: ["textfield"],
   Toast: ["toast", "close-button", "spinner"],
-  ToggleButton: ["toggle-button"],
-  ToggleButtonGroup: ["toggle-button-group"],
   Tooltip: ["tooltip"],
+  Typography: ["typography"],
+  buttonVariants: ["button"],
+  linkVariants: ["link"],
+  listboxItemVariants: ["list-box-item"],
+  listboxVariants: ["list-box"],
+  paginationVariants: ["pagination"],
+  popoverVariants: ["popover"],
   toast: [],
   useOverlayState: [],
 };
@@ -65,7 +77,7 @@ function heroUiImports() {
   for (const file of sourceFiles(join(root, "src"))) {
     const source = readFileSync(file, "utf8");
     for (const match of source.matchAll(
-      /import\s*\{([^}]*)\}\s*from\s*"@heroui\/react"/g,
+      /import\s*\{([^}]*)\}\s*from\s*"@heroui\/(?:react|styles)"/g,
     )) {
       for (const part of match[1].split(",")) {
         const name = part.trim();

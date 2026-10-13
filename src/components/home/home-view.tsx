@@ -1,21 +1,39 @@
 "use client";
 
-import { Button } from "@heroui/react";
-import { ArrowRight, RefreshCw } from "lucide-react";
-import Link from "next/link";
+import { Skeleton } from "@heroui/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { EmptyState } from "@/components/empty-state";
 import { PosterGrid, PosterGridSkeleton } from "@/components/poster-grid";
-import type { HomeResponse } from "@/lib/api/client";
+import { RetryButton } from "@/components/retry-button";
+import { SectionHeading } from "@/components/section-heading";
+import { StatusPage } from "@/components/status-page";
+import {
+  ApiConnectionError,
+  ApiResponseError,
+  ApiTimeoutError,
+  type HomeResponse,
+} from "@/lib/api/client";
 import { fetchHome } from "@/lib/api/home";
 import { MAIN_CONTENT_ID } from "@/lib/navigation";
 import { FeaturedHero, HERO_HEIGHT_CLASS } from "./featured-hero";
-import { RecentEpisodes, RecentEpisodesSkeleton } from "./recent-episodes";
+import { RecentEpisodes } from "./recent-episodes";
 
-export const HOME_POLL_INTERVAL_MS = 60_000;
-const RECOVERY_DELAYS_MS = [5_000, 10_000];
-const MAX_LOADING_FAILURES = 3;
+const HOME_POLL_INTERVAL_MS = 60_000;
 
-export function isHomeComplete(home: HomeResponse | null) {
+const PAGE_TITLE = "AnimeHub: anime destacado y novedades";
+
+/** What went wrong with the last request, for the visitor. */
+export function describeHomeError(error: unknown) {
+  if (error instanceof ApiResponseError && error.status === 429)
+    return "Demasiadas solicitudes en poco tiempo. Espera un momento antes de reintentar.";
+  if (error instanceof ApiTimeoutError)
+    return "El servidor tardó demasiado en responder.";
+  if (error instanceof ApiConnectionError)
+    return "No se pudo conectar con el servidor.";
+  return "El servidor no está disponible ahora mismo.";
+}
+
+function isHomeComplete(home: HomeResponse | null) {
   return Boolean(
     home?.data.featured.length &&
     home.data.recentEpisodes.length &&
@@ -62,24 +80,29 @@ export function mergeHomeSnapshot(
   };
 }
 
+/**
+ * Server content shows at once and refreshes every visible minute. Without
+ * it (the server request failed), the browser tries once and then says what
+ * happened, with a retry.
+ */
 export function HomeView({
   initialHome,
 }: {
   initialHome: HomeResponse | null;
 }) {
   const [home, setHome] = useState(initialHome);
-  const [failures, setFailures] = useState(0);
-  const [retrying, setRetrying] = useState(false);
-  const retryRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  // Whether a browser request finished: until then, missing parts load.
+  const [settled, setSettled] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const reloadRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   useEffect(() => {
-    let disposed = false;
     let latest = initialHome;
-    let failureCount = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let active: Promise<void> | null = null;
     let activeController: AbortController | null = null;
     let lastStartedAt: number | null = null;
+    let disposed = false;
 
     const clearTimer = () => {
       if (timer !== undefined) clearTimeout(timer);
@@ -93,7 +116,7 @@ export function HomeView({
     function load(): Promise<void> {
       if (disposed || document.visibilityState !== "visible")
         return Promise.resolve();
-      // Concurrent triggers (poll, focus, manual retry) share one request.
+      // Concurrent triggers (poll, focus, retry) share one request.
       if (active) return active;
       clearTimer();
       const controller = new AbortController();
@@ -102,31 +125,23 @@ export function HomeView({
       active = (async () => {
         try {
           const response = await fetchHome(true, controller.signal);
-          if (disposed || controller.signal.aborted) return;
+          if (controller.signal.aborted) return;
           latest = mergeHomeSnapshot(latest, response);
           setHome(latest);
-          failureCount = isHomeComplete(latest) ? 0 : failureCount + 1;
-          setFailures(failureCount);
-        } catch {
-          if (disposed || controller.signal.aborted) return;
-          failureCount += 1;
-          setFailures(failureCount);
+          setFailure(null);
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          setFailure(describeHomeError(error));
         } finally {
           active = null;
           activeController = null;
-          schedule(
-            controller.signal.aborted
-              ? 0
-              : !isHomeComplete(latest) && failureCount < MAX_LOADING_FAILURES
-                ? (RECOVERY_DELAYS_MS[Math.max(0, failureCount - 1)] ??
-                  HOME_POLL_INTERVAL_MS)
-                : HOME_POLL_INTERVAL_MS,
-          );
+          if (!controller.signal.aborted) setSettled(true);
+          schedule(controller.signal.aborted ? 0 : HOME_POLL_INTERVAL_MS);
         }
       })();
       return active;
     }
-    retryRef.current = load;
+    reloadRef.current = load;
     const revalidate = () => {
       if (document.visibilityState !== "visible") {
         clearTimer();
@@ -157,134 +172,86 @@ export function HomeView({
     };
   }, [initialHome]);
 
-  const retry = () => {
-    setRetrying(true);
-    void retryRef.current().finally(() => setRetrying(false));
-  };
+  const retry = () => reloadRef.current();
+  const {
+    featured = [],
+    recentEpisodes = [],
+    recentAnime = [],
+  } = home?.data ?? {};
 
-  const loading = failures < MAX_LOADING_FAILURES;
-  const hasContent = Boolean(
-    home?.data.featured.length ||
-    home?.data.recentEpisodes.length ||
-    home?.data.recentAnime.length,
-  );
-  if (!hasContent)
-    return loading ? (
-      <HomePlaceholder />
+  if (!featured.length && !recentEpisodes.length && !recentAnime.length)
+    return settled ? (
+      <StatusPage
+        title="No se pudo cargar la portada"
+        description={failure ?? describeHomeError(null)}
+        action={<RetryButton onRetry={retry} />}
+      />
     ) : (
-      <HomeUnavailable retrying={retrying} onRetry={retry} />
+      <HomePlaceholder />
+    );
+
+  // A section the API did not send: loading until the browser's request
+  // settles, then what happened and a retry.
+  const missing = (skeleton: ReactNode) =>
+    settled ? (
+      <EmptyState
+        title="No se pudo cargar esta sección"
+        description={failure ?? "El servidor aún no tiene estos datos."}
+        action={<RetryButton variant="secondary" onRetry={retry} />}
+      />
+    ) : (
+      skeleton
     );
 
   return (
     <main id={MAIN_CONTENT_ID} tabIndex={-1} className="outline-none">
-      <h1 className="sr-only">AnimeHub: anime destacado y novedades</h1>
-      {home!.data.featured.length > 0 && (
-        <FeaturedHero anime={home!.data.featured} />
-      )}
-      <div className="page-container flex flex-col gap-16 py-12 max-sm:gap-12 max-sm:pt-10">
-        <HomeSection
-          id="episodios-recientes"
-          eyebrow="Ahora"
-          title="Episodios recientes"
-          link={{ href: "/horario", label: "Ver horario" }}
-        >
-          {home!.data.recentEpisodes.length ? (
-            <RecentEpisodes episodes={home!.data.recentEpisodes} />
+      <h1 className="sr-only">{PAGE_TITLE}</h1>
+      {featured.length > 0 && <FeaturedHero anime={featured} />}
+      <HomeSections
+        recentEpisodes={
+          recentEpisodes.length ? (
+            <RecentEpisodes episodes={recentEpisodes} />
           ) : (
-            <MissingSection loading={loading}>
-              <RecentEpisodesSkeleton />
-            </MissingSection>
-          )}
-        </HomeSection>
-        <HomeSection
-          id="nuevos-en-el-catalogo"
-          eyebrow="Descubrir"
-          title="Nuevos en el catálogo"
-          link={{ href: "/catalogo", label: "Ver catálogo" }}
-        >
-          {home!.data.recentAnime.length ? (
-            <PosterGrid anime={home!.data.recentAnime} variant="home" />
+            missing(<PosterGridSkeleton aspect="still" />)
+          )
+        }
+        recentAnime={
+          recentAnime.length ? (
+            <PosterGrid anime={recentAnime} variant="home" />
           ) : (
-            <MissingSection loading={loading}>
-              <PosterGridSkeleton variant="home" />
-            </MissingSection>
-          )}
-        </HomeSection>
-      </div>
+            missing(<PosterGridSkeleton />)
+          )
+        }
+      />
     </main>
   );
 }
 
-function HomeSection({
-  id,
-  eyebrow,
-  title,
-  link,
-  children,
+function HomeSections({
+  recentEpisodes,
+  recentAnime,
 }: {
-  id: string;
-  eyebrow: string;
-  title: string;
-  link: { href: string; label: string };
-  children: ReactNode;
-}) {
-  const headingId = `${id}-titulo`;
-  return (
-    <section aria-labelledby={headingId}>
-      <div className="mb-5 flex items-end justify-between gap-4">
-        <div className="min-w-0">
-          <span className="eyebrow">{eyebrow}</span>
-          <h2
-            id={headingId}
-            className="mt-1 font-display text-3xl font-semibold tracking-tight text-foreground max-sm:text-2xl"
-          >
-            {title}
-          </h2>
-        </div>
-        <Link
-          href={link.href}
-          className="-mb-2 inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-1 text-sm font-semibold text-link outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus"
-        >
-          {link.label}
-          <ArrowRight aria-hidden="true" size={16} />
-        </Link>
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function MissingSection({
-  loading,
-  children,
-}: {
-  loading: boolean;
-  children: ReactNode;
-}) {
-  return loading ? (
-    <div role="status" aria-label="Cargando contenido">
-      {children}
-    </div>
-  ) : (
-    <p className="py-10 text-sm text-muted">
-      Este contenido no está disponible temporalmente.
-    </p>
-  );
-}
-
-function SectionHeaderSkeleton({
-  eyebrow,
-  title,
-}: {
-  eyebrow: string;
-  title: string;
+  recentEpisodes: ReactNode;
+  recentAnime: ReactNode;
 }) {
   return (
-    <div className="mb-5">
-      <span className="eyebrow">{eyebrow}</span>
-      <h2 className="mt-1 font-display text-3xl font-semibold tracking-tight text-foreground max-sm:text-2xl">
-        {title}
-      </h2>
+    <div className="page-container flex flex-col gap-12 pb-16 pt-12 max-sm:pb-12">
+      <section aria-labelledby="episodios-recientes">
+        <SectionHeading
+          id="episodios-recientes"
+          title="Episodios recientes"
+          more={{ href: "/horario", label: "Ver horario" }}
+        />
+        {recentEpisodes}
+      </section>
+      <section aria-labelledby="ultimos-agregados">
+        <SectionHeading
+          id="ultimos-agregados"
+          title="Últimos agregados"
+          more={{ href: "/catalogo", label: "Ver catálogo" }}
+        />
+        {recentAnime}
+      </section>
     </div>
   );
 }
@@ -298,82 +265,23 @@ export function HomePlaceholder() {
       aria-busy="true"
       className="outline-none"
     >
+      <h1 className="sr-only">{PAGE_TITLE}</h1>
       <div
-        className={`featured-hero relative overflow-hidden bg-background-secondary ${HERO_HEIGHT_CLASS}`}
+        aria-hidden="true"
+        className={`bg-background-secondary ${HERO_HEIGHT_CLASS} flex`}
       >
-        <span className="image-skeleton" aria-hidden="true" />
-        <div
-          aria-hidden="true"
-          className={`relative page-container flex flex-col justify-center gap-4 pb-24 pt-16 max-sm:justify-end max-sm:pb-28 ${HERO_HEIGHT_CLASS}`}
-        >
-          <span className="h-3 w-24 rounded bg-surface-tertiary" />
-          <span className="h-12 w-[min(28rem,80%)] rounded-lg bg-surface-tertiary" />
-          <span className="h-4 w-[min(20rem,60%)] rounded bg-surface-tertiary/70" />
-          <span className="mt-4 h-11 w-36 rounded-full bg-surface-tertiary" />
+        <div className="page-container flex flex-col justify-center gap-4 pb-24 pt-16 max-sm:justify-end">
+          <Skeleton className="h-12 w-2/3 max-w-md" />
+          <Skeleton className="h-4 w-1/2 max-w-xs" />
+          <Skeleton className="h-4 w-full max-w-lg" />
+          <Skeleton className="h-4 w-4/5 max-w-md" />
+          <Skeleton className="mt-2 h-10 w-28" />
         </div>
       </div>
-      <div className="page-container flex flex-col gap-16 py-12 max-sm:gap-12 max-sm:pt-10">
-        <section>
-          <SectionHeaderSkeleton eyebrow="Ahora" title="Episodios recientes" />
-          <RecentEpisodesSkeleton />
-        </section>
-        <section>
-          <SectionHeaderSkeleton
-            eyebrow="Descubrir"
-            title="Nuevos en el catálogo"
-          />
-          <PosterGridSkeleton variant="home" />
-        </section>
-      </div>
-    </main>
-  );
-}
-
-function HomeUnavailable({
-  retrying,
-  onRetry,
-}: {
-  retrying: boolean;
-  onRetry: () => void;
-}) {
-  return (
-    <main
-      id={MAIN_CONTENT_ID}
-      tabIndex={-1}
-      className="page-container grid min-h-[70vh] place-items-center py-20 text-center outline-none"
-    >
-      <div className="max-w-lg">
-        <span className="eyebrow">Inicio</span>
-        <h1 className="mt-3 font-display text-4xl font-semibold tracking-tight text-balance text-foreground max-sm:text-3xl">
-          El contenido no está disponible temporalmente
-        </h1>
-        <p className="mt-4 text-muted">
-          Volveremos a intentarlo automáticamente. Mientras tanto, puedes
-          explorar el catálogo.
-        </p>
-        <div className="mt-7 flex flex-wrap justify-center gap-3">
-          <Button
-            className="h-11 rounded-full bg-accent px-6 font-semibold text-accent-foreground shadow-none hover:bg-accent-hover"
-            isPending={retrying}
-            onPress={onRetry}
-          >
-            <RefreshCw
-              aria-hidden="true"
-              size={16}
-              className={
-                retrying ? "animate-spin motion-reduce:animate-none" : ""
-              }
-            />
-            {retrying ? "Reintentando…" : "Reintentar ahora"}
-          </Button>
-          <Link
-            href="/catalogo"
-            className="inline-flex h-11 items-center rounded-full bg-default px-6 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-default-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          >
-            Ir al catálogo
-          </Link>
-        </div>
-      </div>
+      <HomeSections
+        recentEpisodes={<PosterGridSkeleton aspect="still" />}
+        recentAnime={<PosterGridSkeleton />}
+      />
     </main>
   );
 }

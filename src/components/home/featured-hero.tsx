@@ -1,18 +1,11 @@
 "use client";
 
-import { Button } from "@heroui/react";
+import { Button, Tooltip } from "@heroui/react";
 import useEmblaCarousel from "embla-carousel-react";
-import {
-  ArrowLeft,
-  ArrowRight,
-  ExternalLink,
-  Info,
-  Pause,
-  Play,
-} from "lucide-react";
-import Link from "next/link";
+import { ArrowLeft, ArrowRight, ExternalLink, Pause, Play } from "lucide-react";
 import {
   type FocusEvent,
+  type ComponentProps,
   type KeyboardEvent,
   useCallback,
   useEffect,
@@ -24,12 +17,14 @@ import {
 import type { FeaturedAnime } from "@/lib/api/client";
 import { formatStatus, plural } from "@/lib/format";
 import { AnimeImage } from "../anime-image";
+import { ButtonLink } from "../button-link";
 
 export const AUTOPLAY_DELAY_MS = 7_000;
 
-/** Hero height, shared with the loading placeholder so nothing jumps. */
+/** Hero height, shared with the loading placeholder so nothing jumps. On
+ *  phones it fills the screen below the header, within 34–40rem. */
 export const HERO_HEIGHT_CLASS =
-  "min-h-[560px] max-lg:min-h-[520px] max-sm:min-h-[clamp(34rem,calc(100svh-3.5rem),40rem)]";
+  "min-h-140 max-lg:min-h-130 max-sm:min-h-[clamp(34rem,calc(100svh-var(--header-height)),40rem)]";
 
 const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
 
@@ -109,15 +104,42 @@ export class SlideTimer {
 }
 
 function titleClass(title: string) {
-  if (title.length > 48)
-    return "max-w-[22ch] text-4xl max-lg:text-3xl max-sm:text-[clamp(1.75rem,8vw,2.25rem)]";
-  if (title.length > 24)
-    return "max-w-[18ch] text-5xl max-lg:text-4xl max-sm:text-[clamp(2.1rem,10vw,3rem)]";
-  return "max-w-[13ch] text-6xl max-lg:text-5xl max-sm:text-[clamp(2.6rem,14vw,4.5rem)]";
+  if (title.length > 48) return "text-4xl max-lg:text-3xl";
+  if (title.length > 24) return "text-5xl max-lg:text-4xl";
+  return "text-6xl max-lg:text-5xl";
 }
 
-const controlClass =
-  "h-11 w-11 rounded-full bg-white/10 text-foreground shadow-none backdrop-blur-md hover:bg-white/16";
+/** Facts separated by dots. Each dot leads its fact, and the list's
+ *  negative margin puts the first dot of every line in the clipped area:
+ *  a wrapped line never starts with a dot. */
+function DotList({ items, className }: { items: string[]; className: string }) {
+  return (
+    <div className={`overflow-hidden ${className}`}>
+      <ul className="-ml-5 flex flex-wrap">
+        {items.map((item) => (
+          <li
+            key={item}
+            className="before:inline-block before:w-5 before:text-center before:content-['·']"
+          >
+            {item}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function IconButton({
+  label,
+  ...props
+}: ComponentProps<typeof Button> & { label: string }) {
+  return (
+    <Tooltip delay={300}>
+      <Button isIconOnly aria-label={label} {...props} />
+      <Tooltip.Content>{label}</Tooltip.Content>
+    </Tooltip>
+  );
+}
 
 export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
   const [viewportRef, embla] = useEmblaCarousel({ loop: true, align: "start" });
@@ -308,12 +330,10 @@ export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
       setFocusPaused(false);
   };
 
-  const progressPaused = !running;
-
   return (
     <section
       ref={sectionRef}
-      className={`featured-hero relative overflow-hidden bg-background-secondary ${HERO_HEIGHT_CLASS}`}
+      className="relative overflow-hidden bg-background-secondary"
       aria-roledescription="carrusel"
       aria-label="Destacados"
       onKeyDown={multiple ? handleKeyDown : undefined}
@@ -340,79 +360,71 @@ export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
             ].filter((fact): fact is string => Boolean(fact));
             return (
               <div
-                className={`featured-slide relative min-w-0 flex-[0_0_100%] ${HERO_HEIGHT_CLASS}`}
+                className={`featured-slide relative flex min-w-0 shrink-0 basis-full ${HERO_HEIGHT_CLASS}`}
                 key={item.id}
                 role="group"
                 aria-roledescription="diapositiva"
                 aria-label={`${index + 1} de ${anime.length}`}
                 inert={index !== selected}
               >
-                <div className="absolute inset-0">
-                  <AnimeImage
-                    src={item.backdropUrl}
-                    mobileSrc={item.posterUrl}
-                    fallbackSrc={item.posterUrl}
-                    alt=""
-                    priority={index === 0}
-                    loading={warm ? "eager" : "lazy"}
-                    sizes="100vw"
-                    imageClassName="max-sm:object-[50%_22%]"
-                  />
-                </div>
+                <AnimeImage
+                  src={item.backdropUrl}
+                  srcSet={item.backdropSrcSet}
+                  mobileSrc={item.posterUrl}
+                  fallbackSrc={item.posterUrl}
+                  alt=""
+                  priority={index === 0}
+                  loading={warm ? "eager" : "lazy"}
+                  sizes="100vw"
+                  imageClassName="max-sm:object-[50%_22%]"
+                />
                 <div
                   className="featured-scrim absolute inset-0"
                   aria-hidden="true"
                 />
-                <div
-                  className={`relative z-10 page-container flex items-center pb-24 pt-16 max-sm:items-end max-sm:pb-28 max-sm:pt-20 ${HERO_HEIGHT_CLASS}`}
-                >
-                  <div className="min-w-0 max-w-[610px]">
-                    <span className="eyebrow">Destacados</span>
+                <div className="page-container relative flex items-center pb-24 pt-16 max-sm:items-end max-sm:pt-20">
+                  <div className="min-w-0 max-w-xl">
                     <h2
                       title={item.title}
-                      className={`mt-3 line-clamp-3 font-display font-bold leading-[.98] tracking-[-.05em] text-balance text-foreground text-shadow-lg [overflow-wrap:anywhere] ${titleClass(item.title)}`}
+                      className={`line-clamp-3 font-display font-bold leading-none tracking-tighter text-balance text-foreground text-shadow-lg wrap-anywhere ${titleClass(item.title)}`}
                     >
                       {item.title}
                     </h2>
                     {facts.length > 0 && (
-                      <ul className="mt-5 flex flex-wrap gap-x-3 gap-y-1 text-sm font-medium text-subtle [&>li+li]:before:mr-3 [&>li+li]:before:text-link [&>li+li]:before:content-['•']">
-                        {facts.map((fact) => (
-                          <li key={fact}>{fact}</li>
-                        ))}
-                      </ul>
+                      <DotList
+                        items={facts}
+                        className="mt-5 text-sm font-medium text-subtle"
+                      />
                     )}
                     {item.genres.length > 0 && (
-                      <p className="mt-3 text-sm font-semibold text-link">
-                        {item.genres
+                      <DotList
+                        items={item.genres
                           .slice(0, 3)
-                          .map((genre) => genre.name)
-                          .join(" · ")}
-                      </p>
+                          .map((genre) => genre.name)}
+                        className="mt-2 text-sm font-semibold text-link"
+                      />
                     )}
                     {item.synopsis ? (
-                      <p className="mt-4 line-clamp-3 max-w-[57ch] text-[15px] leading-7 text-subtle max-sm:text-sm max-sm:leading-6">
+                      <p className="mt-4 line-clamp-3 max-w-prose text-sm leading-6 text-subtle">
                         {item.synopsis}
                       </p>
                     ) : null}
                     <div className="mt-6 flex flex-wrap gap-3">
-                      <Link
-                        href={`/anime/${item.slug}`}
-                        className="inline-flex h-11 items-center gap-2 rounded-full bg-accent px-6 text-sm font-semibold text-accent-foreground shadow-lg shadow-accent/25 outline-none transition-colors hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                      >
-                        <Info aria-hidden="true" size={17} /> Ver ficha
+                      <ButtonLink href={`/anime/${item.slug}`} prefetch={false}>
+                        Ver ficha
                         <span className="sr-only">: {item.title}</span>
-                      </Link>
+                      </ButtonLink>
                       {item.trailerUrl ? (
-                        <a
+                        <ButtonLink
                           href={item.trailerUrl}
-                          aria-label={`Tráiler de ${item.title} (se abre en otra pestaña)`}
+                          variant="secondary"
+                          aria-label={`Ver tráiler de ${item.title} (se abre en otra pestaña)`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex h-11 items-center gap-2 rounded-full bg-white/10 px-6 text-sm font-semibold text-foreground outline-none backdrop-blur-md transition-colors hover:bg-white/16 focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         >
-                          <Play aria-hidden="true" size={16} /> Tráiler
-                          <ExternalLink aria-hidden="true" size={13} />
-                        </a>
+                          Ver tráiler
+                          <ExternalLink aria-hidden="true" />
+                        </ButtonLink>
                       ) : null}
                     </div>
                   </div>
@@ -423,92 +435,73 @@ export function FeaturedHero({ anime }: { anime: FeaturedAnime[] }) {
         </div>
       </div>
       {multiple && (
-        <div className="absolute inset-x-0 bottom-6 z-20 max-sm:bottom-5">
-          <div className="page-container flex items-center gap-3 max-sm:gap-1.5">
-            <Button
-              isIconOnly
-              variant="secondary"
-              aria-label="Destacado anterior"
-              className={controlClass}
-              onPress={() => navigate("prev")}
-            >
-              <ArrowLeft aria-hidden="true" size={20} />
-            </Button>
-            <span
-              aria-hidden="true"
-              className="min-w-14 text-center font-mono text-xs font-semibold tracking-wider text-foreground"
-            >
-              {String(selected + 1).padStart(2, "0")} /{" "}
-              {String(anime.length).padStart(2, "0")}
-            </span>
-            <div
-              role="group"
-              aria-label="Elegir destacado"
-              className="flex items-center"
-            >
-              {anime.map((item, index) => {
-                const active = index === selected;
-                return (
-                  <Button
-                    key={item.id}
-                    variant="ghost"
-                    aria-label={`Mostrar ${item.title}`}
-                    aria-current={active ? "true" : undefined}
-                    onPress={() => navigate(index)}
-                    className="h-11 min-w-0 rounded-full bg-transparent px-1.5 shadow-none hover:bg-transparent"
+        <div className="page-container absolute inset-x-0 bottom-6 flex items-center gap-2 max-sm:bottom-5">
+          <IconButton
+            label="Destacado anterior"
+            variant="secondary"
+            onPress={() => navigate("prev")}
+          >
+            <ArrowLeft aria-hidden="true" />
+          </IconButton>
+          <div
+            role="group"
+            aria-label="Elegir destacado"
+            className="flex items-center"
+          >
+            {anime.map((item, index) => {
+              const active = index === selected;
+              return (
+                <IconButton
+                  key={item.id}
+                  label={`Mostrar ${item.title}`}
+                  variant="ghost"
+                  aria-current={active ? "true" : undefined}
+                  onPress={() => navigate(index)}
+                >
+                  <span
+                    className={`h-1.5 overflow-hidden rounded-full bg-muted/45 transition-[width] duration-200 ${active ? "w-6" : "w-3"}`}
                   >
-                    <span
-                      className={`relative block h-1.5 overflow-hidden rounded-full bg-muted/45 transition-[width] duration-200 ${active ? "w-12" : "w-6"}`}
-                    >
-                      {active ? (
-                        <span
-                          key={selected}
-                          data-testid="hero-progress"
-                          data-state={
-                            running
-                              ? "running"
-                              : autoplayWanted
-                                ? "held"
-                                : "paused"
-                          }
-                          className={`block h-full origin-left rounded-full bg-brand animate-[hero-progress_7000ms_linear_forwards] motion-reduce:hidden ${progressPaused && autoplayWanted ? "opacity-50" : ""}`}
-                          style={{
-                            animationPlayState: progressPaused
-                              ? "paused"
-                              : "running",
-                          }}
-                        />
-                      ) : null}
-                    </span>
-                  </Button>
-                );
-              })}
-            </div>
-            <Button
-              isIconOnly
-              variant="ghost"
-              aria-label={
-                autoplayWanted ? "Pausar carrusel" : "Reanudar carrusel"
-              }
-              className="h-11 w-11 rounded-full text-subtle shadow-none hover:bg-white/10"
-              onPress={toggleAutoplay}
-            >
-              {autoplayWanted ? (
-                <Pause aria-hidden="true" size={16} />
-              ) : (
-                <Play aria-hidden="true" size={16} />
-              )}
-            </Button>
-            <Button
-              isIconOnly
-              variant="secondary"
-              aria-label="Destacado siguiente"
-              className={controlClass}
-              onPress={() => navigate("next")}
-            >
-              <ArrowRight aria-hidden="true" size={20} />
-            </Button>
+                    {active ? (
+                      <span
+                        key={selected}
+                        data-testid="hero-progress"
+                        data-state={
+                          running
+                            ? "running"
+                            : autoplayWanted
+                              ? "held"
+                              : "paused"
+                        }
+                        className="block h-full origin-left rounded-full bg-brand motion-reduce:hidden data-[state=held]:opacity-50"
+                        style={{
+                          animation: `hero-progress ${AUTOPLAY_DELAY_MS}ms linear forwards`,
+                          animationPlayState: running ? "running" : "paused",
+                        }}
+                      />
+                    ) : null}
+                  </span>
+                </IconButton>
+              );
+            })}
           </div>
+          <IconButton
+            label={autoplayWanted ? "Pausar carrusel" : "Reanudar carrusel"}
+            variant="secondary"
+            onPress={toggleAutoplay}
+          >
+            {autoplayWanted ? (
+              <Pause aria-hidden="true" />
+            ) : (
+              <Play aria-hidden="true" />
+            )}
+          </IconButton>
+          <IconButton
+            label="Destacado siguiente"
+            variant="secondary"
+            onPress={() => navigate("next")}
+          >
+            <ArrowRight aria-hidden="true" />
+          </IconButton>
         </div>
       )}
     </section>

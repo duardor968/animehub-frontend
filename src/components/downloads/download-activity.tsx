@@ -1,12 +1,12 @@
-import { Button } from "@heroui/react";
+import { Button, ProgressBar } from "@heroui/react";
 import { formatNumber, plural } from "@/lib/format";
 import {
+  countLinks,
   describeAudioFallback,
   describeEpisodes,
   describeFailed,
   describeMissing,
   describeLinks,
-  describeRequest,
   failedEpisodeNumbers,
   type ResolvedEpisodeLike,
 } from "./download-copy";
@@ -68,6 +68,8 @@ export interface Activity {
   noLinks?: boolean;
   /** Requested numbers the anime doesn't have (skipped by the job). */
   missingNumbers?: number[];
+  /** Only this provider's links were copied (episode copy menu). */
+  provider?: DownloadProviderId;
   /** False when repeating the same request can't work (a 4xx such as a
    *  validation error): the error then offers no "Reintentar". */
   retryable?: boolean;
@@ -89,16 +91,12 @@ export type ActivityAction =
   | "preferences";
 
 export interface ActivityView {
+  /** What happened or is happening; the toast's title names the request. */
   title: string;
   variant: "default" | "accent" | "success" | "warning" | "danger";
   isLoading: boolean;
   /** Auto-dismiss delay; 0 keeps the toast until the user acts. */
   timeout: number;
-  /** "Anime · Ep. N" (describeRequest), for text-only uses. */
-  summary: string;
-  /** The same, split so a long anime title can be clamped on its own. */
-  summaryTitle: string;
-  summaryEpisodes: string;
   detail?: string;
   progress?: { current: number; total: number };
   actions: Array<{
@@ -124,10 +122,9 @@ export const unfinishedStatuses = new Set<DownloadActivityStatus>([
   "ready",
 ]);
 
-const destinationNames: Record<DownloadDestination, string> = {
+const destinationNames: Record<Exclude<DownloadDestination, "COPY">, string> = {
   CNL: "JDownloader",
   MYJD: "MyJDownloader",
-  COPY: "el portapapeles",
 };
 
 export function deliverableEpisodes(activity: Activity) {
@@ -145,40 +142,35 @@ function deliverLabel(destination: DownloadDestination) {
     : `Enviar a ${destinationNames[destination]}`;
 }
 
-const linkCount = (episodes: ResolvedEpisode[]) =>
-  episodes.reduce((total, episode) => total + episode.links.length, 0);
-
-function sentSentence(activity: Activity, episodes: ResolvedEpisode[]) {
-  const links = describeLinks(episodes);
-  const sent = linkCount(episodes) === 1 ? "enviado" : "enviados";
-  switch (activity.deliveredVia) {
-    case "COPY":
-      return `${links} en el portapapeles.`;
-    case "MYJD":
-      return `${links} ${sent} a MyJDownloader.`;
-    default:
-      return `${links} ${sent} a JDownloader.`;
-  }
+/** "4 enlaces copiados", "1 enlace de Mega copiado", "4 enlaces enviados a
+ *  JDownloader". */
+export function deliveredSentence(
+  episodes: ResolvedEpisodeLike[],
+  via: DownloadDestination,
+  provider?: DownloadProviderId,
+) {
+  const one = countLinks(episodes) === 1;
+  const links = describeLinks(episodes, provider);
+  return via === "COPY"
+    ? `${links} ${one ? "copiado" : "copiados"}`
+    : `${links} ${one ? "enviado" : "enviados"} a ${destinationNames[via]}`;
 }
 
-/** "14 de 1.180": the progress count, formatted like every other count. */
+/** "14 de 1180": the progress count, formatted like every other count. */
 export function formatProgress(current: number, total: number) {
   return `${formatNumber(current)} de ${formatNumber(total)}`;
 }
+
+const sentences = (...parts: Array<string | undefined>) =>
+  parts.filter(Boolean).join(" ") || undefined;
 
 export function presentActivity(
   activity: Activity,
   { portable }: { portable: boolean },
 ): ActivityView {
-  const summary = describeRequest(activity.request);
   const episodes = deliverableEpisodes(activity);
-  const base = {
-    summary,
-    summaryTitle: activity.request.title,
-    summaryEpisodes: describeEpisodes(activity.request),
-    isLoading: false,
-    actions: [],
-  };
+  const one = countLinks(episodes) === 1;
+  const base = { isLoading: false, actions: [] };
   const alternativeDestination: ActivityView["actions"] = [];
   if (activity.destination !== "COPY")
     alternativeDestination.push({ id: "copy", label: "Copiar enlaces" });
@@ -194,11 +186,7 @@ export function presentActivity(
     case "resolving":
       return {
         ...base,
-        title: activity.isJob
-          ? activity.total > 1
-            ? `Preparando ${plural(activity.total, "episodio", "episodios")}`
-            : "Preparando la descarga"
-          : "Buscando enlaces",
+        title: activity.isJob ? "Preparando la descarga" : "Buscando enlaces",
         variant: "accent",
         isLoading: true,
         timeout: 0,
@@ -208,13 +196,11 @@ export function presentActivity(
       return {
         ...base,
         title: activity.reconnecting
-          ? "Reconectando con la descarga"
+          ? "Reconectando con AnimeHub"
           : activity.restored
             ? "Reanudando la descarga"
             : "Buscando enlaces",
-        detail: activity.reconnecting
-          ? "Se perdió la conexión con AnimeHub; seguimos intentándolo."
-          : describeMissing(activity.missingNumbers) || undefined,
+        detail: sentences(describeMissing(activity.missingNumbers)),
         variant: "accent",
         isLoading: true,
         timeout: 0,
@@ -245,7 +231,6 @@ export function presentActivity(
       return {
         ...base,
         title: "Elige un dispositivo",
-        detail: "Elige el JDownloader de tu cuenta al que enviar los enlaces.",
         variant: "accent",
         timeout: 0,
         actions: [
@@ -257,8 +242,8 @@ export function presentActivity(
       if (activity.copyBlocked) {
         return {
           ...base,
-          title: "Enlaces listos para copiar",
-          detail: `${describeLinks(episodes)}. El navegador no permitió ${linkCount(episodes) === 1 ? "copiarlo" : "copiarlos"} automáticamente.`,
+          title: `${describeLinks(episodes)} ${one ? "listo" : "listos"} para copiar`,
+          detail: `El navegador no permitió ${one ? "copiarlo" : "copiarlos"} automáticamente.`,
           variant: "accent",
           timeout: 0,
           actions: [
@@ -296,10 +281,8 @@ export function presentActivity(
       }
       return {
         ...base,
-        title: "Enlaces listos",
-        detail: activity.deliveryFailed
-          ? `${describeLinks(episodes)}. El último envío falló; vuelve a intentarlo o ${linkCount(episodes) === 1 ? "cópialo" : "cópialos"}.`
-          : `${describeLinks(episodes)}. Confirma para ${linkCount(episodes) === 1 ? "enviarlo" : "enviarlos"}.`,
+        title: `${describeLinks(episodes)} ${one ? "listo" : "listos"}`,
+        detail: activity.deliveryFailed ? "El último envío falló." : undefined,
         variant: "accent",
         timeout: 0,
         actions: [
@@ -312,50 +295,35 @@ export function presentActivity(
         ],
       };
     }
-    case "handed-off":
-    case "success": {
+    case "handed-off": {
       const fallback = describeAudioFallback(episodes, activity.preferredAudio);
-      const one = linkCount(episodes) === 1;
-      const hint =
-        activity.deliveredVia === "COPY"
-          ? one
-            ? "Pégalo en tu gestor de descargas."
-            : "Pégalos en tu gestor de descargas."
-          : one
-            ? "Aparecerá en LinkGrabber."
-            : "Aparecerán en LinkGrabber.";
       return {
         ...base,
-        title:
-          activity.deliveredVia === "COPY"
-            ? "Enlaces copiados"
-            : `Enviado a ${destinationNames[activity.deliveredVia ?? "CNL"]}`,
-        detail: [
-          sentSentence(activity, episodes),
-          fallback,
-          describeMissing(activity.missingNumbers),
-          hint,
-        ]
-          .filter(Boolean)
-          .join(" "),
+        title: deliveredSentence(
+          episodes,
+          activity.deliveredVia ?? "CNL",
+          activity.provider,
+        ),
+        detail: sentences(fallback, describeMissing(activity.missingNumbers)),
         variant: "success",
         timeout: fallback ? 9_000 : 6_000,
       };
     }
     case "partial": {
-      const failed = failedEpisodeNumbers(episodes);
       const delivered = episodes.filter((episode) => episode.links.length > 0);
       return {
         ...base,
         title: "Entrega parcial",
-        detail: [
-          sentSentence(activity, delivered),
-          describeFailed(failed, activity.failedCount, episodes),
+        detail: sentences(
+          `${deliveredSentence(delivered, activity.deliveredVia ?? "CNL", activity.provider)}.`,
+          describeFailed(
+            failedEpisodeNumbers(episodes),
+            activity.failedCount,
+            episodes,
+          ),
           describeAudioFallback(delivered, activity.preferredAudio),
           describeMissing(activity.missingNumbers),
-        ]
-          .filter(Boolean)
-          .join(" "),
+        ),
         variant: "warning",
         timeout: 0,
         actions: [
@@ -385,8 +353,7 @@ export function presentActivity(
         return {
           ...base,
           title: "No hay enlaces disponibles",
-          detail:
-            "Ningún proveedor activo tiene este contenido. Activa más proveedores en Preferencias.",
+          detail: "Ningún proveedor activo tiene este contenido.",
           variant: "danger",
           timeout: 12_000,
           actions: [{ id: "preferences", label: "Abrir preferencias" }],
@@ -409,9 +376,20 @@ export function presentActivity(
   }
 }
 
-/** Toast body. Rendered by the toast region (outside the download context),
- *  so actions go through the callback. Uses spans only: the toast puts the
- *  description inside a <span>. */
+/** A download toast's title, "One Piece · Ep. 4–5": a long anime title is
+ *  clamped, the episodes always show. A movie is its title alone. */
+export function RequestTitle({ request }: { request: DownloadRequest }) {
+  if (request.movie) return request.title;
+  return (
+    <span className="flex min-w-0">
+      <span className="min-w-0 truncate">{request.title}</span>
+      <span className="shrink-0">{` · ${describeEpisodes(request)}`}</span>
+    </span>
+  );
+}
+
+/** Toast body (the toast renders its description as a div). Actions go
+ *  through the callback: the toast region sits outside the download context. */
 export function ActivityToastBody({
   view,
   onAction,
@@ -420,63 +398,49 @@ export function ActivityToastBody({
   onAction: (action: ActivityAction) => void;
 }) {
   return (
-    <span className="flex min-w-0 flex-col gap-2">
-      {/* The anime title takes one line at most; the episodes always show. */}
-      <span className="flex min-w-0 items-baseline gap-1 text-sm font-semibold text-subtle">
-        <span className="min-w-0 truncate">{view.summaryTitle}</span>
-        <span className="shrink-0">{` · ${view.summaryEpisodes}`}</span>
-      </span>
-      {view.detail && (
-        <span className="text-sm leading-5 text-muted">{view.detail}</span>
-      )}
+    <div className="flex min-w-0 flex-col gap-2">
+      <p>{view.title}</p>
+      {view.detail && <p>{view.detail}</p>}
       {view.progress && <ToastProgress {...view.progress} />}
       {view.actions.length > 0 && (
-        <span className="mt-1 flex flex-wrap gap-2">
+        <div className="mt-1 flex flex-wrap gap-2">
           {view.actions.map((action) => (
             <Button
               key={action.id}
               size="sm"
               variant={action.primary ? "primary" : "secondary"}
               isPending={action.isPending}
-              className={`min-h-9 rounded-full px-3 text-xs font-semibold shadow-none outline-none focus-visible:ring-2 focus-visible:ring-focus [@media(pointer:coarse)]:min-h-11 ${action.primary ? "bg-accent text-accent-foreground hover:bg-accent-hover" : "bg-default text-foreground hover:bg-default-hover"}`}
               onPress={() => onAction(action.id)}
             >
               {action.label}
             </Button>
           ))}
-        </span>
+        </div>
       )}
-    </span>
+    </div>
   );
 }
 
-/** Progress made of spans (valid inside the toast's description span). The
- *  visible count is aria-hidden so the toast's live region doesn't re-announce
- *  every poll; the progressbar role carries the value for screen readers. */
+/** The visible count is aria-hidden: the toast is an atomic live region and
+ *  would re-announce every poll. The bar carries the value instead. */
 function ToastProgress({ current, total }: { current: number; total: number }) {
-  const ratio = total > 0 ? Math.min(1, current / total) : 0;
   return (
-    <span className="flex items-center gap-3">
-      <span
-        role="progressbar"
+    <div className="flex items-center gap-3">
+      <ProgressBar
         aria-label="Progreso de la descarga"
-        aria-valuemin={0}
-        aria-valuemax={total}
-        aria-valuenow={current}
-        aria-valuetext={`${formatNumber(current)} de ${plural(total, "episodio", "episodios")}`}
-        className="relative block h-1.5 flex-1 overflow-hidden rounded-full bg-default"
+        size="sm"
+        value={current}
+        maxValue={total}
+        valueLabel={`${formatNumber(current)} de ${plural(total, "episodio", "episodios")}`}
+        className="flex-1"
       >
-        <span
-          className="absolute inset-0 origin-left rounded-full bg-brand transition-transform duration-500 ease-out"
-          style={{ transform: `scaleX(${ratio})` }}
-        />
-      </span>
-      <span
-        aria-hidden="true"
-        className="shrink-0 text-xs tabular-nums text-muted"
-      >
+        <ProgressBar.Track>
+          <ProgressBar.Fill />
+        </ProgressBar.Track>
+      </ProgressBar>
+      <span aria-hidden="true" className="shrink-0 text-xs tabular-nums">
         {formatProgress(current, total)}
       </span>
-    </span>
+    </div>
   );
 }

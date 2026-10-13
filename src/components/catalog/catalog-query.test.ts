@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { CatalogResponse } from "@/lib/api/client";
 import {
   outOfRangeParams,
+  resolveCatalog,
   sameSearchParams,
   toSearchParams,
 } from "./catalog-query";
+
+const apiFetch = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/api/client", () => ({ apiFetch }));
 
 describe("catalog page query helpers", () => {
   it("rebuilds repeated search params from the Next.js record", () => {
@@ -43,5 +48,21 @@ describe("catalog page query helpers", () => {
     ).toBe("q=zz");
     expect(outOfRangeParams(new URLSearchParams("page=50"), 50)).toBeNull();
     expect(outOfRangeParams(new URLSearchParams(""), 0)).toBeNull();
+  });
+
+  it("keeps the first genre the source offers from a hand-edited URL", async () => {
+    apiFetch.mockResolvedValue({
+      data: [],
+      meta: {
+        categories: [],
+        genres: [{ id: "1", slug: "accion", name: "Acción" }],
+        years: [1990, 2026],
+      },
+    } as unknown as CatalogResponse);
+    const { params } = await resolveCatalog(
+      new URLSearchParams("genre=__x__&genre=accion"),
+      "catalog",
+    );
+    expect(params.toString()).toBe("genre=accion");
   });
 });

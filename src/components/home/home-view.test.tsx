@@ -7,14 +7,24 @@ import {
   screen,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HomeResponse } from "@/lib/api/client";
+import {
+  ApiConnectionError,
+  ApiResponseError,
+  ApiTimeoutError,
+  type HomeResponse,
+} from "@/lib/api/client";
 import { fetchHome } from "@/lib/api/home";
 import { MAIN_CONTENT_ID } from "@/lib/navigation";
-import { HomePlaceholder, HomeView, mergeHomeSnapshot } from "./home-view";
+import {
+  describeHomeError,
+  HomePlaceholder,
+  HomeView,
+  mergeHomeSnapshot,
+} from "./home-view";
 
 vi.mock("@/lib/api/home", () => ({ fetchHome: vi.fn() }));
 vi.mock("./featured-hero", () => ({
-  HERO_HEIGHT_CLASS: "min-h-[560px]",
+  HERO_HEIGHT_CLASS: "hero-height",
   FeaturedHero: ({ anime }: { anime: { title: string }[] }) => (
     <div>{anime[0].title}</div>
   ),
@@ -25,13 +35,14 @@ vi.mock("./recent-episodes", () => ({
   }: {
     episodes: { episode: { number: number } }[];
   }) => <div>Episode {episodes[0].episode.number}</div>,
-  RecentEpisodesSkeleton: () => <div data-testid="recent-skeleton" />,
 }));
 vi.mock("@/components/poster-grid", () => ({
   PosterGrid: ({ anime }: { anime: { title: string }[] }) => (
     <div>New {anime[0].title}</div>
   ),
-  PosterGridSkeleton: () => <div data-testid="poster-skeleton" />,
+  PosterGridSkeleton: ({ aspect = "poster" }: { aspect?: string }) => (
+    <div data-testid={`skeleton-${aspect}`} />
+  ),
 }));
 
 function home(number = 1): HomeResponse {
@@ -103,46 +114,64 @@ describe("automatic home recovery", () => {
     render(<HomeView initialHome={home()} />);
     await act(() => vi.advanceTimersByTimeAsync(180_000));
     expect(screen.getByText("Episode 1")).toBeVisible();
-    expect(screen.queryByText(/no está disponible temporalmente/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reintentar" })).toBeNull();
   });
 
-  it("ends cold loading after bounded retries, offers a manual retry and recovers", async () => {
-    vi.mocked(fetchHome).mockRejectedValue(new Error("cold"));
+  it("without server data, fails after one attempt, says why and retries on demand", async () => {
+    vi.mocked(fetchHome).mockRejectedValue(
+      new ApiResponseError(429, "Too Many Requests", 60_000),
+    );
     render(<HomeView initialHome={null} />);
     expect(
       screen.getByRole("main", { name: "Cargando portada" }),
     ).toBeVisible();
-    await act(() => vi.advanceTimersByTimeAsync(15_000));
-    expect(fetchHome).toHaveBeenCalledTimes(3);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(fetchHome).toHaveBeenCalledTimes(1);
     expect(
       screen.getByRole("heading", {
-        name: "El contenido no está disponible temporalmente",
+        level: 1,
+        name: "No se pudo cargar la portada",
       }),
     ).toBeVisible();
-    expect(screen.queryByRole("main", { name: "Cargando portada" })).toBeNull();
-    expect(
-      screen.getByRole("link", { name: "Ir al catálogo" }),
-    ).toHaveAttribute("href", "/catalogo");
+    expect(screen.getByText(/^Demasiadas solicitudes/)).toBeVisible();
+
     vi.mocked(fetchHome).mockResolvedValue(home(3));
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Reintentar ahora" }));
+      fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
     });
-    expect(fetchHome).toHaveBeenCalledTimes(4);
+    expect(fetchHome).toHaveBeenCalledTimes(2);
     expect(screen.getByText("Episode 3")).toBeVisible();
   });
 
-  it("shows independently available sections without a false empty-catalog message", async () => {
+  it("names each kind of failure", () => {
+    expect(describeHomeError(new ApiTimeoutError())).toBe(
+      "El servidor tardó demasiado en responder.",
+    );
+    expect(describeHomeError(new ApiConnectionError())).toBe(
+      "No se pudo conectar con el servidor.",
+    );
+    expect(describeHomeError(new ApiResponseError(503, "Unavailable"))).toBe(
+      "El servidor no está disponible ahora mismo.",
+    );
+  });
+
+  it("shows the sections it has and a retry for the one the API lacks", async () => {
     const partial = home();
     partial.data.recentAnime = [];
     vi.mocked(fetchHome).mockResolvedValue(partial);
     render(<HomeView initialHome={partial} />);
     expect(screen.getByText("Episode 1")).toBeVisible();
-    await act(() => vi.advanceTimersByTimeAsync(15_000));
+    expect(screen.getByTestId("skeleton-poster")).toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(fetchHome).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("skeleton-poster")).toBeNull();
     expect(
-      screen.getByText("Este contenido no está disponible temporalmente."),
+      screen.getByRole("heading", { name: "No se pudo cargar esta sección" }),
     ).toBeVisible();
-    expect(screen.queryByText("Aún no hay novedades")).toBeNull();
-    expect(screen.queryByRole("button")).toBeNull();
+    expect(
+      screen.getByText("El servidor aún no tiene estos datos."),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Reintentar" })).toBeVisible();
   });
 
   it("does not erase a good section when another section updates", () => {
@@ -177,18 +206,16 @@ describe("automatic home recovery", () => {
 
 it("renders a structured placeholder with the hero height and both sections", () => {
   const { container } = render(<HomePlaceholder />);
-  expect(container.querySelector(".featured-hero")).toHaveClass(
-    "min-h-[560px]",
-  );
-  expect(container.querySelector(".image-skeleton")).not.toBeNull();
+  expect(container.querySelector(".hero-height .skeleton")).not.toBeNull();
+  expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   expect(
     screen.getByRole("heading", { name: "Episodios recientes" }),
   ).toBeVisible();
   expect(
-    screen.getByRole("heading", { name: "Nuevos en el catálogo" }),
+    screen.getByRole("heading", { name: "Últimos agregados" }),
   ).toBeVisible();
-  expect(screen.getByTestId("recent-skeleton")).toBeInTheDocument();
-  expect(screen.getByTestId("poster-skeleton")).toBeInTheDocument();
+  expect(screen.getByTestId("skeleton-still")).toBeInTheDocument();
+  expect(screen.getByTestId("skeleton-poster")).toBeInTheDocument();
 });
 
 it("gives the home one page heading, section links and a skip target", () => {

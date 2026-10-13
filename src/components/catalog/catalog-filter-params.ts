@@ -9,16 +9,28 @@ const filterKeys = [
   "letter",
 ] as const;
 
-const supportedStatus = new Set(["emision", "finalizado", "proximamente"]);
-const supportedOrder = new Set([
-  "score",
-  "popular",
-  "title",
-  "latest_released",
-]);
+export const catalogStatusOptions = [
+  ["emision", "En emisión"],
+  ["finalizado", "Finalizado"],
+  ["proximamente", "Próximamente"],
+] as const;
+const supportedStatus = new Set<string>(
+  catalogStatusOptions.map(([value]) => value),
+);
+
+/** Sort keys the source supports; without one, each scope uses its default. */
+export const catalogSortOptions = [
+  ["score", "Mejor puntuación"],
+  ["popular", "Más populares"],
+  ["title", "Título A–Z"],
+  ["latest_released", "Últimos emitidos"],
+] as const;
+const supportedOrder = new Set<string>(
+  catalogSortOptions.map(([value]) => value),
+);
 
 /** Highest page the catalog API accepts; anything above is clamped to it. */
-export const maxCatalogPage = 500;
+const maxCatalogPage = 500;
 
 /** Initials the source can filter by: A–Z plus "#" for digits and symbols. */
 export const catalogLetters = [
@@ -146,42 +158,14 @@ export function normalizeCatalogParams(
   return normalized;
 }
 
-export function resetCatalogPage(
-  source: URLSearchParams,
-  bounds: YearBounds,
-): URLSearchParams {
-  return normalizeCatalogParams(source, bounds);
-}
-
+/** Drops every filter (and the page); keeps the search and the order. */
 export function clearCatalogFilters(
   source: URLSearchParams,
   bounds: YearBounds,
-  { resetOrder = false }: { resetOrder?: boolean } = {},
 ): URLSearchParams {
   const next = normalizeCatalogParams(source, bounds);
   filterKeys.forEach((key) => next.delete(key));
-  if (resetOrder) next.delete("order");
-  next.delete("page");
   return next;
-}
-
-export function toggleCatalogParam(
-  source: URLSearchParams,
-  key: "category",
-  value: string,
-  bounds: YearBounds,
-): URLSearchParams {
-  const next = new URLSearchParams(source);
-  const values = next.getAll(key);
-  next.delete(key);
-  if (values.includes(value)) {
-    values
-      .filter((entry) => entry !== value)
-      .forEach((entry) => next.append(key, entry));
-  } else {
-    [...values, value].forEach((entry) => next.append(key, entry));
-  }
-  return normalizeCatalogParams(next, bounds);
 }
 
 export function setCatalogMulti(
@@ -198,7 +182,7 @@ export function setCatalogMulti(
 
 export function setCatalogParam(
   source: URLSearchParams,
-  key: "genre" | "status" | "letter" | "order" | "minYear" | "maxYear",
+  key: "genre" | "status" | "letter" | "order",
   value: string,
   bounds: YearBounds,
 ): URLSearchParams {
@@ -207,16 +191,6 @@ export function setCatalogParam(
   if (cleanValue) next.set(key, cleanValue);
   else next.delete(key);
   return normalizeCatalogParams(next, bounds);
-}
-
-export function setCatalogYear(
-  source: URLSearchParams,
-  key: "minYear" | "maxYear",
-  value: number,
-  bounds: YearBounds,
-): URLSearchParams {
-  if (!Number.isFinite(value)) return setCatalogParam(source, key, "", bounds);
-  return setCatalogParam(source, key, String(Math.trunc(value)), bounds);
 }
 
 export function setCatalogYearRange(
@@ -296,13 +270,6 @@ export function formatCatalogCount(totalRecords: number, capped: boolean) {
   return capped ? `Más de ${count}` : count;
 }
 
-export const catalogStatusOptions = [
-  ["", "Cualquier estado"],
-  ["emision", "En emisión"],
-  ["finalizado", "Finalizado"],
-  ["proximamente", "Próximamente"],
-] as const;
-
 export function letterLabel(letter: string) {
   return letter === "#" ? "#" : letter.toLocaleUpperCase("es");
 }
@@ -344,7 +311,7 @@ export function getSelectedFilters(
     });
 
   const status = catalogStatusOptions.find(
-    ([value]) => value && value === params.get("status"),
+    ([value]) => value === params.get("status"),
   );
   if (status)
     entries.push({

@@ -18,12 +18,14 @@ import {
   it,
   vi,
 } from "vitest";
+import { I18nProvider } from "@heroui/react";
+import type { ReactNode } from "react";
 import { apiFetch, type Episode } from "@/lib/api/client";
 import type {
   DownloadActivityStatus,
   DownloadRequest,
 } from "../downloads/download-types";
-import { EpisodeBrowser } from "./episode-browser";
+import { EpisodeBrowser, MovieDownloadButton } from "./episode-browser";
 
 vi.mock("../anime-image", () => ({
   AnimeImage: ({ alt }: { alt: string }) => <img alt={alt} />,
@@ -37,7 +39,7 @@ vi.mock("@/lib/api/client", async (importOriginal) => {
 const downloads = vi.hoisted(() => ({
   openDownload: vi.fn(),
   status: undefined as DownloadActivityStatus | undefined,
-  deviceProfile: "desktop" as "desktop" | "portable",
+  destination: "CNL" as "CNL" | "COPY",
 }));
 
 vi.mock("../downloads/download-provider", () => ({
@@ -45,8 +47,7 @@ vi.mock("../downloads/download-provider", () => ({
   useDownloads: () => ({
     openDownload: downloads.openDownload,
     getRequestStatus: () => downloads.status,
-    preferences: { audio: "SUB", providers: ["MEGA"], destination: "CNL" },
-    deviceProfile: downloads.deviceProfile,
+    destination: downloads.destination,
     dockSlot: document.body,
   }),
 }));
@@ -79,255 +80,242 @@ beforeAll(() => {
 beforeEach(() => {
   downloads.openDownload.mockReset();
   downloads.status = undefined;
-  downloads.deviceProfile = "desktop";
+  downloads.destination = "CNL";
   vi.mocked(apiFetch).mockReset();
   window.history.replaceState(null, "", "/anime/otome");
 });
 
 afterEach(cleanup);
 
-const makeEpisode = (
-  number: number,
-  extra: Partial<Episode> = {},
-): Episode => ({
+const anime = { slug: "otome", title: "Otome Kaijuu Caraméliser" };
+
+const makeEpisode = (number: number): Episode => ({
   id: `episode-${number}`,
   number,
   title: null,
   imageUrl: `/episode-${number}.jpg`,
   publishedAt: null,
-  ...extra,
 });
 
 const pageOf = (start: number, count = 50) =>
   Array.from({ length: count }, (_, index) => makeEpisode(start + index));
+
+// The app renders inside the Spanish locale (Providers): "12,5".
+const wrapper = ({ children }: { children: ReactNode }) => (
+  <I18nProvider locale="es-ES">{children}</I18nProvider>
+);
 
 function renderBrowser(
   props: Partial<Parameters<typeof EpisodeBrowser>[0]> = {},
 ) {
   return render(
     <EpisodeBrowser
-      slug="otome"
-      title="Otome Kaijuu Caraméliser"
-      initial={[makeEpisode(1), makeEpisode(2)]}
-      totalRecords={2}
+      {...anime}
+      initial={pageOf(1, 3)}
+      totalRecords={3}
       firstNumber={1}
-      lastNumber={2}
+      lastNumber={3}
       {...props}
     />,
+    { wrapper },
   );
 }
 
+/** Types into a React Aria number field and commits it, like leaving it. */
+function setNumber(name: string, value: string) {
+  const input = screen.getByRole("textbox", { name });
+  fireEvent.change(input, { target: { value } });
+  fireEvent.blur(input);
+  return input;
+}
+
 describe("EpisodeBrowser", () => {
-  it("keeps the corner glyph and selected styling while masking the seam", () => {
-    const { container } = renderBrowser();
-
-    const [selector] = screen.getAllByRole("checkbox", {
-      name: "Seleccionar episodio 2",
+  it("offers each way to download only when it adds something", () => {
+    const one = renderBrowser({
+      initial: [makeEpisode(1)],
+      totalRecords: 1,
+      lastNumber: 1,
     });
-    const card = container.querySelector(".media-card-clip");
+    expect(screen.getByRole("button", { name: "Descargar episodio 1" }));
+    expect(screen.queryByRole("button", { name: /Descargar todo/ })).toBeNull();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    one.unmount();
 
-    expect(card).toBeTruthy();
-    expect(card).not.toHaveClass("overflow-hidden");
-    expect(container.querySelector(".lucide-square")).toBeTruthy();
+    // Two episodes: everything or one of them, nothing to select.
+    const two = renderBrowser({
+      initial: pageOf(1, 2),
+      totalRecords: 2,
+      lastNumber: 2,
+    });
+    expect(screen.getByRole("button", { name: "Descargar todo" }));
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByRole("group", { name: "Rango de episodios" })).toBe(
+      null,
+    );
+    two.unmount();
 
-    fireEvent.click(selector);
+    const three = renderBrowser();
+    expect(screen.getByRole("checkbox", { name: "Seleccionar todos" }));
+    expect(screen.getByRole("checkbox", { name: "Episodio 3" }));
+    expect(screen.queryByRole("group", { name: "Rango de episodios" })).toBe(
+      null,
+    );
+    three.unmount();
 
-    expect(
-      screen.getAllByRole("checkbox", { name: "Quitar episodio 2" })[0],
-    ).toBeChecked();
-    expect(container.querySelector(".lucide-check")).toBeTruthy();
+    // More than one page: the range covers spans the selection can't.
+    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    expect(screen.getByRole("group", { name: "Rango de episodios" }));
+    expect(screen.getByRole("checkbox", { name: "Seleccionar esta página" }));
+  });
+
+  it("never repeats the episode total the page header shows", () => {
+    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    expect(screen.queryByText(/120/)).toBeNull();
+  });
+
+  it("labels episodes without grouping and with decimals", () => {
+    renderBrowser({
+      initial: [makeEpisode(1151), makeEpisode(24.5)],
+      totalRecords: 2,
+    });
+    expect(screen.getAllByText("1151")).toHaveLength(1);
+    expect(screen.getByText("Episodio 24,5")).toBeInTheDocument();
+  });
+
+  it("selects episodes and clears the selection once delivered", () => {
+    const view = renderBrowser();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Episodio 2" }));
+
+    expect(screen.getByRole("checkbox", { name: "Episodio 2" })).toBeChecked();
     // The count is shown once (in the selection bar) and announced politely.
     expect(screen.getByText("seleccionado")).toBeVisible();
     expect(screen.getByText("1 episodio seleccionado")).toHaveAttribute(
       "aria-live",
       "polite",
     );
+    fireEvent.click(screen.getByRole("button", { name: "Descargar" }));
+    const request = downloads.openDownload.mock.calls[0][0] as DownloadRequest;
+    expect(request).toEqual({ ...anime, episodeNumbers: [2] });
 
-    fireEvent.click(
-      screen.getAllByRole("checkbox", { name: "Quitar episodio 2" })[0],
+    downloads.status = "handed-off";
+    view.rerender(
+      <EpisodeBrowser
+        {...anime}
+        initial={pageOf(1, 3)}
+        totalRecords={3}
+        firstNumber={1}
+        lastNumber={3}
+      />,
     );
+    // The bar slides out with its last count, out of reach.
+    const bar = document.querySelector(".dock-bar[data-exiting]");
+    expect(bar).toHaveAttribute("inert");
+    expect(bar).toHaveTextContent("1 seleccionado");
+  });
+
+  it("returns the focus to the list when the selection is cleared", () => {
+    renderBrowser();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Episodio 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Deseleccionar" }));
+
     expect(
-      screen.getAllByRole("checkbox", { name: "Seleccionar episodio 2" })[0],
+      screen.getByRole("checkbox", { name: "Episodio 2" }),
     ).not.toBeChecked();
-  });
-
-  it("shows a single CTA for a movie numbered from zero", () => {
-    renderBrowser({
-      initial: [makeEpisode(0)],
-      totalRecords: 1,
-      firstNumber: 0,
-      lastNumber: 0,
-      isMovie: true,
-    });
-
-    expect(screen.queryByText("Descargar un rango")).toBeNull();
-    expect(screen.queryByText(/Seleccionar/)).toBeNull();
-    expect(screen.queryByRole("button", { name: /Descargar todo/ })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Descargar película" }));
-    expect(downloads.openDownload).toHaveBeenCalledWith({
-      slug: "otome",
-      title: "Otome Kaijuu Caraméliser",
-      episodeNumbers: [0],
-    });
-  });
-
-  it("validates the range instead of silently shrinking it", () => {
-    renderBrowser({
-      initial: pageOf(1),
-      totalRecords: 120,
-      firstNumber: 1,
-      lastNumber: 120,
-    });
-
-    const from = screen.getByRole("spinbutton", { name: "Episodio inicial" });
-    const to = screen.getByRole("spinbutton", { name: "Episodio final" });
-    fireEvent.change(from, { target: { value: "10" } });
-    fireEvent.change(to, { target: { value: "5" } });
-
     expect(
-      screen.getByText(
-        "El episodio inicial debe ser menor o igual que el final.",
-      ),
-    ).toBeVisible();
+      screen.getByRole("checkbox", { name: "Seleccionar todos" }),
+    ).toHaveFocus();
+  });
+
+  it("sends a whole page selection as one list", () => {
+    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Seleccionar esta página" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Descargar" }));
+
+    const request = downloads.openDownload.mock.calls[0][0] as DownloadRequest;
+    expect(request.episodeNumbers).toHaveLength(50);
+    expect(request.from).toBeUndefined();
+  });
+
+  it("keeps the range bounds from crossing and refills an emptied one", () => {
+    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+
+    // «Hasta» can't go below «Desde», nor «Desde» above «Hasta».
+    setNumber("Desde", "10");
+    expect(setNumber("Hasta", "5")).toHaveValue("10");
+    expect(setNumber("Desde", "30")).toHaveValue("10");
     expect(
       screen.getByRole("button", { name: "Descargar rango" }),
-    ).toBeDisabled();
+    ).toBeEnabled();
 
-    // The field can be cleared while typing instead of snapping to 1.
-    fireEvent.change(to, { target: { value: "" } });
-    expect(to).toHaveValue("");
-    fireEvent.change(to, { target: { value: "15" } });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Descargar 6 episodios" }),
-    );
+    // A field left empty gets its value back, without an error.
+    expect(setNumber("Hasta", "")).toHaveValue("10");
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    setNumber("Hasta", "15");
+    fireEvent.click(screen.getByRole("button", { name: "Descargar rango" }));
     expect(downloads.openDownload).toHaveBeenCalledWith({
-      slug: "otome",
-      title: "Otome Kaijuu Caraméliser",
+      ...anime,
       from: 10,
       to: 15,
       total: 6,
     });
   });
 
-  it("doesn't promise a count when specials or gaps can fall in the range", () => {
-    // 120 episodes numbered 1–119: one of them is a special (e.g. 12.5).
+  it("keeps decimal bounds and doesn't promise a count with specials", () => {
+    // 61 episodes numbered 1–60 plus 60.5.
     renderBrowser({
       initial: pageOf(1),
-      totalRecords: 120,
-      firstNumber: 1,
-      lastNumber: 119,
+      totalRecords: 61,
+      lastNumber: 60.5,
     });
 
-    fireEvent.change(
-      screen.getByRole("spinbutton", { name: "Episodio inicial" }),
-      {
-        target: { value: "12" },
-      },
-    );
-    fireEvent.change(
-      screen.getByRole("spinbutton", { name: "Episodio final" }),
-      {
-        target: { value: "13" },
-      },
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Descargar episodios 12–13" }),
-    );
+    // Past the end it stops at the last episode, not at 61.
+    expect(setNumber("Hasta", "70")).toHaveValue("60,5");
+    expect(setNumber("Desde", "17,5")).toHaveValue("17,5");
+    fireEvent.click(screen.getByRole("button", { name: "Descargar rango" }));
     expect(downloads.openDownload).toHaveBeenCalledWith({
-      slug: "otome",
-      title: "Otome Kaijuu Caraméliser",
-      from: 12,
-      to: 13,
+      ...anime,
+      from: 17.5,
+      to: 60.5,
     });
   });
 
-  it("confirms before downloading a long series", () => {
-    renderBrowser({
-      initial: pageOf(1),
-      totalRecords: 1180,
-      firstNumber: 1,
-      lastNumber: 1180,
-    });
+  it("says Copiar where the links go to the clipboard", () => {
+    downloads.destination = "COPY";
+    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    expect(screen.getByRole("button", { name: "Copiar todo" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Copiar rango" })).toBeVisible();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Episodio 2" }));
+    expect(screen.getByRole("button", { name: "Copiar" })).toBeVisible();
+  });
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Descargar todo (1.180)" }),
-    );
-    expect(downloads.openDownload).not.toHaveBeenCalled();
-    const dialog = screen.getByRole("alertdialog");
-    expect(
-      within(dialog).getByText("¿Descargar los 1.180 episodios?"),
-    ).toBeVisible();
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Descargar 1.180" }),
-    );
+  it("leaves the confirmation of a long series to the downloads", () => {
+    renderBrowser({ initial: pageOf(1), totalRecords: 1180, lastNumber: 1180 });
+
+    fireEvent.click(screen.getByRole("button", { name: "Descargar todo" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(downloads.openDownload).toHaveBeenCalledWith({
-      slug: "otome",
-      title: "Otome Kaijuu Caraméliser",
+      ...anime,
       all: true,
       total: 1180,
     });
   });
 
-  it("sends selections above 50 episodes as one list", () => {
-    renderBrowser({
-      initial: pageOf(1, 51),
-      totalRecords: 51,
-      firstNumber: 1,
-      lastNumber: 51,
-    });
-
-    fireEvent.click(
-      screen.getByRole("checkbox", { name: /Seleccionar esta página/ }),
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Descargar selección" }),
-    );
-
-    const request = downloads.openDownload.mock.calls[0][0] as DownloadRequest;
-    expect(request.episodeNumbers).toHaveLength(51);
-    expect(request.from).toBeUndefined();
-  });
-
-  it("clears the selection once it was delivered", () => {
-    const view = renderBrowser();
-    fireEvent.click(
-      screen.getAllByRole("checkbox", { name: "Seleccionar episodio 1" })[0],
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Descargar selección" }),
-    );
-    const request = downloads.openDownload.mock.calls[0][0] as DownloadRequest;
-    expect(request.episodeNumbers).toEqual([1]);
-
-    downloads.status = "handed-off";
-    view.rerender(
-      <EpisodeBrowser
-        slug="otome"
-        title="Otome Kaijuu Caraméliser"
-        initial={[makeEpisode(1), makeEpisode(2)]}
-        totalRecords={2}
-        firstNumber={1}
-        lastNumber={2}
-      />,
-    );
-
-    expect(
-      screen.queryByRole("button", { name: "Descargar selección" }),
-    ).toBeNull();
-  });
-
   it("keeps the page in the URL and recovers from a failed load", async () => {
-    renderBrowser({
-      initial: pageOf(1),
-      totalRecords: 120,
-      firstNumber: 1,
-      lastNumber: 120,
+    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    const top = screen.getByRole("navigation", {
+      name: "Páginas de episodios",
     });
+    expect(within(top).getByRole("link", { name: "Página 2" })).toHaveAttribute(
+      "href",
+      "/anime/otome?page=2#episodios",
+    );
 
     vi.mocked(apiFetch).mockRejectedValueOnce(new TypeError("offline"));
     fireEvent.click(
-      screen.getAllByRole("button", { name: "Página siguiente" })[0],
+      within(top).getByRole("link", { name: "Página siguiente" }),
     );
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("No se pudo cargar la página 2");
@@ -341,7 +329,9 @@ describe("EpisodeBrowser", () => {
 
     await waitFor(() => expect(window.location.search).toBe("?page=2"));
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.getAllByText("Episodios 51–100 de 120")).toHaveLength(2);
+    expect(
+      screen.getByRole("list", { name: "Episodios, página 2 de 3" }),
+    ).toBeInTheDocument();
 
     vi.mocked(apiFetch).mockResolvedValueOnce({
       data: pageOf(1),
@@ -352,46 +342,9 @@ describe("EpisodeBrowser", () => {
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
     await waitFor(() =>
-      expect(screen.getAllByText("Episodios 1–50 de 120")).toHaveLength(2),
-    );
-  });
-
-  it("shows relative publish time and an empty state", () => {
-    const view = renderBrowser({
-      initial: [
-        makeEpisode(1, {
-          publishedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
-        }),
-        makeEpisode(2),
-      ],
-    });
-    expect(screen.getAllByText("hace 2 h").length).toBeGreaterThan(0);
-    view.unmount();
-
-    renderBrowser({
-      initial: [],
-      totalRecords: 0,
-      firstNumber: 1,
-      lastNumber: 1,
-    });
-    expect(screen.getByText("Aún no hay episodios disponibles")).toBeVisible();
-    expect(screen.queryByRole("button", { name: /Descargar/ })).toBeNull();
-  });
-
-  it("names where phones actually send the links", () => {
-    // Click'n'Load is stored, but a phone sends to MyJDownloader.
-    downloads.deviceProfile = "portable";
-    renderBrowser({
-      initial: pageOf(1),
-      totalRecords: 1180,
-      firstNumber: 1,
-      lastNumber: 1180,
-    });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Descargar todo (1.180)" }),
-    );
-    expect(screen.getByRole("alertdialog")).toHaveTextContent(
-      "se enviarán a MyJDownloader",
+      expect(
+        screen.getByRole("list", { name: "Episodios, página 1 de 3" }),
+      ).toBeInTheDocument(),
     );
   });
 
@@ -402,16 +355,12 @@ describe("EpisodeBrowser", () => {
       data: pageOf(51),
       meta: { page: 2, perPage: 50, totalPages: 3, totalRecords: 120 },
     });
-    renderBrowser({
-      initial: pageOf(1),
-      initialPage: 1,
-      totalRecords: 120,
-      firstNumber: 1,
-      lastNumber: 120,
-    });
+    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
 
     await waitFor(() =>
-      expect(screen.getAllByText("Episodios 51–100 de 120")).toHaveLength(2),
+      expect(
+        screen.getByRole("list", { name: "Episodios, página 2 de 3" }),
+      ).toBeInTheDocument(),
     );
     expect(apiFetch).toHaveBeenCalledWith(
       "/anime/otome/episodes?page=2",
@@ -420,34 +369,56 @@ describe("EpisodeBrowser", () => {
     );
   });
 
-  it("keeps pager controls focusable at the ends and while loading", async () => {
-    renderBrowser({
-      initial: pageOf(1),
-      totalRecords: 120,
-      firstNumber: 1,
-      lastNumber: 120,
-    });
+  it("keeps the pressed pager control focused while its page loads", () => {
+    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
     const pager = screen.getByRole("navigation", {
       name: "Páginas de episodios",
     });
-    const previous = within(pager).getByRole("button", {
-      name: "Página anterior",
-    });
-    expect(previous).toHaveAttribute("aria-disabled", "true");
-    expect(previous).not.toBeDisabled();
-    expect(
-      within(pager).getByRole("button", { name: "Página 1" }),
-    ).toHaveAttribute("aria-current", "page");
-
     vi.mocked(apiFetch).mockReturnValueOnce(new Promise(() => undefined));
-    const next = within(pager).getByRole("button", {
-      name: "Página siguiente",
-    });
+    const next = within(pager).getByRole("link", { name: "Página siguiente" });
     next.focus();
     fireEvent.click(next);
-    // Loading: the pressed control keeps focus (never disabled).
-    expect(next).not.toBeDisabled();
+
     expect(document.activeElement).toBe(next);
     expect(next).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("list", { name: /Episodios/ })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+  });
+
+  it("explains an anime without episodes yet", () => {
+    renderBrowser({
+      initial: [],
+      totalRecords: 0,
+      nextEpisodeAt: "2026-10-20T00:00:00.000Z",
+    });
+    expect(screen.getByText("Aún no hay episodios")).toBeVisible();
+    expect(
+      screen.getByText("El primero se publica el 20 de octubre de 2026."),
+    ).toBeVisible();
+    expect(screen.getByRole("link", { name: "Ver horario" })).toHaveAttribute(
+      "href",
+      "/horario",
+    );
+    expect(screen.queryByRole("button", { name: /Descargar/ })).toBeNull();
+  });
+});
+
+describe("MovieDownloadButton", () => {
+  it("downloads the movie's only video", () => {
+    const view = render(<MovieDownloadButton {...anime} episodeNumber={0} />);
+    fireEvent.click(screen.getByRole("button", { name: "Descargar película" }));
+    expect(downloads.openDownload).toHaveBeenCalledWith({
+      ...anime,
+      episodeNumbers: [0],
+      movie: true,
+    });
+
+    downloads.destination = "COPY";
+    view.rerender(<MovieDownloadButton {...anime} episodeNumber={0} />);
+    expect(
+      screen.getByRole("button", { name: "Copiar enlaces" }),
+    ).toBeVisible();
   });
 });

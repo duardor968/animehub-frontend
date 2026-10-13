@@ -7,13 +7,10 @@ import {
   isCatalogCapped,
   normalizeCatalogParams,
   normalizeForSearch,
-  resetCatalogPage,
   setCatalogMulti,
   setCatalogParam,
-  setCatalogYear,
   setCatalogYearRange,
   toCatalogApiParams,
-  toggleCatalogParam,
 } from "./catalog-filter-params";
 
 const bounds = { min: 1990, max: 2026 };
@@ -125,30 +122,15 @@ describe("catalog filter parameters", () => {
     expect(clearCatalogFilters(source, bounds).toString()).toBe(
       "q=one&order=title",
     );
-    expect(
-      clearCatalogFilters(source, bounds, { resetOrder: true }).toString(),
-    ).toBe("q=one");
   });
 
-  it("resets only the page for an out-of-range result set", () => {
-    const source = new URLSearchParams(
-      "q=one&order=title&genre=accion&status=emision&page=51",
-    );
-
-    expect(resetCatalogPage(source, bounds).toString()).toBe(
-      "q=one&genre=accion&status=emision&order=title",
-    );
-  });
-
-  it("never serializes NaN or an out-of-range year", () => {
-    const source = new URLSearchParams("q=one&minYear=2020");
-
+  it("never serializes an out-of-range year", () => {
     expect(
-      setCatalogYear(source, "minYear", Number.NaN, bounds).toString(),
-    ).toBe("q=one");
-    expect(setCatalogYear(source, "maxYear", 2500, bounds).toString()).toBe(
-      "q=one&minYear=2020",
-    );
+      normalizeCatalogParams(
+        new URLSearchParams("q=one&minYear=2020&maxYear=2500"),
+        bounds,
+      ).toString(),
+    ).toBe("q=one&minYear=2020");
   });
 
   it("matches genres without accents and ignores excess whitespace", () => {
@@ -156,10 +138,10 @@ describe("catalog filter parameters", () => {
     expect(normalizeForSearch("CIENCIA   FICCIÓN")).toBe("ciencia ficcion");
   });
 
-  it("batches toggles locally and counts the resulting filters", () => {
+  it("batches changes locally and counts the resulting filters", () => {
     let params = new URLSearchParams("q=one&status=emision&letter=a");
     params = setCatalogParam(params, "genre", "accion", bounds);
-    params = toggleCatalogParam(params, "category", "tv-anime", bounds);
+    params = setCatalogMulti(params, "category", ["tv-anime"], bounds);
 
     expect(params.toString()).toBe(
       "q=one&category=tv-anime&genre=accion&status=emision&letter=a",
@@ -246,7 +228,7 @@ describe("catalog filter parameters", () => {
     expect(isCatalogCapped({})).toBe(false);
     expect(isCatalogCapped({ capped: false })).toBe(false);
     expect(isCatalogCapped({ capped: true })).toBe(true);
-    expect(formatCatalogCount(1000, true)).toBe("Más de 1.000 obras");
+    expect(formatCatalogCount(1000, true)).toBe("Más de 1000 obras");
     expect(formatCatalogCount(1, false)).toBe("1 obra");
     expect(formatCatalogCount(23, false)).toBe("23 obras");
   });
