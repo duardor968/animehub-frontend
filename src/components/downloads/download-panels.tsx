@@ -20,6 +20,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { EmptyState } from "../empty-state";
 import { copyLinks } from "./download-client";
 import {
+  copyOnlyProviders,
   providerLabels,
   type AudioPreference,
   type DownloadDestination,
@@ -324,6 +325,9 @@ export function PreferencesPanel({
   myJdConnected: boolean;
   openDeviceSettings: () => void;
 }) {
+  const sendableProviders = preferences.providers.filter(
+    (provider) => !copyOnlyProviders.has(provider),
+  );
   return (
     <div className="flex flex-col gap-6">
       <RadioGroup
@@ -349,14 +353,18 @@ export function PreferencesPanel({
       >
         <Label>Proveedores</Label>
         <div className="grid grid-cols-2 gap-x-4">
-          {Object.entries(providerLabels).map(([provider, label]) => (
+          {(
+            Object.entries(providerLabels) as Array<
+              [DownloadProviderId, string]
+            >
+          ).map(([provider, label]) => (
             <Checkbox
               key={provider}
               value={provider}
-              // At least one provider stays marked.
+              // At least one provider a JDownloader takes stays marked.
               isDisabled={
-                preferences.providers.length === 1 &&
-                preferences.providers[0] === provider
+                sendableProviders.length === 1 &&
+                sendableProviders[0] === provider
               }
               className="checkbox-visible"
             >
@@ -366,6 +374,9 @@ export function PreferencesPanel({
                 </Checkbox.Control>
                 {label}
               </Checkbox.Content>
+              {copyOnlyProviders.has(provider) && (
+                <Description>Solo al copiar enlaces.</Description>
+              )}
             </Checkbox>
           ))}
         </div>

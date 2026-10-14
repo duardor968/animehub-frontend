@@ -334,7 +334,7 @@ function delivered(
   via: DownloadDestination,
 ): Partial<Activity> {
   const failed =
-    failedEpisodeNumbers(deliverableEpisodes(activity)).length > 0 ||
+    failedEpisodeNumbers(deliverableEpisodes(activity, via)).length > 0 ||
     (!activity.onlyEpisodes && (activity.failedCount ?? 0) > 0);
   return {
     status: failed ? "partial" : "handed-off",
@@ -344,6 +344,7 @@ function delivered(
     failure: undefined,
     interrupted: false,
     copyBlocked: false,
+    noLinks: false,
   };
 }
 
@@ -1135,20 +1136,24 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  /** Records links copied outside deliver (a toast or panel button). */
+  /** Records links copied outside deliver (a toast or panel button), also
+   *  those a JDownloader could not take. */
   function markCopied(id: string) {
     const activity = findIn(activitiesRef.current, id);
-    if (activity && unfinishedStatuses.has(activity.status))
+    if (
+      activity &&
+      (unfinishedStatuses.has(activity.status) || activity.noLinks)
+    )
       updateActivity(id, delivered(activity, "COPY"));
   }
 
   async function copyActivityLinks(id: string) {
     const activity = findIn(activitiesRef.current, id);
-    const episodes = activity ? deliverableEpisodes(activity) : [];
+    const episodes = activity ? deliverableEpisodes(activity, "COPY") : [];
     const urls = collectUrls(episodes);
     if (!activity || !urls.length) return;
     if (!(await copyLinks(urls))) return showLinks(id);
-    if (unfinishedStatuses.has(activity.status)) {
+    if (unfinishedStatuses.has(activity.status) || activity.noLinks) {
       markCopied(id);
       if (drawerOpenRef.current && panelRef.current.activityId === id)
         closeDrawer();
@@ -1520,7 +1525,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                     mode: "links",
                     props: {
                       urls: target
-                        ? collectUrls(deliverableEpisodes(target))
+                        ? collectUrls(deliverableEpisodes(target, "COPY"))
                         : [],
                       onCopied: () => target && markCopied(target.id),
                     },

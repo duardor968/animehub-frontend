@@ -902,6 +902,16 @@ describe("DownloadProvider drawer", () => {
       JSON.parse(localStorage.getItem("animehub.download-preferences") ?? "{}")
         .providers,
     ).toEqual(["MP4UPLOAD"]);
+
+    // Transfer.it only copies: marking it leaves MP4Upload as the last one a
+    // JDownloader takes.
+    const transfer = within(drawer).getByRole("checkbox", {
+      name: "Transfer.it",
+    });
+    fireEvent.click(transfer);
+    expect(transfer).toBeChecked();
+    expect(last).toBeDisabled();
+    expect(transfer).not.toBeDisabled();
   });
 });
 

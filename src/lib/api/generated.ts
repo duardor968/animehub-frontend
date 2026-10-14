@@ -452,13 +452,26 @@ export interface components {
       episodeNumbers: number[];
       /** @enum {string} */
       audio: "SUB" | "DUB";
-      providers: ("MEGA" | "PIXELDRAIN" | "MP4UPLOAD" | "ONE_FICHIER")[];
+      providers: (
+        | "MEGA"
+        | "PIXELDRAIN"
+        | "MP4UPLOAD"
+        | "ONE_FICHIER"
+        | "STREAMTAPE"
+        | "TRANSFERIT"
+      )[];
       /** @default false */
       refresh: boolean;
     };
     ResolvedLinkDto: {
       /** @enum {string} */
-      provider: "MEGA" | "PIXELDRAIN" | "MP4UPLOAD" | "ONE_FICHIER";
+      provider:
+        | "MEGA"
+        | "PIXELDRAIN"
+        | "MP4UPLOAD"
+        | "ONE_FICHIER"
+        | "STREAMTAPE"
+        | "TRANSFERIT";
       url: string;
     };
     ResolvedEpisodeDto: {
@@ -478,7 +491,14 @@ export interface components {
     AllDownloadJobRequestDto: {
       /** @enum {string} */
       audio: "SUB" | "DUB";
-      providers: ("MEGA" | "PIXELDRAIN" | "MP4UPLOAD" | "ONE_FICHIER")[];
+      providers: (
+        | "MEGA"
+        | "PIXELDRAIN"
+        | "MP4UPLOAD"
+        | "ONE_FICHIER"
+        | "STREAMTAPE"
+        | "TRANSFERIT"
+      )[];
       /**
        * @description Every episode of the anime. (enum property replaced by openapi-typescript)
        * @enum {string}
@@ -488,7 +508,14 @@ export interface components {
     RangeDownloadJobRequestDto: {
       /** @enum {string} */
       audio: "SUB" | "DUB";
-      providers: ("MEGA" | "PIXELDRAIN" | "MP4UPLOAD" | "ONE_FICHIER")[];
+      providers: (
+        | "MEGA"
+        | "PIXELDRAIN"
+        | "MP4UPLOAD"
+        | "ONE_FICHIER"
+        | "STREAMTAPE"
+        | "TRANSFERIT"
+      )[];
       /**
        * @description Every existing episode whose number is within [from, to] (inclusive). (enum property replaced by openapi-typescript)
        * @enum {string}
@@ -502,7 +529,14 @@ export interface components {
     EpisodesDownloadJobRequestDto: {
       /** @enum {string} */
       audio: "SUB" | "DUB";
-      providers: ("MEGA" | "PIXELDRAIN" | "MP4UPLOAD" | "ONE_FICHIER")[];
+      providers: (
+        | "MEGA"
+        | "PIXELDRAIN"
+        | "MP4UPLOAD"
+        | "ONE_FICHIER"
+        | "STREAMTAPE"
+        | "TRANSFERIT"
+      )[];
       /**
        * @description Exactly the listed episodes. (enum property replaced by openapi-typescript)
        * @enum {string}

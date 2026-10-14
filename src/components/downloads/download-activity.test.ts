@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { presentActivity, type Activity } from "./download-activity";
+import {
+  deliverableEpisodes,
+  presentActivity,
+  type Activity,
+} from "./download-activity";
 
 const activity = (overrides: Partial<Activity> = {}): Activity => ({
   id: "a",
@@ -26,6 +30,59 @@ const activity = (overrides: Partial<Activity> = {}): Activity => ({
   createdAt: 0,
   isJob: false,
   ...overrides,
+});
+
+describe("deliverableEpisodes", () => {
+  const links = [
+    { provider: "MEGA" as const, url: "https://mega.example/1" },
+    { provider: "TRANSFERIT" as const, url: "https://transfer.example/1" },
+  ];
+  const withTransfer = (overrides: Partial<Activity> = {}) =>
+    activity({
+      status: "ready",
+      episodes: [{ episodeNumber: 1, audio: "SUB", links }],
+      ...overrides,
+    });
+
+  it("sends no Transfer.it link to a JDownloader", () => {
+    expect(deliverableEpisodes(withTransfer())[0].links).toEqual([links[0]]);
+    expect(presentActivity(withTransfer(), { portable: false }).title).toBe(
+      "1 enlace listo",
+    );
+  });
+
+  it("offers a copy when only Transfer.it has links", () => {
+    const view = presentActivity(
+      withTransfer({
+        status: "error",
+        noLinks: true,
+        episodes: [{ episodeNumber: 1, audio: "SUB", links: [links[1]] }],
+      }),
+      { portable: false },
+    );
+    expect(view).toMatchObject({
+      title: "Solo hay enlaces de Transfer.it",
+      detail: "No se envían a JDownloader.",
+      actions: [{ id: "copy", label: "Copiar enlaces", primary: true }],
+    });
+  });
+
+  it("counts what went the way it went", () => {
+    const sent = (deliveredVia: "CNL" | "COPY") =>
+      presentActivity(withTransfer({ status: "handed-off", deliveredVia }), {
+        portable: false,
+      }).title;
+    expect(sent("CNL")).toBe("1 enlace enviado a JDownloader");
+    // Sent to Click'n'Load first, copied in the end: Transfer.it went too.
+    expect(sent("COPY")).toBe("2 enlaces copiados");
+  });
+
+  it("copies every link", () => {
+    expect(deliverableEpisodes(withTransfer(), "COPY")[0].links).toEqual(links);
+    expect(
+      deliverableEpisodes(withTransfer({ destination: "COPY" }))[0].links,
+    ).toEqual(links);
+  });
 });
 
 describe("presentActivity copy", () => {

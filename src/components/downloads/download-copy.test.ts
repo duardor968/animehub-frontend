@@ -109,5 +109,14 @@ describe("download copy helpers", () => {
         ["MEGA"],
       ).heading,
     ).toBe("¿Descargar los 1180 episodios?");
+    expect(
+      describeConfirmation(
+        { slug: "a", title: "One Piece", from: 1, to: 50, total: 50 },
+        "CNL",
+        ["TRANSFERIT", "STREAMTAPE", "MEGA"],
+      ).body,
+    ).toBe(
+      "Los enlaces de One Piece (Ep. 1–50) se enviarán a JDownloader, con todos los espejos de Mega y Streamtape.",
+    );
   });
 });

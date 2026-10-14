@@ -1,5 +1,6 @@
 import { formatEpisodeNumber, formatNumber, plural } from "@/lib/format";
 import {
+  copyOnlyProviders,
   providerLabels,
   type AudioPreference,
   type DownloadDestination,
@@ -95,7 +96,7 @@ const destinationPhrases: Record<SentTo, string> = {
 const listFormat = new Intl.ListFormat("es", { type: "conjunction" });
 
 /** Confirmation of a large download: how many episodes, where they go and
- *  that every mirror of the chosen providers is included. */
+ *  that every mirror of the chosen providers it can take is included. */
 export function describeConfirmation(
   request: DownloadRequest,
   destination: SentTo,
@@ -113,7 +114,11 @@ export function describeConfirmation(
   const which = count && episodes.startsWith("Ep. ") ? ` (${episodes})` : "";
   const mirrors = listFormat.format(
     Object.entries(providerLabels)
-      .filter(([id]) => providers.includes(id as DownloadProviderId))
+      .filter(
+        ([id]) =>
+          providers.includes(id as DownloadProviderId) &&
+          !copyOnlyProviders.has(id as DownloadProviderId),
+      )
       .map(([, label]) => label),
   );
   return {

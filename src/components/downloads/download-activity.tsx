@@ -11,12 +11,14 @@ import {
   type ResolvedEpisodeLike,
 } from "./download-copy";
 import type { FriendlyError } from "./download-errors";
-import type {
-  AudioPreference,
-  DownloadActivityStatus,
-  DownloadDestination,
-  DownloadProviderId,
-  DownloadRequest,
+import {
+  copyOnlyProviders,
+  providerLabels,
+  type AudioPreference,
+  type DownloadActivityStatus,
+  type DownloadDestination,
+  type DownloadProviderId,
+  type DownloadRequest,
 } from "./download-types";
 
 export interface ResolvedEpisode extends ResolvedEpisodeLike {
@@ -64,7 +66,7 @@ export interface Activity {
   failedCount?: number;
   /** After "Reintentar fallidos", only these episodes are delivered. */
   onlyEpisodes?: number[];
-  /** The resolve finished but no provider had links. */
+  /** The resolve finished without links its destination takes. */
   noLinks?: boolean;
   /** Requested numbers the anime doesn't have (skipped by the job). */
   missingNumbers?: number[];
@@ -127,13 +129,25 @@ const destinationNames: Record<Exclude<DownloadDestination, "COPY">, string> = {
   MYJD: "MyJDownloader",
 };
 
-export function deliverableEpisodes(activity: Activity) {
+/** The episodes going to `via` (the activity's destination unless copied),
+ *  without the links a JDownloader cannot take. */
+export function deliverableEpisodes(
+  activity: Activity,
+  via: DownloadDestination = activity.destination,
+) {
   const only = activity.onlyEpisodes;
-  return only
+  const episodes = only
     ? activity.episodes.filter((episode) =>
         only.includes(episode.episodeNumber),
       )
     : activity.episodes;
+  if (via === "COPY") return episodes;
+  return episodes.map((episode) => ({
+    ...episode,
+    links: episode.links.filter(
+      (link) => !copyOnlyProviders.has(link.provider),
+    ),
+  }));
 }
 
 function deliverLabel(destination: DownloadDestination) {
@@ -168,7 +182,13 @@ export function presentActivity(
   activity: Activity,
   { portable }: { portable: boolean },
 ): ActivityView {
-  const episodes = deliverableEpisodes(activity);
+  // Once delivered, what went the way it went.
+  const reached =
+    activity.status === "handed-off" || activity.status === "partial";
+  const episodes = deliverableEpisodes(
+    activity,
+    reached ? activity.deliveredVia : undefined,
+  );
   const one = countLinks(episodes) === 1;
   const base = { isLoading: false, actions: [] };
   const alternativeDestination: ActivityView["actions"] = [];
@@ -348,7 +368,29 @@ export function presentActivity(
         timeout: 5_000,
       };
     case "error":
-    default:
+    default: {
+      // Links only a copy takes: say whose they are and offer the copy.
+      const copyOnly = [
+        ...new Set(
+          deliverableEpisodes(activity, "COPY").flatMap((episode) =>
+            episode.links.map((link) => providerLabels[link.provider]),
+          ),
+        ),
+      ];
+      if (
+        activity.noLinks &&
+        activity.destination !== "COPY" &&
+        copyOnly.length > 0
+      ) {
+        return {
+          ...base,
+          title: `Solo hay enlaces de ${copyOnly.join(" y ")}`,
+          detail: `No se envían a ${destinationNames[activity.destination]}.`,
+          variant: "warning",
+          timeout: 12_000,
+          actions: [{ id: "copy", label: "Copiar enlaces", primary: true }],
+        };
+      }
       if (activity.noLinks) {
         return {
           ...base,
@@ -373,6 +415,7 @@ export function presentActivity(
             ? []
             : [{ id: "retry", label: "Reintentar", primary: true }],
       };
+    }
   }
 }
 

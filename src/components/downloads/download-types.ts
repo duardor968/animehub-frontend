@@ -1,6 +1,11 @@
 export type AudioPreference = "SUB" | "DUB";
 export type DownloadProviderId =
-  "MEGA" | "PIXELDRAIN" | "MP4UPLOAD" | "ONE_FICHIER";
+  | "MEGA"
+  | "PIXELDRAIN"
+  | "MP4UPLOAD"
+  | "ONE_FICHIER"
+  | "STREAMTAPE"
+  | "TRANSFERIT";
 /** Where resolved links go: Click'n'Load (local JDownloader), a MyJDownloader
  *  device, or the clipboard (works everywhere, including phones). */
 export type DownloadDestination = "CNL" | "MYJD" | "COPY";
@@ -11,7 +16,15 @@ export const providerLabels: Record<DownloadProviderId, string> = {
   PIXELDRAIN: "Pixeldrain",
   MP4UPLOAD: "MP4Upload",
   ONE_FICHIER: "1Fichier",
+  STREAMTAPE: "Streamtape",
+  TRANSFERIT: "Transfer.it",
 };
+
+/** Offered only to copy: JDownloader has no plugin for Transfer.it, so its
+ *  links never go to a JDownloader. */
+export const copyOnlyProviders: ReadonlySet<DownloadProviderId> = new Set([
+  "TRANSFERIT",
+]);
 
 export interface DownloadPreferences {
   audio: AudioPreference;

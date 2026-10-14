@@ -71,13 +71,33 @@ describe("sectorForArrow", () => {
         sectorForArrow(key, 4, null),
       ),
     ).toEqual([0, 1, 2, 3]);
-    // Three at 120°: top, lower right, lower left; down is a tie.
+    // Three at 120°: top, lower right, lower left; down points between the
+    // lower two and alternates them.
     expect(sectorForArrow("ArrowUp", 3, null)).toBe(0);
     expect(sectorForArrow("ArrowRight", 3, null)).toBe(1);
     expect(sectorForArrow("ArrowLeft", 3, null)).toBe(2);
-    expect(sectorForArrow("ArrowDown", 3, 2)).toBe(2);
+    expect(sectorForArrow("ArrowDown", 3, 2)).toBe(1);
+    expect(sectorForArrow("ArrowDown", 3, 1)).toBe(2);
     // Two: top and bottom halves.
     expect(sectorForArrow("ArrowDown", 2, null)).toBe(1);
+  });
+
+  it("reaches every sector of a ring of five or six", () => {
+    const reached = (count: number) => {
+      const seen = new Set<number>();
+      for (const key of ["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"]) {
+        let current: number | null = null;
+        for (let press = 0; press < 2; press++) {
+          current = sectorForArrow(key, count, current);
+          if (current !== null) seen.add(current);
+        }
+      }
+      return [...seen].sort();
+    };
+    expect(reached(5)).toEqual([0, 1, 2, 3, 4]);
+    expect(reached(6)).toEqual([0, 1, 2, 3, 4, 5]);
+    // A second press on the only sector an arrow points at stays there.
+    expect(sectorForArrow("ArrowUp", 6, 0)).toBe(0);
   });
 });
 

@@ -49,3 +49,10 @@ export function PixeldrainLogo(props: SVGProps<SVGSVGElement>) {
  *  licence stated. */
 export { default as oneFichierLogo } from "@/assets/providers/1fichier.webp";
 export { default as mp4uploadLogo } from "@/assets/providers/mp4upload.webp";
+
+/** Streamtape's mark, its favicon (streamtape.com/favicon.ico), and
+ *  Transfer.it's (st.transfer.it/images/favicons/favicon.svg, a PNG inside):
+ *  WebP at over twice their display size. Trademarks of their owners, used
+ *  only to name their services; no licence stated. */
+export { default as streamtapeLogo } from "@/assets/providers/streamtape.webp";
+export { default as transferitLogo } from "@/assets/providers/transferit.webp";

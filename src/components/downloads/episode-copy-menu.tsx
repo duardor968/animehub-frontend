@@ -31,6 +31,8 @@ import {
   PixeldrainLogo,
   mp4uploadLogo,
   oneFichierLogo,
+  streamtapeLogo,
+  transferitLogo,
 } from "../brand-icons";
 import { RequestTitle } from "./download-activity";
 import { useDownloads, type EpisodeLinks } from "./download-provider";
@@ -64,6 +66,12 @@ const logos: Record<DownloadProviderId, ReactNode> = {
   ONE_FICHIER: (
     <Image src={oneFichierLogo} alt="" width={46} height={42} unoptimized />
   ),
+  STREAMTAPE: (
+    <Image src={streamtapeLogo} alt="" width={24} height={24} unoptimized />
+  ),
+  TRANSFERIT: (
+    <Image src={transferitLogo} alt="" width={24} height={24} unoptimized />
+  ),
 };
 
 const arrowAngles: Record<string, number> = {
@@ -81,24 +89,22 @@ function angleBetween(a: number, b: number) {
   return Math.abs(((((a - b) % 360) + 540) % 360) - 180);
 }
 
-/** The sector an arrow points at (on a tie, the one already focused). */
+/** The sector an arrow points at: the nearest within half a sector of its
+ *  direction. When it points between two (rings of 2, 3, 5 or 6), pressing it
+ *  again moves to the other, so every sector is reachable. */
 export function sectorForArrow(
   key: string,
   count: number,
   current: number | null,
 ) {
   const target = arrowAngles[key];
-  let best: number | null = null;
-  for (let index = 0; index < count; index++) {
-    const delta =
-      best === null
-        ? -1
-        : angleBetween(sectorAngle(index, count), target) -
-          angleBetween(sectorAngle(best, count), target);
-    if (delta < -0.01 || (Math.abs(delta) <= 0.01 && index === current))
-      best = index;
-  }
-  return best;
+  const away = (index: number) =>
+    angleBetween(sectorAngle(index, count), target);
+  const pointed = Array.from({ length: count }, (_, index) => index)
+    .filter((index) => away(index) <= 180 / count + 0.01)
+    .sort((a, b) => away(a) - away(b));
+  const at = current === null ? -1 : pointed.indexOf(current);
+  return pointed[(at + 1) % pointed.length] ?? null;
 }
 
 const menuItems = (ring: HTMLElement | null) => [
