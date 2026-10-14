@@ -914,14 +914,8 @@
       background: color-mix(in srgb, var(--brand) 52%, var(--overlay));
     }
 
-    /* Still looking it up. */
-    &[data-loading] {
-      background: var(--sector-bg);
-      cursor: default;
-    }
-
     /* No link here: the plain surface, a grey mark, the disabled cursor. */
-    &[aria-disabled]:not([data-loading]) {
+    &[aria-disabled] {
       background: var(--overlay);
       cursor: var(--cursor-disabled);
 
@@ -931,15 +925,9 @@
       }
     }
 
-    /* Still looking it up: a pulsing skeleton, no mark yet. */
+    /* Still looking it up: the mark pulses. */
     &[data-loading] .copy-ring__mark {
-      visibility: hidden;
-    }
-
-    & > .skeleton {
-      position: absolute;
-      inset: 0;
-      border-radius: 0;
+      @apply animate-pulse;
     }
   }
 

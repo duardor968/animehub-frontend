@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Skeleton, Spinner, Tooltip } from "@heroui/react";
+import { Button, Spinner, Tooltip, toast } from "@heroui/react";
 import { buttonVariants } from "@heroui/styles";
 import { Copy } from "lucide-react";
 import {
@@ -32,6 +32,7 @@ import {
   mp4uploadLogo,
   oneFichierLogo,
 } from "../brand-icons";
+import { RequestTitle } from "./download-activity";
 import { useDownloads, type EpisodeLinks } from "./download-provider";
 import { providerLabels, type DownloadProviderId } from "./download-types";
 
@@ -50,6 +51,8 @@ const CORNER = 12;
 const CENTER_SCALE = 0.85;
 /** Closest the ring gets to the viewport edge. */
 const EDGE = 8;
+/** The center's copy: every link. */
+const ALL = "ALL";
 
 // Every mark is a logo; the sector's label names it.
 const logos: Record<DownloadProviderId, ReactNode> = {
@@ -224,7 +227,10 @@ export function EpisodeCopyMenu({
   const holdClosed = useRef(false);
   const [ring, setRing] = useState<Ring | null>(null);
   const [links, setLinks] = useState<EpisodeLinks | undefined>();
-  const [waiting, setWaiting] = useState(false);
+  // A copy pressed before the lookup ends: of every link or one server's.
+  const [waiting, setWaiting] = useState<
+    DownloadProviderId | typeof ALL | null
+  >(null);
   const [tooltip, setTooltip] = useState(false);
   const [focused, setFocused] = useState(false);
   const isFocusVisible = useFocusVisible().isFocusVisible && focused;
@@ -300,11 +306,20 @@ export function EpisodeCopyMenu({
       close();
       return;
     }
-    // The center before the lookup ends: copy everything once it does.
-    setWaiting(true);
+    // Pressed before the lookup ends: copy once it does. A server found
+    // without a link says so; the ring stays, its sector greyed.
+    setWaiting(provider ?? ALL);
     void resolveEpisodeLinks(request).then((value) => {
-      setWaiting(false);
-      if (value) copyEpisodeLinks(request, value);
+      setWaiting(null);
+      const has = (id: DownloadProviderId) =>
+        value?.episode.links.some((link) => link.provider === id);
+      if (value && provider && !has(provider)) {
+        toast.warning(<RequestTitle request={request} />, {
+          description: `${providerLabels[provider]} no tiene este episodio.`,
+        });
+        return;
+      }
+      if (value) copyEpisodeLinks(request, value, provider);
       close();
     });
   }
@@ -352,13 +367,13 @@ export function EpisodeCopyMenu({
     };
   }, [open, close]);
 
-  // Opened with an arrow: once the links are in, focus that way.
+  // Opened with an arrow: focus that way, the links still on their way.
   useEffect(() => {
-    if (!ring?.focus || ring.closing || !links) return;
+    if (!ring?.focus || ring.closing) return;
     const items = menuItems(ringRef.current);
     const index = sectorForArrow(ring.focus, items.length, null);
     if (index !== null) items[index].focus();
-  }, [ring, links]);
+  }, [ring]);
 
   useEffect(() => clearTimer, []);
 
@@ -403,7 +418,7 @@ export function EpisodeCopyMenu({
       aria-controls={open ? menuId : undefined}
       // The ring's center stands in for it while the ring is there.
       data-ring={ring ? true : undefined}
-      isPending={waiting}
+      isPending={waiting === ALL}
       className={`${className} episode-action copy-ring__trigger`}
       onHoverStart={() => {
         pointerOn.current.trigger = true;
@@ -422,7 +437,7 @@ export function EpisodeCopyMenu({
         else copy();
       }}
     >
-      {waiting ? (
+      {waiting === ALL ? (
         <Spinner color="current" size="sm" aria-label="Buscando enlaces" />
       ) : (
         <Copy aria-hidden="true" />
@@ -449,7 +464,7 @@ export function EpisodeCopyMenu({
       }}
       onPress={() => copy()}
     >
-      {waiting ? (
+      {waiting === ALL ? (
         <Spinner color="current" size="sm" aria-hidden="true" />
       ) : (
         <Copy aria-hidden="true" />
@@ -515,6 +530,7 @@ export function EpisodeCopyMenu({
                   count={providers.length}
                   inner={ring.inner}
                   links={links}
+                  waiting={waiting === provider}
                   portable={portable}
                   onCopy={() => copy(provider)}
                 />
@@ -546,6 +562,7 @@ function Sector({
   count,
   inner,
   links,
+  waiting,
   portable,
   onCopy,
 }: {
@@ -554,19 +571,21 @@ function Sector({
   count: number;
   inner: number;
   links: EpisodeLinks | undefined;
+  /** Pressed before the lookup ends: copies once it does. */
+  waiting: boolean;
   portable: boolean;
   onCopy: () => void;
 }) {
   const name = providerLabels[provider];
   const shape = sectorPath(index, count, inner);
-  const found =
-    links?.episode.links.filter((link) => link.provider === provider).length ??
-    0;
-  const label = !links
-    ? `Buscando el enlace de ${name}…`
-    : found === 0
+  // Unknown until the lookup ends.
+  const found = links?.episode.links.filter(
+    (link) => link.provider === provider,
+  ).length;
+  const label =
+    found === 0
       ? `${name} no tiene este episodio`
-      : `Copiar ${found === 1 ? "el enlace" : "los enlaces"} de ${name}`;
+      : `Copiar ${found && found > 1 ? "los enlaces" : "el enlace"} de ${name}`;
   const [x, y] = polar(
     inner + RING,
     inner + RING / 2,
@@ -577,21 +596,24 @@ function Sector({
       role="menuitem"
       aria-label={label}
       aria-disabled={found === 0 || undefined}
-      // Still looking it up: neither available nor without a link.
+      // Still looking it up: its mark pulses, a press waits for it.
       data-loading={!links || undefined}
       className="copy-ring__sector"
       style={{ clipPath: `path(evenodd, "${shape}")` }}
       onPress={() => {
-        if (found > 0) onCopy();
+        if (found !== 0 && !waiting) onCopy();
       }}
     >
-      {!links && <Skeleton animationType="pulse" />}
       <span
         className="copy-ring__mark"
         style={{ left: x, top: y }}
         translate="no"
       >
-        {logos[provider]}
+        {waiting ? (
+          <Spinner color="current" size="sm" aria-hidden="true" />
+        ) : (
+          logos[provider]
+        )}
       </span>
       {/* An outline would be clipped with the sector: the focus is drawn
           along its shape instead. */}

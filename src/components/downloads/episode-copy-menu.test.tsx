@@ -7,6 +7,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { toast } from "@heroui/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EpisodeLinks } from "./download-provider";
 import { EpisodeCopyMenu, sectorForArrow } from "./episode-copy-menu";
@@ -142,20 +143,52 @@ describe("EpisodeCopyMenu", () => {
       "aria-busy",
       "true",
     );
-    expect(
-      screen.getByRole("menuitem", { name: "Buscando el enlace de Mega…" }),
-    ).toHaveAttribute("aria-disabled", "true");
+    const mega = screen.getByRole("menuitem", {
+      name: "Copiar el enlace de Mega",
+    });
+    expect(mega).not.toHaveAttribute("aria-disabled");
 
     await act(async () => finish(links));
-    expect(
-      await screen.findByRole("menuitem", { name: "Copiar el enlace de Mega" }),
-    ).not.toHaveAttribute("aria-disabled");
+    expect(mega).not.toHaveAttribute("aria-disabled");
 
     fireEvent.click(trigger);
     expect(downloads.copyEpisodeLinks).toHaveBeenCalledWith(
       request,
       links,
       undefined,
+    );
+  });
+
+  it("copies a server pressed during the lookup once it ends", async () => {
+    let finish!: (value: EpisodeLinks) => void;
+    downloads.resolveEpisodeLinks.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const warning = vi.spyOn(toast, "warning").mockReturnValue("");
+    const trigger = renderMenu();
+    fireEvent.keyDown(trigger, { key: "ArrowUp" });
+    await screen.findByRole("menu");
+
+    // MP4Upload turns out to have no link: nothing copied, a toast says so.
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Copiar el enlace de MP4Upload" }),
+    );
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Copiar el enlace de Pixeldrain" }),
+    );
+    await act(async () => finish(links));
+
+    expect(warning).toHaveBeenCalledWith(expect.anything(), {
+      description: "MP4Upload no tiene este episodio.",
+    });
+    warning.mockRestore();
+    expect(downloads.copyEpisodeLinks).toHaveBeenCalledTimes(1);
+    expect(downloads.copyEpisodeLinks).toHaveBeenCalledWith(
+      request,
+      links,
+      "PIXELDRAIN",
     );
   });
 
