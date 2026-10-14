@@ -885,10 +885,11 @@
     inset: 0;
   }
 
-  /* While the ring is there its center stands in for the button, even on a
-     card that reveals it on hover or focus (.media-card__action). */
+  /* While the ring is there its center stands in for the button, which is
+     still under the pointer. A filter, not opacity: it swaps at once both
+     ways, without the fade the button shows with on a card. */
   .copy-ring__trigger[data-ring] {
-    opacity: 0 !important;
+    filter: opacity(0);
   }
 
   .copy-ring__sector {
@@ -896,30 +897,38 @@
     inset: 0;
     overflow: hidden;
     pointer-events: auto;
-    background: var(--overlay);
+    /* A deep shade of the center's blue; hover and press come closer to
+       it. Keyboard focus adds its contour. */
+    --sector-bg: color-mix(in srgb, var(--brand) 22%, var(--overlay));
+    background: var(--sector-bg);
     color: var(--overlay-foreground);
     cursor: var(--cursor-interactive);
     outline: none;
     transition: background-color 150ms var(--ease-out);
 
-    /* HeroUI's soft accent, which keeps the logos' colours readable;
-       keyboard focus adds its contour. */
     &:is([data-hovered], [data-focus-visible]) {
-      background: var(--accent-soft);
+      background: color-mix(in srgb, var(--brand) 44%, var(--overlay));
     }
 
     &[data-pressed] {
-      background: var(--accent-soft-hover);
+      background: color-mix(in srgb, var(--brand) 52%, var(--overlay));
     }
 
-    &[aria-disabled] {
-      background: var(--overlay);
+    /* Still looking it up. */
+    &[data-loading] {
+      background: var(--sector-bg);
       cursor: default;
     }
 
-    /* No link here. */
-    &[aria-disabled] .copy-ring__mark {
-      opacity: 0.35;
+    /* No link here: the plain surface, a grey mark, the disabled cursor. */
+    &[aria-disabled]:not([data-loading]) {
+      background: var(--overlay);
+      cursor: var(--cursor-disabled);
+
+      & .copy-ring__mark {
+        opacity: 0.4;
+        filter: grayscale(1);
+      }
     }
 
     /* Still looking it up: a pulsing skeleton, no mark yet. */
@@ -992,6 +1001,15 @@
     .copy-ring[data-exiting] & {
       translate: calc(-50% + var(--from-x)) calc(-50% + var(--from-y));
       scale: 1;
+
+      /* Its button hidden (off its card): it goes as the button would. */
+      &[data-fading] {
+        opacity: 0;
+        scale: 0.9;
+        transition:
+          opacity 150ms var(--ease-out),
+          scale 150ms var(--ease-out);
+      }
     }
 
     /* Keyboard focus is on the button underneath: shown here. */

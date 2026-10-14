@@ -1,16 +1,17 @@
 "use client";
 
 import { Button, Spinner, Tooltip } from "@heroui/react";
-import { Download } from "lucide-react";
+import { Copy, Download } from "lucide-react";
 import { formatEpisodeNumber } from "@/lib/format";
 import { activeStatuses } from "./download-activity";
 import { useDownloads } from "./download-provider";
 import { EpisodeCopyMenu } from "./episode-copy-menu";
 
 /** An episode's own download button: a copy menu when links go to the
- *  clipboard, otherwise a download to the chosen destination. The tooltip
- *  says the action; the accessible name adds the episode and, among several
- *  series (`withSeries`), the anime. */
+ *  clipboard from several servers, otherwise a download to the chosen
+ *  destination (a plain copy with one server, which the menu would only
+ *  repeat). The tooltip says the action; the accessible name adds the
+ *  episode and, among several series (`withSeries`), the anime. */
 export function EpisodeDownloadButton({
   slug,
   title,
@@ -24,10 +25,16 @@ export function EpisodeDownloadButton({
   withSeries?: boolean;
   className?: string;
 }) {
-  const { deviceProfile, destination, getRequestStatus, openDownload } =
-    useDownloads();
+  const {
+    deviceProfile,
+    destination,
+    preferences,
+    getRequestStatus,
+    openDownload,
+  } = useDownloads();
   const portable = deviceProfile === "portable";
-  if (destination === "COPY")
+  const copying = destination === "COPY";
+  if (copying && preferences.providers.length > 1)
     return (
       <EpisodeCopyMenu
         slug={slug}
@@ -42,7 +49,7 @@ export function EpisodeDownloadButton({
   const request = { slug, title, episodeNumbers: [episodeNumber] };
   const status = getRequestStatus(request);
   const pending = status !== undefined && activeStatuses.has(status);
-  const label = `Descargar el episodio ${formatEpisodeNumber(episodeNumber)}${withSeries ? ` de ${title}` : ""}`;
+  const label = `${copying ? "Copiar enlaces del" : "Descargar el"} episodio ${formatEpisodeNumber(episodeNumber)}${withSeries ? ` de ${title}` : ""}`;
   const button = (
     <Button
       isIconOnly
@@ -53,7 +60,13 @@ export function EpisodeDownloadButton({
       onPress={() => openDownload(request)}
     >
       {pending ? (
-        <Spinner color="current" size="sm" aria-label="Preparando descarga" />
+        <Spinner
+          color="current"
+          size="sm"
+          aria-label={copying ? "Buscando enlaces" : "Preparando descarga"}
+        />
+      ) : copying ? (
+        <Copy aria-hidden="true" />
       ) : (
         <Download aria-hidden="true" />
       )}
@@ -63,7 +76,9 @@ export function EpisodeDownloadButton({
   return (
     <Tooltip delay={300}>
       {button}
-      <Tooltip.Content>Descargar</Tooltip.Content>
+      <Tooltip.Content>
+        {copying ? "Copiar enlaces" : "Descargar"}
+      </Tooltip.Content>
     </Tooltip>
   );
 }

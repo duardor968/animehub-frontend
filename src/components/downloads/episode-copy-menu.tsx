@@ -36,7 +36,7 @@ import { useDownloads, type EpisodeLinks } from "./download-provider";
 import { providerLabels, type DownloadProviderId } from "./download-types";
 
 /** Pause on the button before its links are looked up. */
-const OPEN_DELAY = 250;
+const OPEN_DELAY = 120;
 /** Grace to cross the gaps between the pieces without closing. */
 const CLOSE_DELAY = 200;
 /** Ring thickness: a touch target in every sector, with room around a 20 px
@@ -169,6 +169,18 @@ interface Ring {
   /** Opened with an arrow: focus the sector that way once its links are in. */
   focus: string | null;
   closing: boolean;
+  /** Closed with its button hidden (off a card that shows it on hover): the
+   *  center fades out as the button would. */
+  fading?: boolean;
+}
+
+/** Whether an element shows where it sits: no ancestor (a card showing its
+ *  action on hover) fades it out. */
+function isShown(element: HTMLElement | null) {
+  let opacity = 1;
+  for (let node = element; node; node = node.parentElement)
+    opacity *= Number(getComputedStyle(node).opacity);
+  return opacity > 0.5;
 }
 
 /**
@@ -273,6 +285,14 @@ export function EpisodeCopyMenu({
     clearTimer();
     timer.current = window.setTimeout(action, delay);
   };
+
+  function remove() {
+    setRing(null);
+    // Gone, the center ends no hover; and closed over the page (the ring
+    // shifted, a scroll), nothing is held.
+    pointerOn.current.center = false;
+    if (!pointerOn.current.trigger) holdClosed.current = false;
+  }
 
   function copy(provider?: DownloadProviderId) {
     if (links) {
@@ -420,8 +440,12 @@ export function EpisodeCopyMenu({
           "--from-y": `${ring?.from.y ?? 0}px`,
         } as CSSProperties
       }
+      data-fading={ring?.fading || undefined}
       onHoverChange={(isHovering) => {
         pointerOn.current.center = isHovering;
+      }}
+      onTransitionEnd={(event) => {
+        if (ring?.fading && event.propertyName === "opacity") remove();
       }}
       onPress={() => copy()}
     >
@@ -472,15 +496,15 @@ export function EpisodeCopyMenu({
           >
             {/* The sectors come and go; the center stays, shrinking. */}
             <div
-              className={`copy-ring__sectors duration-200 ${ring.closing ? "animate-out fade-out-0 zoom-out-90 fill-mode-forwards" : "animate-in fade-in-0 zoom-in-75"}`}
+              // Out as long as the center's way back (globals.css).
+              className={`copy-ring__sectors ${ring.closing ? "animate-out fade-out-0 zoom-out-90 fill-mode-forwards duration-200" : "animate-in fade-in-0 zoom-in-75 duration-150"}`}
               onAnimationEnd={(event) => {
                 if (event.target !== event.currentTarget || !ring.closing)
                   return;
-                setRing(null);
-                // Gone, the center ends no hover; and closed over the page
-                // (the ring shifted, a scroll), nothing is held.
-                pointerOn.current.center = false;
-                if (!pointerOn.current.trigger) holdClosed.current = false;
+                // The button takes the center's place, or, hidden, the
+                // center fades out first.
+                if (isShown(triggerRef.current)) remove();
+                else setRing({ ...ring, fading: true });
               }}
             >
               {providers.map((provider, index) => (
