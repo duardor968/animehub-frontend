@@ -495,6 +495,9 @@ export function EpisodeBrowser({
 // while a download they started is pending.
 const revealOnHover =
   "transition-opacity sm:pointer-fine:opacity-0 sm:pointer-fine:group-hover:opacity-100 sm:pointer-fine:focus-within:opacity-100 sm:pointer-fine:has-[[data-pending=true]]:opacity-100";
+/** The download button also grows from 90% as it shows. */
+const growOnReveal =
+  "sm:pointer-fine:[&>*]:scale-90 sm:pointer-fine:group-hover:[&>*]:scale-100 sm:pointer-fine:focus-within:[&>*]:scale-100";
 
 /**
  * A card from 640px; below, a compact row (thumbnail, number, selection and
@@ -563,7 +566,7 @@ function EpisodeItem({
           </div>
         )}
         <div
-          className={`shrink-0 max-sm:mr-1 sm:pointer-events-none sm:absolute sm:inset-x-0 sm:top-0 sm:grid sm:aspect-video sm:place-items-center sm:[&>*]:pointer-events-auto ${revealOnHover}`}
+          className={`shrink-0 max-sm:mr-1 sm:pointer-events-none sm:absolute sm:inset-x-0 sm:top-0 sm:grid sm:aspect-video sm:place-items-center sm:[&>*]:pointer-events-auto ${revealOnHover} ${growOnReveal}`}
         >
           <EpisodeDownloadButton
             slug={slug}

@@ -391,9 +391,10 @@
     html:not([data-device="portable"]) .media-card__action {
       place-items: center;
 
+      /* It fades in growing from 90% (.episode-action's transition). */
       & > * {
         opacity: 0;
-        transition: opacity 200ms ease;
+        scale: 0.9;
       }
     }
 
@@ -413,6 +414,7 @@
 
       & .media-card__action > * {
         opacity: 1;
+        scale: 1;
       }
     }
   }
@@ -825,22 +827,35 @@
     }
   }
 
-  /* Episode copy menu: a ring of provider sectors around a copy button. The
-     sectors are clipped to their shape, so focus shows as a fill. */
+  /* An episode's action (download or copy) and the copy ring's center:
+     production's round blue button with its glow, 44 px at every width. Brand
+     blue rather than --accent, darkened for white text: an icon needs 3:1.
+     Hover goes 14% toward white, as in production. */
+  .episode-action {
+    --button-bg: var(--brand);
+    --button-bg-hover: color-mix(
+      in srgb,
+      var(--brand) 86%,
+      var(--accent-foreground)
+    );
+    --button-bg-pressed: var(--button-bg-hover);
+    @apply size-11 shadow-[0_12px_34px_color-mix(in_srgb,var(--brand)_32%,transparent)];
+    /* HeroUI's, plus the fade and growth with which it shows on a card. */
+    transition:
+      opacity 200ms var(--ease-out),
+      scale 200ms var(--ease-out),
+      transform 250ms var(--ease-smooth),
+      background-color 100ms var(--ease-out),
+      box-shadow 100ms var(--ease-out);
+  }
+
+  /* Episode copy menu: separate rounded sectors around the copy button, with
+     the page showing through the gaps. They are clipped to their shape, so
+     focus is drawn along it (.copy-ring__contour). */
   .copy-ring {
     position: fixed;
     z-index: 60;
     pointer-events: none;
-    filter: drop-shadow(0 10px 24px rgb(0 0 0 / 45%));
-
-    /* One disc under the pieces: the gaps between them read as seams. */
-    &::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      border-radius: 50%;
-      background: var(--background);
-    }
 
     &[data-exiting] * {
       pointer-events: none;
@@ -849,8 +864,6 @@
     /* Phones: the ring covers part of the next rows' buttons. It opens over
        the drawer's backdrop, so they don't peek out under its edge. */
     @media (width < 40rem) {
-      filter: none;
-
       &::after {
         content: "";
         position: absolute;
@@ -858,8 +871,24 @@
         z-index: -1;
         background: var(--backdrop);
         pointer-events: auto;
+        @apply animate-in fade-in-0 duration-200;
+      }
+
+      &[data-exiting]::after {
+        @apply animate-out fade-out-0 fill-mode-forwards;
       }
     }
+  }
+
+  .copy-ring__sectors {
+    position: absolute;
+    inset: 0;
+  }
+
+  /* While the ring is there its center stands in for the button, even on a
+     card that reveals it on hover or focus (.media-card__action). */
+  .copy-ring__trigger[data-ring] {
+    opacity: 0 !important;
   }
 
   .copy-ring__sector {
@@ -867,8 +896,8 @@
     inset: 0;
     overflow: hidden;
     pointer-events: auto;
-    background: var(--default);
-    color: var(--default-foreground);
+    background: var(--overlay);
+    color: var(--overlay-foreground);
     cursor: var(--cursor-interactive);
     outline: none;
     transition: background-color 150ms var(--ease-out);
@@ -884,7 +913,7 @@
     }
 
     &[aria-disabled] {
-      background: var(--default);
+      background: var(--overlay);
       cursor: default;
     }
 
@@ -938,17 +967,6 @@
       max-width: none;
       height: 1.25rem;
     }
-
-    /* MP4Upload's wordmark: as wide as its sector allows, which in a ring of
-       three is less. */
-    & .copy-ring__wordmark {
-      width: 4.5rem;
-      height: auto;
-    }
-
-    .copy-ring[data-sectors="3"] & .copy-ring__wordmark {
-      width: 3rem;
-    }
   }
 
   .copy-ring__center {
@@ -957,6 +975,24 @@
     top: 50%;
     translate: -50% -50%;
     pointer-events: auto;
+    /* Smaller while the ring is open (CENTER_SCALE); where the ring is
+       shifted to fit the viewport, it glides from the button and back. */
+    scale: 0.85;
+    transition:
+      translate 200ms var(--ease-out),
+      scale 200ms var(--ease-out),
+      transform 250ms var(--ease-smooth),
+      background-color 100ms var(--ease-out);
+
+    @starting-style {
+      translate: calc(-50% + var(--from-x)) calc(-50% + var(--from-y));
+      scale: 1;
+    }
+
+    .copy-ring[data-exiting] & {
+      translate: calc(-50% + var(--from-x)) calc(-50% + var(--from-y));
+      scale: 1;
+    }
 
     /* Keyboard focus is on the button underneath: shown here. */
     &.is-focus-visible {

@@ -46,11 +46,10 @@ export function EpisodeDownloadButton({
   const button = (
     <Button
       isIconOnly
-      variant="tertiary"
       aria-label={label}
       isPending={pending}
       // Visible while pending where it otherwise shows only on hover.
-      className={`${className} ${pending ? "!scale-100 !opacity-100" : ""}`}
+      className={`${className} episode-action ${pending ? "!scale-100 !opacity-100" : ""}`}
       onPress={() => openDownload(request)}
     >
       {pending ? (

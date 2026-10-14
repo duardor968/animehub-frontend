@@ -42,9 +42,10 @@ export function PixeldrainLogo(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-/** 1Fichier's cube, from img.1fichier.com/logo.png, and MP4Upload's wordmark
- *  (its only logo), from mp4upload.com/mp4v2/img/logo3.png: WebP at twice
- *  their display size. Trademarks of their owners, used only to name their
- *  services; no licence stated. */
+/** 1Fichier's cube without its reflection, from img.1fichier.com/logo.png, and
+ *  the "m" cropped from MP4Upload's wordmark, its only logo
+ *  (mp4upload.com/mp4v2/img/logo3.png): WebP at over twice their display
+ *  size. Trademarks of their owners, used only to name their services; no
+ *  licence stated. */
 export { default as oneFichierLogo } from "@/assets/providers/1fichier.webp";
 export { default as mp4uploadLogo } from "@/assets/providers/mp4upload.webp";

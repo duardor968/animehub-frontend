@@ -101,20 +101,21 @@ describe("EpisodeCopyMenu", () => {
       }),
     ).toHaveAttribute("aria-disabled", "true");
 
-    // Arrows and Home/End skip the sectors without links: down from
-    // Pixeldrain stays there (MP4Upload, below, has none).
+    // Arrows and Home/End reach the sectors without links too, which say
+    // why and copy nothing.
+    const mp4upload = screen.getByRole("menuitem", {
+      name: "MP4Upload no tiene este episodio",
+    });
     fireEvent.keyDown(pixeldrain, { key: "ArrowDown" });
-    expect(pixeldrain).toHaveFocus();
-    fireEvent.keyDown(pixeldrain, { key: "Home" });
+    expect(mp4upload).toHaveFocus();
+    fireEvent.keyDown(mp4upload, { key: "End" });
+    expect(
+      screen.getByRole("menuitem", { name: "1Fichier no tiene este episodio" }),
+    ).toHaveFocus();
+    fireEvent.keyDown(document.activeElement as Element, { key: "Home" });
     const mega = screen.getByRole("menuitem", { name: /Mega/ });
     expect(mega).toHaveFocus();
-    fireEvent.keyDown(mega, { key: "End" });
-    expect(pixeldrain).toHaveFocus();
-    fireEvent.click(
-      screen.getByRole("menuitem", {
-        name: "MP4Upload no tiene este episodio",
-      }),
-    );
+    fireEvent.click(mp4upload);
     expect(downloads.copyEpisodeLinks).not.toHaveBeenCalled();
 
     fireEvent.click(mega);
@@ -176,11 +177,12 @@ describe("EpisodeCopyMenu", () => {
     act(() => trigger.focus());
 
     expect(await screen.findByRole("menu")).toBeInTheDocument();
-    // Left has no link (1Fichier): the nearest sector with one takes it.
     fireEvent.keyDown(trigger, { key: "ArrowLeft" });
     await waitFor(() =>
       expect(
-        screen.getByRole("menuitem", { name: "Copiar el enlace de Mega" }),
+        screen.getByRole("menuitem", {
+          name: "1Fichier no tiene este episodio",
+        }),
       ).toHaveFocus(),
     );
     fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
@@ -189,6 +191,35 @@ describe("EpisodeCopyMenu", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(trigger).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("closed under the pointer, stays closed until the pointer leaves", async () => {
+    downloads.cachedEpisodeLinks.mockReturnValue(links);
+    const trigger = renderMenu();
+    const hover = (element: Element) => {
+      fireEvent.pointerEnter(element, { pointerType: "mouse" });
+      fireEvent.pointerMove(element, { pointerType: "mouse" });
+    };
+    hover(trigger);
+    await screen.findByRole("menu");
+    // Onto the center, which closes with Escape: the button underneath
+    // takes the pointer back without reopening.
+    fireEvent.pointerLeave(trigger, { pointerType: "mouse" });
+    hover(document.querySelector(".copy-ring__center")!);
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() =>
+      expect(trigger).toHaveAttribute("aria-expanded", "false"),
+    );
+    hover(trigger);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+    // Out and back: it opens again.
+    fireEvent.pointerLeave(trigger, { pointerType: "mouse" });
+    hover(trigger);
+    await waitFor(() =>
+      expect(trigger).toHaveAttribute("aria-expanded", "true"),
+    );
   });
 
   it("closes without a ring when the episode has no links", async () => {

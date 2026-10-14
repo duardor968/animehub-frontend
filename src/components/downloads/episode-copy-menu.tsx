@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
   type ButtonHTMLAttributes,
+  type CSSProperties,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
@@ -38,10 +39,15 @@ import { providerLabels, type DownloadProviderId } from "./download-types";
 const OPEN_DELAY = 250;
 /** Grace to cross the gaps between the pieces without closing. */
 const CLOSE_DELAY = 200;
-/** Ring thickness: a touch target in every sector. */
-const RING = 52;
+/** Ring thickness: a touch target in every sector, with room around a 20 px
+ *  icon (28 px wide: MP4Upload's "m") even in a ring of three. */
+const RING = 42;
 /** Between the center and the ring, and between sectors. */
 const GAP = 4;
+/** Sector corners: HeroUI's field radius (1.5 × --radius). */
+const CORNER = 12;
+/** The center button's scale while the ring is open (globals.css). */
+const CENTER_SCALE = 0.85;
 /** Closest the ring gets to the viewport edge. */
 const EDGE = 8;
 
@@ -50,17 +56,10 @@ const logos: Record<DownloadProviderId, ReactNode> = {
   MEGA: <MegaLogo />,
   PIXELDRAIN: <PixeldrainLogo />,
   MP4UPLOAD: (
-    <Image
-      src={mp4uploadLogo}
-      alt=""
-      width={144}
-      height={23}
-      unoptimized
-      className="copy-ring__wordmark"
-    />
+    <Image src={mp4uploadLogo} alt="" width={34} height={24} unoptimized />
   ),
   ONE_FICHIER: (
-    <Image src={oneFichierLogo} alt="" width={40} height={48} unoptimized />
+    <Image src={oneFichierLogo} alt="" width={46} height={42} unoptimized />
   ),
 };
 
@@ -79,18 +78,15 @@ function angleBetween(a: number, b: number) {
   return Math.abs(((((a - b) % 360) + 540) % 360) - 180);
 }
 
-/** The sector an arrow points at, among the enabled ones (on a tie, the
- *  one already focused); null when none is enabled. */
+/** The sector an arrow points at (on a tie, the one already focused). */
 export function sectorForArrow(
   key: string,
   count: number,
   current: number | null,
-  enabled: boolean[] = [],
 ) {
   const target = arrowAngles[key];
   let best: number | null = null;
   for (let index = 0; index < count; index++) {
-    if (enabled[index] === false) continue;
     const delta =
       best === null
         ? -1
@@ -105,7 +101,6 @@ export function sectorForArrow(
 const menuItems = (ring: HTMLElement | null) => [
   ...(ring?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []),
 ];
-const isEnabled = (item: HTMLElement) => !item.hasAttribute("aria-disabled");
 
 const round = (value: number) => Math.round(value * 100) / 100;
 
@@ -117,8 +112,11 @@ function polar(center: number, radius: number, degrees: number) {
   ];
 }
 
-/** Path of an annular sector inside the ring's square box: its clip-path
- *  and its keyboard-focus contour. A ring of one is two circles (evenodd). */
+/**
+ * Path of a sector inside the ring's square box (its clip-path and its focus
+ * contour): an annular sector with rounded corners, straight edges GAP apart.
+ * A ring of one is two circles (evenodd).
+ */
 function sectorPath(index: number, count: number, inner: number) {
   const outer = inner + RING;
   if (count === 1) {
@@ -126,16 +124,38 @@ function sectorPath(index: number, count: number, inner: number) {
       `M ${outer - r} ${outer} a ${r} ${r} 0 1 0 ${2 * r} 0 a ${r} ${r} 0 1 0 ${-2 * r} 0 Z`;
     return `${circle(outer)} ${circle(inner)}`;
   }
-  const span = 360 / count;
-  const mid = sectorAngle(index, count);
-  // The gap is constant in pixels, so it takes a wider angle on the inside.
-  const pad = (radius: number) => (GAP / 2 / radius) * (180 / Math.PI);
-  const [ax, ay] = polar(outer, outer, mid - span / 2 + pad(outer));
-  const [bx, by] = polar(outer, outer, mid + span / 2 - pad(outer));
-  const [cx, cy] = polar(outer, inner, mid + span / 2 - pad(inner));
-  const [dx, dy] = polar(outer, inner, mid - span / 2 + pad(inner));
-  const large = span > 180 ? 1 : 0;
-  return `M ${ax} ${ay} A ${outer} ${outer} 0 ${large} 1 ${bx} ${by} L ${cx} ${cy} A ${inner} ${inner} 0 ${large} 0 ${dx} ${dy} Z`;
+  const span = ((360 / count) * Math.PI) / 180;
+  const mid = (sectorAngle(index, count) * Math.PI) / 180;
+  const point = (x: number, y: number) =>
+    `${round(outer + x)} ${round(outer + y)}`;
+  // A rounded corner between the edge at `angle` (the sector on its `side`)
+  // and the circle of `radius`, which it meets from inside (outer circle) or
+  // from outside (inner circle).
+  const corner = (
+    angle: number,
+    side: number,
+    radius: number,
+    fromInside: boolean,
+  ) => {
+    const [ux, uy] = [Math.cos(angle), Math.sin(angle)];
+    const [vx, vy] = [-uy * side, ux * side];
+    const offset = GAP / 2 + CORNER;
+    const distance = fromInside ? radius - CORNER : radius + CORNER;
+    const along = Math.sqrt(distance ** 2 - offset ** 2);
+    const [cx, cy] = [along * ux + offset * vx, along * uy + offset * vy];
+    return {
+      edge: point(cx - CORNER * vx, cy - CORNER * vy),
+      circle: point((cx * radius) / distance, (cy * radius) / distance),
+    };
+  };
+  const start = mid - span / 2;
+  const end = mid + span / 2;
+  const a = corner(start, 1, outer, true);
+  const b = corner(end, -1, outer, true);
+  const c = corner(end, -1, inner, false);
+  const d = corner(start, 1, inner, false);
+  const turn = `${CORNER} ${CORNER} 0 0 1`;
+  return `M ${a.edge} A ${turn} ${a.circle} A ${outer} ${outer} 0 0 1 ${b.circle} A ${turn} ${b.edge} L ${c.edge} A ${turn} ${c.circle} A ${inner} ${inner} 0 0 0 ${d.circle} A ${turn} ${d.edge} Z`;
 }
 
 interface Ring {
@@ -143,6 +163,9 @@ interface Ring {
   x: number;
   y: number;
   inner: number;
+  /** The button's center from the ring's, where the ring is shifted to fit
+   *  the viewport: the center glides from there and back. */
+  from: { x: number; y: number };
   /** Opened with an arrow: focus the sector that way once its links are in. */
   focus: string | null;
   closing: boolean;
@@ -150,9 +173,9 @@ interface Ring {
 
 /**
  * The episode's button when links go to the clipboard: a copy button that,
- * after a pause on it (hover or keyboard focus) or a tap, opens a ring around
- * itself, like a remote's directional pad. The center copies every link; each
- * sector copies one provider's. The links are looked up on the first opening.
+ * after a pause on it (hover or keyboard focus) or a tap, opens a ring of
+ * provider sectors around itself. The center copies every link; each sector
+ * copies one provider's. The links are looked up on the first opening.
  */
 export function EpisodeCopyMenu({
   slug,
@@ -182,9 +205,11 @@ export function EpisodeCopyMenu({
   const ringRef = useRef<HTMLDivElement>(null);
   const timer = useRef<number | undefined>(undefined);
   const keepClosed = useRef(false);
-  // A copy made with the pointer on the button leaves it there: no reopening
-  // until it leaves and comes back.
-  const copiedUnderPointer = useRef(false);
+  // Whether a pointer (not touch) rests on the button or the ring's center.
+  // Closing under it (a copy, Escape, no links) leaves it on the button: no
+  // reopening until it leaves and comes back.
+  const pointerOn = useRef({ trigger: false, center: false });
+  const holdClosed = useRef(false);
   const [ring, setRing] = useState<Ring | null>(null);
   const [links, setLinks] = useState<EpisodeLinks | undefined>();
   const [waiting, setWaiting] = useState(false);
@@ -200,6 +225,10 @@ export function EpisodeCopyMenu({
 
   const close = useCallback(() => {
     window.clearTimeout(timer.current);
+    if (pointerOn.current.trigger || pointerOn.current.center)
+      holdClosed.current = true;
+    // Hidden under the ring, it would show again as the ring goes.
+    setTooltip(false);
     // Focus inside the ring goes back to the button, which stays closed.
     if (ringRef.current?.contains(document.activeElement)) {
       keepClosed.current = true;
@@ -214,14 +243,19 @@ export function EpisodeCopyMenu({
     if (!button) return;
     const box = button.getBoundingClientRect();
     // Layout size: the box may be mid scale-in on a card being hovered.
-    const inner = button.offsetWidth / 2 + GAP;
+    const inner = (button.offsetWidth * CENTER_SCALE) / 2 + GAP;
     const reach = inner + RING + EDGE;
     const clamp = (value: number, size: number) =>
       Math.min(Math.max(value, reach), size - reach);
+    const [x, y] = [box.left + box.width / 2, box.top + box.height / 2];
+    const center = {
+      x: clamp(x, window.innerWidth),
+      y: clamp(y, window.innerHeight),
+    };
     setRing({
-      x: clamp(box.left + box.width / 2, window.innerWidth),
-      y: clamp(box.top + box.height / 2, window.innerHeight),
+      ...center,
       inner,
+      from: { x: x - center.x, y: y - center.y },
       focus,
       closing: false,
     });
@@ -240,8 +274,7 @@ export function EpisodeCopyMenu({
     timer.current = window.setTimeout(action, delay);
   };
 
-  function copy(provider?: DownloadProviderId, underPointer = false) {
-    copiedUnderPointer.current = underPointer;
+  function copy(provider?: DownloadProviderId) {
     if (links) {
       copyEpisodeLinks(request, links, provider);
       close();
@@ -303,12 +336,7 @@ export function EpisodeCopyMenu({
   useEffect(() => {
     if (!ring?.focus || ring.closing || !links) return;
     const items = menuItems(ringRef.current);
-    const index = sectorForArrow(
-      ring.focus,
-      items.length,
-      null,
-      items.map(isEnabled),
-    );
+    const index = sectorForArrow(ring.focus, items.length, null);
     if (index !== null) items[index].focus();
   }, [ring, links]);
 
@@ -320,22 +348,17 @@ export function EpisodeCopyMenu({
     show(event.key);
   }
 
-  // Arrows and Home/End move between the sectors that have links.
+  // Arrows and Home/End move between the sectors, those without a link
+  // too: their label says why.
   function onRingKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const items = menuItems(event.currentTarget);
-    const enabled = items.filter(isEnabled);
     let next: HTMLElement | undefined;
     if (event.key in arrowAngles) {
       const current = items.indexOf(document.activeElement as HTMLElement);
-      const index = sectorForArrow(
-        event.key,
-        items.length,
-        current,
-        items.map(isEnabled),
-      );
+      const index = sectorForArrow(event.key, items.length, current);
       next = index === null ? undefined : items[index];
-    } else if (event.key === "Home") next = enabled[0];
-    else if (event.key === "End") next = enabled.at(-1);
+    } else if (event.key === "Home") next = items[0];
+    else if (event.key === "End") next = items.at(-1);
     else {
       // Back on the button first, so Tab continues from its place in the page.
       if (event.key === "Tab") close();
@@ -354,18 +377,21 @@ export function EpisodeCopyMenu({
       }}
       ref={triggerRef}
       isIconOnly
-      variant="tertiary"
       aria-label={label}
       aria-haspopup="menu"
       aria-expanded={open}
       aria-controls={open ? menuId : undefined}
+      // The ring's center stands in for it while the ring is there.
+      data-ring={ring ? true : undefined}
       isPending={waiting}
-      className={className}
+      className={`${className} episode-action copy-ring__trigger`}
       onHoverStart={() => {
-        if (!copiedUnderPointer.current) schedule(() => show(), OPEN_DELAY);
+        pointerOn.current.trigger = true;
+        if (!holdClosed.current) schedule(() => show(), OPEN_DELAY);
       }}
       onHoverEnd={() => {
-        copiedUnderPointer.current = false;
+        pointerOn.current.trigger = false;
+        holdClosed.current = false;
         if (ring) schedule(close, CLOSE_DELAY);
         else clearTimer();
       }}
@@ -373,7 +399,7 @@ export function EpisodeCopyMenu({
       onPress={(event) => {
         // On touch the first tap opens it; the center then copies.
         if (event.pointerType === "touch" && !open) show();
-        else copy(undefined, event.pointerType === "mouse");
+        else copy();
       }}
     >
       {waiting ? (
@@ -387,8 +413,17 @@ export function EpisodeCopyMenu({
   const center = (
     <RingButton
       aria-hidden="true"
-      className={`${buttonVariants({ variant: "tertiary", isIconOnly: true })} copy-ring__center ${isFocusVisible ? "is-focus-visible" : ""}`}
-      onPress={(event) => copy(undefined, event.pointerType === "mouse")}
+      className={`${buttonVariants({ isIconOnly: true })} episode-action copy-ring__center ${isFocusVisible ? "is-focus-visible" : ""}`}
+      style={
+        {
+          "--from-x": `${ring?.from.x ?? 0}px`,
+          "--from-y": `${ring?.from.y ?? 0}px`,
+        } as CSSProperties
+      }
+      onHoverChange={(isHovering) => {
+        pointerOn.current.center = isHovering;
+      }}
+      onPress={() => copy()}
     >
       {waiting ? (
         <Spinner color="current" size="sm" aria-hidden="true" />
@@ -422,8 +457,7 @@ export function EpisodeCopyMenu({
             aria-label={label}
             aria-busy={!links}
             data-exiting={ring.closing || undefined}
-            data-sectors={providers.length}
-            className={`copy-ring ${ring.closing ? "animate-out fade-out-0 zoom-out-90 fill-mode-forwards duration-150" : "animate-in fade-in-0 zoom-in-75 duration-200"}`}
+            className="copy-ring"
             style={{
               left: ring.x - ring.inner - RING,
               top: ring.y - ring.inner - RING,
@@ -435,23 +469,33 @@ export function EpisodeCopyMenu({
             onPointerLeave={(event) => {
               if (event.pointerType !== "touch") schedule(close, CLOSE_DELAY);
             }}
-            onAnimationEnd={(event) => {
-              if (event.target === event.currentTarget && ring.closing)
-                setRing(null);
-            }}
           >
-            {providers.map((provider, index) => (
-              <Sector
-                key={provider}
-                provider={provider}
-                index={index}
-                count={providers.length}
-                inner={ring.inner}
-                links={links}
-                portable={portable}
-                onCopy={() => copy(provider)}
-              />
-            ))}
+            {/* The sectors come and go; the center stays, shrinking. */}
+            <div
+              className={`copy-ring__sectors duration-200 ${ring.closing ? "animate-out fade-out-0 zoom-out-90 fill-mode-forwards" : "animate-in fade-in-0 zoom-in-75"}`}
+              onAnimationEnd={(event) => {
+                if (event.target !== event.currentTarget || !ring.closing)
+                  return;
+                setRing(null);
+                // Gone, the center ends no hover; and closed over the page
+                // (the ring shifted, a scroll), nothing is held.
+                pointerOn.current.center = false;
+                if (!pointerOn.current.trigger) holdClosed.current = false;
+              }}
+            >
+              {providers.map((provider, index) => (
+                <Sector
+                  key={provider}
+                  provider={provider}
+                  index={index}
+                  count={providers.length}
+                  inner={ring.inner}
+                  links={links}
+                  portable={portable}
+                  onCopy={() => copy(provider)}
+                />
+              ))}
+            </div>
             {/* The pointer's center, over the button; keyboard and screen
                 readers act on the button itself. */}
             {portable ? (
@@ -548,9 +592,11 @@ function Sector({
  */
 function RingButton({
   onPress,
+  onHoverChange,
   ...attributes
 }: {
   onPress: (event: PressEvent) => void;
+  onHoverChange?: (isHovering: boolean) => void;
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
   const ref = useRef<HTMLButtonElement>(null);
   const { focusableProps } = useFocusable({ excludeFromTabOrder: true }, ref);
@@ -559,7 +605,7 @@ function RingButton({
     preventFocusOnPress: true,
     ref,
   });
-  const { hoverProps, isHovered } = useHover({});
+  const { hoverProps, isHovered } = useHover({ onHoverChange });
   const { focusProps, isFocusVisible } = useFocusRing();
   return (
     <button
