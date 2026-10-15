@@ -44,8 +44,9 @@ export async function generateMetadata({
     title,
     description,
     // Every result set points at the search page itself, never at the home.
+    // Neither a result set nor the empty form is worth a search result.
     alternates: { canonical: "/buscar" },
-    robots: q ? { index: false, follow: true } : undefined,
+    robots: { index: false, follow: true },
     openGraph: {
       ...siteOpenGraph,
       title: `${title} · ${siteName}`,

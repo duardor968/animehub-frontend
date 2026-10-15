@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  catalogLanding,
   clearCatalogFilters,
   countCatalogFilters,
   formatCatalogCount,
@@ -222,6 +223,33 @@ describe("catalog filter parameters", () => {
       "2015",
       "Inicial: #",
     ]);
+  });
+
+  it("names the single-genre and single-format pages, and nothing else", () => {
+    const categories = [
+      { slug: "pelicula", name: "Película" },
+      { slug: "ova", name: "OVA" },
+      { slug: "nuevo", name: "Nuevo" },
+    ];
+    const genres = [{ slug: "accion", name: "Acción" }];
+    const landing = (query: string) => {
+      const params = new URLSearchParams(query);
+      return catalogLanding(
+        params,
+        getSelectedFilters(params, categories, genres, bounds),
+      )?.title;
+    };
+
+    expect(landing("genre=accion")).toBe("Anime del género Acción");
+    expect(landing("genre=accion&page=3")).toBe("Anime del género Acción");
+    expect(landing("category=pelicula")).toBe("Películas de anime");
+    expect(landing("")).toBeUndefined();
+    // A format without a search-friendly name stays out.
+    expect(landing("category=nuevo")).toBeUndefined();
+    expect(landing("category=ova&category=pelicula")).toBeUndefined();
+    expect(landing("category=pelicula&genre=accion")).toBeUndefined();
+    expect(landing("genre=accion&status=emision")).toBeUndefined();
+    expect(landing("genre=accion&order=score")).toBeUndefined();
   });
 
   it("reports a capped result set only when the API says so", () => {

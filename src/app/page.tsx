@@ -1,15 +1,16 @@
 import type { Metadata } from "next";
 import { HomeView } from "@/components/home/home-view";
 import { fetchHome } from "@/lib/api/home";
-import { siteDescription, siteName, siteOpenGraph } from "@/lib/site";
+import { siteDescription, siteOpenGraph, siteTitle } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
+  title: { absolute: siteTitle },
   alternates: { canonical: "/" },
   openGraph: {
     ...siteOpenGraph,
-    title: siteName,
+    title: siteTitle,
     description: siteDescription,
     url: "/",
   },

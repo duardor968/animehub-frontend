@@ -340,3 +340,50 @@ export function getSelectedFilters(
     });
   return entries;
 }
+
+/** Formats with an indexable catalog page, named as people search them. */
+export const catalogFormatLandings: ReadonlyMap<
+  string,
+  { title: string; subject: string }
+> = new Map([
+  [
+    "pelicula",
+    { title: "Películas de anime", subject: "las películas de anime" },
+  ],
+  [
+    "especial",
+    { title: "Especiales de anime", subject: "los especiales de anime" },
+  ],
+  ["ona", { title: "ONA de anime", subject: "los ONA de anime" }],
+  ["ova", { title: "OVA de anime", subject: "los OVA de anime" }],
+  ["tv-anime", { title: "Anime de TV", subject: "el anime de TV" }],
+]);
+
+/**
+ * Title and description of a catalog filtered by a single genre or a single
+ * known format (any page, nothing else applied): the filtered pages search
+ * engines may index. Null for every other combination.
+ */
+export function catalogLanding(
+  params: URLSearchParams,
+  filters: readonly SelectedFilter[],
+): { title: string; description: string } | null {
+  if (filters.length !== 1 || params.has("order") || params.has("q"))
+    return null;
+  const [filter] = filters;
+  if (filter.key === "genre")
+    return {
+      title: `Anime del género ${filter.label}`,
+      description: `Explora el anime del género ${filter.label} por formato, estado, año o inicial.`,
+    };
+  const format =
+    filter.key === "category"
+      ? catalogFormatLandings.get(filter.value)
+      : undefined;
+  return format
+    ? {
+        title: format.title,
+        description: `Explora ${format.subject} por género, estado, año o inicial.`,
+      }
+    : null;
+}

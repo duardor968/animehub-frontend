@@ -4,6 +4,7 @@ import { CatalogFilters } from "@/components/catalog/catalog-filters";
 import {
   catalogApiYearBounds,
   catalogHref,
+  catalogLanding,
   clearCatalogFilters,
   countCatalogFilters,
   getSelectedFilters,
@@ -48,27 +49,31 @@ export async function generateMetadata({
     incoming,
     "catalog",
   );
-  const labels = getSelectedFilters(
+  const filters = getSelectedFilters(
     params,
     response.meta.categories,
     response.meta.genres,
     bounds,
-  ).map((filter) => filter.label);
-  // Filter and sort combinations are endless; only the plain paginated
-  // catalog is indexable, each page with its own canonical URL.
-  const isFiltered = labels.length > 0 || params.has("order");
-  const canonical =
-    !isFiltered && page > 1 ? `/catalogo?page=${page}` : "/catalogo";
-  const title = `${labels.length ? `Catálogo: ${labels.join(", ")}` : "Catálogo"}${page > 1 ? ` (página ${page})` : ""}`;
+  );
+  const labels = filters.map((filter) => filter.label);
+  // Filter and sort combinations are endless: besides the plain catalog, only
+  // the single-genre and single-format pages are indexable. Every page is its
+  // own canonical URL, noindex ones too.
+  const landing = catalogLanding(params, filters);
+  const indexable =
+    landing !== null || (labels.length === 0 && !params.has("order"));
+  const canonical = catalogHref("/catalogo", params);
+  const title = `${landing?.title ?? (labels.length ? `Catálogo: ${labels.join(", ")}` : "Catálogo")}${page > 1 ? ` (página ${page})` : ""}`;
+  const pageDescription = landing?.description ?? description;
   return {
     title,
-    description,
+    description: pageDescription,
     alternates: { canonical },
-    robots: isFiltered ? { index: false, follow: true } : undefined,
+    robots: indexable ? undefined : { index: false, follow: true },
     openGraph: {
       ...siteOpenGraph,
-      title: `Catálogo de anime · ${siteName}`,
-      description,
+      title: `${landing?.title ?? "Catálogo de anime"} · ${siteName}`,
+      description: pageDescription,
       url: canonical,
     },
   };

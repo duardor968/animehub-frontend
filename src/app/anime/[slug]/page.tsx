@@ -136,18 +136,29 @@ export default async function AnimePage({
   // A movie is downloaded from its header, without an episode list.
   const movieEpisode =
     isMovie(anime) && totalRecords === 1 ? episodes.data[0] : undefined;
+  const showAlternative =
+    anime.alternativeTitle && !isSameTitle(anime.alternativeTitle, anime.title);
+  // No aggregateRating: the score comes from another site, and Google's
+  // review snippet rules forbid ratings aggregated from elsewhere.
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": isMovie(anime) ? "Movie" : "TVSeries",
     name: anime.title,
+    alternateName: showAlternative ? anime.alternativeTitle : undefined,
     description: anime.synopsis,
     image: anime.posterUrl,
     url: `${siteUrl}/anime/${anime.slug}`,
+    genre: anime.genres.map((genre) => genre.name),
+    [isMovie(anime) ? "datePublished" : "startDate"]: anime.startDate?.slice(
+      0,
+      10,
+    ),
+    numberOfEpisodes: isMovie(anime)
+      ? undefined
+      : (anime.episodeCount ?? undefined),
   };
   const year = yearOf(anime.startDate);
   const synopsis = anime.synopsis?.trim();
-  const showAlternative =
-    anime.alternativeTitle && !isSameTitle(anime.alternativeTitle, anime.title);
 
   return (
     <main id={MAIN_CONTENT_ID} tabIndex={-1} className={pageMainClass}>
