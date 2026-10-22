@@ -4,6 +4,214 @@
  */
 
 export interface paths {
+  "/api/v1/remote/devices": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["RemoteController_devices"];
+    put?: never;
+    post: operations["RemoteController_register"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/remote/sessions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["RemoteController_session"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/remote/devices/me/pairing": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["RemoteController_pairing"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/remote/links": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["RemoteController_pair"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/remote/devices/me/profiles": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: operations["RemoteController_profiles"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/remote/requests": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["RemoteController_requests"];
+    put?: never;
+    post: operations["RemoteController_create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/remote/devices/me/inbox": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["RemoteController_inbox"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/remote/devices/me/inbox/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["RemoteController_request"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/remote/devices/me/inbox/{id}/ack": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["RemoteController_ack"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/remote/requests/{id}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["RemoteController_cancel"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/remote/devices/me/links": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["RemoteController_deviceLinks"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/remote/devices/me/links/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: operations["RemoteController_revokeBrowser"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/remote/links/{deviceId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: operations["RemoteController_revoke"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/health/live": {
     parameters: {
       query?: never;
@@ -267,6 +475,103 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    RegisterDeviceDto: {
+      name: string;
+    };
+    RemoteCredentialDto: {
+      id: string;
+      /** @description Secret shown once; never place in URLs or logs */
+      token: string;
+    };
+    RemotePairingDto: {
+      code: string;
+      /** Format: date-time */
+      expiresAt: string;
+    };
+    PairDeviceDto: {
+      code: string;
+    };
+    RemoteLinkDto: {
+      deviceId: string;
+    };
+    DestinationProfileDto: {
+      id: string;
+      label: string;
+      /** @enum {string} */
+      engine: "direct" | "jdownloader";
+      isDefault: boolean;
+    };
+    RemoteDeviceDto: {
+      id: string;
+      name: string;
+      profileRevision: number;
+      profiles: components["schemas"]["DestinationProfileDto"][];
+      /** Format: date-time */
+      lastSeenAt: string;
+    };
+    RemoteDevicesDto: {
+      devices: components["schemas"]["RemoteDeviceDto"][];
+    };
+    PublishProfilesDto: {
+      revision: number;
+      profiles: components["schemas"]["DestinationProfileDto"][];
+    };
+    RemoteRevisionDto: {
+      revision: number;
+    };
+    CreateRemoteRequestDto: {
+      deviceId: string;
+      animeSlug: string;
+      episodeNumbers: number[];
+      profileId: string;
+      profileRevision: number;
+      /** @enum {string} */
+      engine: "direct" | "jdownloader";
+    };
+    RemoteRequestDto: {
+      /** @description Current canonical catalog title; null when catalog metadata is unavailable */
+      animeTitle: string | null;
+      id: string;
+      deviceId: string;
+      animeSlug: string;
+      episodeNumbers: number[];
+      profileId: string;
+      profileRevision: number;
+      /** @enum {string} */
+      engine: "direct" | "jdownloader";
+      /** @enum {string} */
+      status: "pending" | "accepted" | "cancelled" | "requires_attention";
+      reason: string | null;
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      acceptedAt: string | null;
+    };
+    RemoteRequestsDto: {
+      requests: components["schemas"]["RemoteRequestDto"][];
+    };
+    AckRemoteRequestDto: {
+      reason?: string;
+      /** @enum {string} */
+      status: "accepted" | "requires_attention";
+    };
+    RemoteBrowserLinkDto: {
+      id: string;
+      name: string;
+      /** Format: date-time */
+      createdAt: string;
+    };
+    RemoteBrowserLinksDto: {
+      links: components["schemas"]["RemoteBrowserLinkDto"][];
+    };
+    RemoteBrowserRevocationDto: {
+      id: string;
+      revoked: boolean;
+    };
+    RemoteRevocationDto: {
+      deviceId: string;
+      revoked: boolean;
+    };
     ProblemDetailsDto: {
       type: string;
       title: string;
@@ -413,6 +718,8 @@ export interface components {
       /** @description Sorted by name (Spanish collation). */
       genres: components["schemas"]["CategoryDto"][];
       relations: components["schemas"]["RelationDto"][];
+      /** @description Observed incoming edges. anime is the source of the edge; kind describes source anime to this anime and is not inverted. Absence is not proof of no relation. */
+      incomingRelations: components["schemas"]["RelationDto"][];
     };
     AnimeResponseDto: {
       data: components["schemas"]["AnimeDetailDto"];
@@ -590,6 +897,350 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  RemoteController_devices: {
+    parameters: {
+      query?: never;
+      header: {
+        authorization: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RemoteDevicesDto"];
+        };
+      };
+    };
+  };
+  RemoteController_register: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RegisterDeviceDto"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RemoteCredentialDto"];
+        };
+      };
+    };
+  };
+  RemoteController_session: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RemoteCredentialDto"];
+        };
+      };
+    };
+  };
+  RemoteController_pairing: {
+    parameters: {
+      query?: never;
+      header: {
+        authorization: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RemotePairingDto"];
+        };
+      };
+    };
+  };
+  RemoteController_pair: {
+    parameters: {
+      query?: never;
+      header: {
+        authorization: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PairDeviceDto"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RemoteLinkDto"];
+        };
+      };
+    };
+  };
+  RemoteController_profiles: {
+    parameters: {
+      query?: never;
+      header: {
+        authorization: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PublishProfilesDto"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RemoteRevisionDto"];
+        };
+      };
+    };
+  };
+  RemoteController_requests: {
+    parameters: {
+      query?: never;
+      header: {
+        authorization: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RemoteRequestsDto"];
+        };
+      };
+    };
+  };
+  RemoteController_create: {
+    parameters: {
+      query?: never;
+      header: {
+        "idempotency-key": string;
+        authorization: string;
+        /** @description UUID unique within this browser session */
+        "Idempotency-Key": string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateRemoteRequestDto"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RemoteRequestDto"];
+        };
+      };
+    };
+  };
+  RemoteController_inbox: {
+    parameters: {
+      query?: never;
+      header: {
+        authorization: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RemoteRequestsDto"];
+        };
+      };
+    };
+  };
+  RemoteController_request: {
+    parameters: {
+      query?: never;
+      header: {
+        authorization: string;
+      };
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RemoteRequestDto"];
+        };
+      };
+    };
+  };
+  RemoteController_ack: {
+    parameters: {
+      query?: never;
+      header: {
+        authorization: string;
+      };
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AckRemoteRequestDto"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RemoteRequestDto"];
+        };
+      };
+    };
+  };
+  RemoteController_cancel: {
+    parameters: {
+      query?: never;
+      header: {
+        authorization: string;
+      };
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RemoteRequestDto"];
+        };
+      };
+    };
+  };
+  RemoteController_deviceLinks: {
+    parameters: {
+      query?: never;
+      header: {
+        authorization: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RemoteBrowserLinksDto"];
+        };
+      };
+    };
+  };
+  RemoteController_revokeBrowser: {
+    parameters: {
+      query?: never;
+      header: {
+        authorization: string;
+      };
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RemoteBrowserRevocationDto"];
+        };
+      };
+    };
+  };
+  RemoteController_revoke: {
+    parameters: {
+      query?: never;
+      header: {
+        authorization: string;
+      };
+      path: {
+        deviceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RemoteRevocationDto"];
+        };
+      };
+    };
+  };
   HealthController_live: {
     parameters: {
       query?: never;

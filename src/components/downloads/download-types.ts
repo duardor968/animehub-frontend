@@ -6,9 +6,8 @@ export type DownloadProviderId =
   | "ONE_FICHIER"
   | "STREAMTAPE"
   | "TRANSFERIT";
-/** Where resolved links go: Click'n'Load (local JDownloader), a MyJDownloader
- *  device, or the clipboard (works everywhere, including phones). */
-export type DownloadDestination = "CNL" | "MYJD" | "COPY";
+/** Desktop receives episode metadata; the other destinations receive resolved links. */
+export type DownloadDestination = "CNL" | "MYJD" | "COPY" | "DESKTOP";
 
 /** Every provider, in the order the UI lists them. */
 export const providerLabels: Record<DownloadProviderId, string> = {

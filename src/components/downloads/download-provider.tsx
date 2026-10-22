@@ -78,6 +78,9 @@ import {
   type PersistedDownloadJob,
 } from "./download-job-storage";
 import type { MyJdDevice } from "./download-panels";
+import { useRemoteDownloads } from "./use-remote-downloads";
+import { remoteTarget } from "./remote-client";
+import { RemoteDownloadDrawer } from "./remote-panels";
 import type {
   AudioPreference,
   DownloadActivityStatus,
@@ -226,6 +229,7 @@ interface DownloadContextValue {
   /** Where links go on this device (a phone sends Click'n'Load to
    *  MyJDownloader). */
   destination: DownloadDestination;
+  desktopTargetLabel?: string;
   /** Fixed bottom stack where page-level bars (episode selection) portal in,
    *  so they never overlap the pending-download button. */
   dockSlot: HTMLElement | null;
@@ -406,7 +410,9 @@ function storedPreferences(): DownloadPreferences | null {
         ? stored.providers
         : defaults.providers,
       destination:
-        stored.destination === "MYJD" || stored.destination === "COPY"
+        stored.destination === "MYJD" ||
+        stored.destination === "COPY" ||
+        stored.destination === "DESKTOP"
           ? stored.destination
           : defaults.destination,
     };
@@ -503,6 +509,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     },
   });
   const { open: openDrawer, close: closeDrawer } = drawer;
+  const remote = useRemoteDownloads(drawer.isOpen && panel.mode === "settings");
 
   function showDrawer(next: DrawerPanel) {
     setPanel(next);
@@ -1016,6 +1023,10 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   }
 
   function dispatchDownload(next: DownloadRequest) {
+    if (preferencesRef.current.destination === "DESKTOP") {
+      remote.start(next, openSettings);
+      return;
+    }
     const plan = planDownloadDispatch({
       profile: deviceProfileRef.current,
       storedDestination: preferencesRef.current.destination,
@@ -1034,6 +1045,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     preloadDownloadDrawer();
     const running = activitiesRef.current.find(
       (activity) =>
+        preferencesRef.current.destination !== "DESKTOP" &&
         activity.key === requestKey(next) &&
         activeStatuses.has(activity.status),
     );
@@ -1402,6 +1414,13 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
 
   function getRequestStatus(request: DownloadRequest) {
     const key = requestKey(request);
+    if (
+      preferences.destination === "DESKTOP" &&
+      remote.busy &&
+      remote.download &&
+      requestKey(remote.download) === key
+    )
+      return "sending";
     return activities.find((activity) => activity.key === key)?.status;
   }
 
@@ -1431,6 +1450,13 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         preferences,
         deviceProfile,
         destination: effectiveDestination,
+        desktopTargetLabel:
+          effectiveDestination === "DESKTOP"
+            ? (remoteTarget(remote.devices, remote.preferred)?.name ??
+              (remote.devices.length && remote.preferred === "ask"
+                ? "Preguntar cada vez"
+                : "Elegir PC"))
+            : undefined,
         dockSlot,
         cachedEpisodeLinks,
         resolveEpisodeLinks,
@@ -1438,6 +1464,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       }}
     >
       {children}
+      <RemoteDownloadDrawer remote={remote} openPreferences={openSettings} />
       <DownloadDock
         onSlot={setDockSlot}
         pending={activities.filter(
@@ -1447,6 +1474,21 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         )}
         portable={portable}
         onReopen={reopenDismissed}
+        remotePending={
+          remote.requests.some((r) => r.status === "pending") ? (
+            <Button
+              variant="secondary"
+              className="pointer-events-auto"
+              onPress={() =>
+                remote.view(
+                  remote.requests.find((r) => r.status === "pending")!.id,
+                )
+              }
+            >
+              Desktop · Pendiente de entrega
+            </Button>
+          ) : undefined
+        }
       />
       {confirmation && (
         <AlertDialog.Backdrop
@@ -1518,6 +1560,13 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                       (selectedDeviceId ? "Dispositivo recordado" : null),
                     myJdConnected,
                     openDeviceSettings: () => showDevicePanel({}),
+                    remote: {
+                      ...remote,
+                      view: (id) => {
+                        closeDrawer();
+                        remote.view(id);
+                      },
+                    },
                   },
                 }
               : panel.mode === "links"
@@ -1568,11 +1617,13 @@ function DownloadDock({
   pending,
   portable,
   onReopen,
+  remotePending,
 }: {
   onSlot: (element: HTMLElement | null) => void;
   pending: Activity[];
   portable: boolean;
   onReopen: (id: string) => void;
+  remotePending?: ReactNode;
 }) {
   const dockRef = useRef<HTMLDivElement>(null);
   // A landmark only while it shows something (button or selection bar), so
@@ -1628,6 +1679,7 @@ function DownloadDock({
           </span>
         </Button>
       )}
+      {remotePending}
       <div ref={onSlot} className="flex w-full justify-center empty:hidden" />
     </div>
   );

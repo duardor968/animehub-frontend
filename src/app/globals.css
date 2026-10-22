@@ -31,6 +31,7 @@
 @import "@heroui/styles/components/toast.css" layer(components);
 @import "@heroui/styles/components/checkbox-group.css" layer(components);
 @import "@heroui/styles/components/checkbox.css" layer(components);
+@import "@heroui/styles/components/input.css" layer(components);
 @import "@heroui/styles/components/input-group.css" layer(components);
 @import "@heroui/styles/components/number-field.css" layer(components);
 @import "@heroui/styles/components/radio-group.css" layer(components);
@@ -143,6 +144,11 @@
 
 /* Heading scale (Typography): page, section and group/overlay titles. */
 @layer components {
+  .typography--h3.remote-devices-heading {
+    font-size: var(--text-base);
+    line-height: 1.5;
+    color: var(--muted);
+  }
   .typography--h1,
   .typography--h2 {
     font-family: var(--font-display);

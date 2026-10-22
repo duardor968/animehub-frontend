@@ -599,6 +599,7 @@ function SelectionBar({
   onClear: () => void;
 }) {
   const tooLarge = count > MAX_JOB_EPISODES;
+  const { desktopTargetLabel } = useDownloads();
   return (
     <div
       className="dock-bar pointer-events-auto flex w-full max-w-md items-center gap-2"
@@ -627,6 +628,14 @@ function SelectionBar({
           <>
             <strong className="text-foreground">{formatNumber(count)}</strong>{" "}
             {count === 1 ? "seleccionado" : "seleccionados"}
+            {desktopTargetLabel && (
+              <span
+                className="block break-words text-xs"
+                title={desktopTargetLabel}
+              >
+                Desktop · {desktopTargetLabel}
+              </span>
+            )}
           </>
         )}
       </span>

@@ -92,6 +92,7 @@ type SentTo = Exclude<DownloadDestination, "COPY">;
 const destinationPhrases: Record<SentTo, string> = {
   CNL: "se enviarán a JDownloader",
   MYJD: "se enviarán a MyJDownloader",
+  DESKTOP: "se enviarán a AnimeHub Desktop",
 };
 const listFormat = new Intl.ListFormat("es", { type: "conjunction" });
 
@@ -123,7 +124,10 @@ export function describeConfirmation(
   );
   return {
     heading,
-    body: `Los enlaces de ${request.title}${which} ${destinationPhrases[destination]}, con todos los espejos de ${mirrors}.`,
+    body:
+      destination === "DESKTOP"
+        ? `Los episodios de ${request.title}${which} se solicitarán al PC con su perfil de descarga predeterminado.`
+        : `Los enlaces de ${request.title}${which} ${destinationPhrases[destination]}, con todos los espejos de ${mirrors}.`,
   };
 }
 

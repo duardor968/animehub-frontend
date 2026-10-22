@@ -127,6 +127,7 @@ export const unfinishedStatuses = new Set<DownloadActivityStatus>([
 const destinationNames: Record<Exclude<DownloadDestination, "COPY">, string> = {
   CNL: "JDownloader",
   MYJD: "MyJDownloader",
+  DESKTOP: "AnimeHub Desktop",
 };
 
 /** The episodes going to `via` (the activity's destination unless copied),

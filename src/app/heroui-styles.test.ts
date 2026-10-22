@@ -23,6 +23,7 @@ const stylesheets: Record<string, string[]> = {
   Description: ["description"],
   Drawer: ["drawer", "close-button"],
   I18nProvider: [],
+  Input: ["input"],
   InputGroup: ["input-group"],
   Kbd: ["kbd"],
   Label: ["label"],

@@ -18,6 +18,8 @@ import {
 import { Check, ClipboardCopy, RefreshCw, Send } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { EmptyState } from "../empty-state";
+import { RemotePreferences } from "./remote-panels";
+import type { RemoteDownloads } from "./use-remote-downloads";
 import { copyLinks } from "./download-client";
 import {
   copyOnlyProviders,
@@ -297,12 +299,10 @@ const destinationOptions: Array<{
   {
     id: "CNL",
     label: "Click'n'Load",
-    description: "Al JDownloader de este equipo.",
   },
   {
     id: "MYJD",
     label: "MyJDownloader",
-    description: "A cualquier JDownloader de tu cuenta.",
   },
   { id: "COPY", label: "Copiar enlaces" },
 ];
@@ -315,6 +315,7 @@ export function PreferencesPanel({
   selectedDeviceName,
   myJdConnected,
   openDeviceSettings,
+  remote,
 }: {
   preferences: DownloadPreferences;
   savePreferences: (next: DownloadPreferences) => void;
@@ -324,63 +325,13 @@ export function PreferencesPanel({
   /** A MyJDownloader session exists in this browser. */
   myJdConnected: boolean;
   openDeviceSettings: () => void;
+  remote?: RemoteDownloads;
 }) {
   const sendableProviders = preferences.providers.filter(
     (provider) => !copyOnlyProviders.has(provider),
   );
   return (
     <div className="flex flex-col gap-6">
-      <RadioGroup
-        variant="secondary"
-        value={preferences.audio}
-        onChange={(audio) =>
-          savePreferences({ ...preferences, audio: audio as AudioPreference })
-        }
-      >
-        <Label>Audio preferido</Label>
-        <OptionRadio value="SUB" label="Subtitulado (SUB)" />
-        <OptionRadio value="DUB" label="Doblado (DUB)" />
-      </RadioGroup>
-      <CheckboxGroup
-        variant="secondary"
-        value={preferences.providers}
-        onChange={(providers) =>
-          savePreferences({
-            ...preferences,
-            providers: providers as DownloadProviderId[],
-          })
-        }
-      >
-        <Label>Proveedores</Label>
-        <div className="grid grid-cols-2 gap-x-4">
-          {(
-            Object.entries(providerLabels) as Array<
-              [DownloadProviderId, string]
-            >
-          ).map(([provider, label]) => (
-            <Checkbox
-              key={provider}
-              value={provider}
-              // At least one provider a JDownloader takes stays marked.
-              isDisabled={
-                sendableProviders.length === 1 &&
-                sendableProviders[0] === provider
-              }
-              className="checkbox-visible"
-            >
-              <Checkbox.Content>
-                <Checkbox.Control>
-                  <Checkbox.Indicator />
-                </Checkbox.Control>
-                {label}
-              </Checkbox.Content>
-              {copyOnlyProviders.has(provider) && (
-                <Description>Solo al copiar enlaces.</Description>
-              )}
-            </Checkbox>
-          ))}
-        </div>
-      </CheckboxGroup>
       <div className="flex flex-col gap-4">
         <RadioGroup
           variant="secondary"
@@ -398,6 +349,9 @@ export function PreferencesPanel({
             .map((option) => (
               <OptionRadio key={option.id} value={option.id} {...option} />
             ))}
+          {!!remote?.devices.length && (
+            <OptionRadio value="DESKTOP" label="AnimeHub Desktop" />
+          )}
         </RadioGroup>
         {effectiveDestination === "MYJD" && (
           <div className="flex items-center gap-3">
@@ -425,6 +379,70 @@ export function PreferencesPanel({
           </div>
         )}
       </div>
+      {remote && (
+        <RemotePreferences
+          remote={remote}
+          desktopSelected={effectiveDestination === "DESKTOP"}
+        />
+      )}
+      {effectiveDestination !== "DESKTOP" && (
+        <>
+          <RadioGroup
+            variant="secondary"
+            value={preferences.audio}
+            onChange={(audio) =>
+              savePreferences({
+                ...preferences,
+                audio: audio as AudioPreference,
+              })
+            }
+          >
+            <Label>Audio preferido</Label>
+            <OptionRadio value="SUB" label="Subtitulado (SUB)" />
+            <OptionRadio value="DUB" label="Doblado (DUB)" />
+          </RadioGroup>
+          <CheckboxGroup
+            variant="secondary"
+            value={preferences.providers}
+            onChange={(providers) =>
+              savePreferences({
+                ...preferences,
+                providers: providers as DownloadProviderId[],
+              })
+            }
+          >
+            <Label>Proveedores</Label>
+            <div className="grid grid-cols-2 gap-x-4">
+              {(
+                Object.entries(providerLabels) as Array<
+                  [DownloadProviderId, string]
+                >
+              ).map(([provider, label]) => (
+                <Checkbox
+                  key={provider}
+                  value={provider}
+                  // At least one provider a JDownloader takes stays marked.
+                  isDisabled={
+                    sendableProviders.length === 1 &&
+                    sendableProviders[0] === provider
+                  }
+                  className="checkbox-visible"
+                >
+                  <Checkbox.Content>
+                    <Checkbox.Control>
+                      <Checkbox.Indicator />
+                    </Checkbox.Control>
+                    {label}
+                  </Checkbox.Content>
+                  {copyOnlyProviders.has(provider) && (
+                    <Description>Solo al copiar enlaces.</Description>
+                  )}
+                </Checkbox>
+              ))}
+            </div>
+          </CheckboxGroup>
+        </>
+      )}
     </div>
   );
 }
