@@ -23,7 +23,7 @@ import { remoteOnline, type RemoteRequest } from "./remote-client";
 import type { RemoteDownloads } from "./use-remote-downloads";
 import { describeRequest } from "./download-copy";
 
-export function RemoteError({ message }: { message: string | null }) {
+function RemoteError({ message }: { message: string | null }) {
   return message ? (
     <Alert status="danger">
       <Alert.Indicator />
@@ -277,11 +277,7 @@ export function RemotePreferences({
     </div>
   );
 }
-export function remoteStatus(
-  request: RemoteRequest,
-  name: string,
-  offline = false,
-) {
+function remoteStatus(request: RemoteRequest, name: string, offline = false) {
   if (request.status === "accepted") return `Recibida por ${name} · En cola`;
   if (request.status === "cancelled") return "Solicitud cancelada";
   if (request.status === "requires_attention")

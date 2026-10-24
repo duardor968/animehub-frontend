@@ -6,7 +6,6 @@ import {
 } from "@/lib/api/client";
 import type { DownloadRequest } from "./download-types";
 
-export type RemoteProfile = components["schemas"]["DestinationProfileDto"];
 export type RemoteDevice = components["schemas"]["RemoteDeviceDto"];
 export type RemoteRequest = components["schemas"]["RemoteRequestDto"];
 export type RemoteRequestInput =

@@ -89,10 +89,9 @@ export function describeEpisodes(request: DownloadRequest): string {
 
 // A copy to the clipboard never asks first (see needsConfirmation).
 type SentTo = Exclude<DownloadDestination, "COPY">;
-const destinationPhrases: Record<SentTo, string> = {
+const destinationPhrases: Record<Exclude<SentTo, "DESKTOP">, string> = {
   CNL: "se enviarán a JDownloader",
   MYJD: "se enviarán a MyJDownloader",
-  DESKTOP: "se enviarán a AnimeHub Desktop",
 };
 const listFormat = new Intl.ListFormat("es", { type: "conjunction" });
 

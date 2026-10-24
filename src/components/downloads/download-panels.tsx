@@ -290,20 +290,9 @@ export function LinksPanel({
   );
 }
 
-// Both JDownloader options send to a JDownloader: where tells them apart.
-const destinationOptions: Array<{
-  id: DownloadDestination;
-  label: string;
-  description?: string;
-}> = [
-  {
-    id: "CNL",
-    label: "Click'n'Load",
-  },
-  {
-    id: "MYJD",
-    label: "MyJDownloader",
-  },
+const destinationOptions: Array<{ id: DownloadDestination; label: string }> = [
+  { id: "CNL", label: "Click'n'Load" },
+  { id: "MYJD", label: "MyJDownloader" },
   { id: "COPY", label: "Copiar enlaces" },
 ];
 
@@ -325,7 +314,7 @@ export function PreferencesPanel({
   /** A MyJDownloader session exists in this browser. */
   myJdConnected: boolean;
   openDeviceSettings: () => void;
-  remote?: RemoteDownloads;
+  remote: RemoteDownloads;
 }) {
   const sendableProviders = preferences.providers.filter(
     (provider) => !copyOnlyProviders.has(provider),
@@ -349,7 +338,7 @@ export function PreferencesPanel({
             .map((option) => (
               <OptionRadio key={option.id} value={option.id} {...option} />
             ))}
-          {!!remote?.devices.length && (
+          {!!remote.devices.length && (
             <OptionRadio value="DESKTOP" label="AnimeHub Desktop" />
           )}
         </RadioGroup>
@@ -379,12 +368,10 @@ export function PreferencesPanel({
           </div>
         )}
       </div>
-      {remote && (
-        <RemotePreferences
-          remote={remote}
-          desktopSelected={effectiveDestination === "DESKTOP"}
-        />
-      )}
+      <RemotePreferences
+        remote={remote}
+        desktopSelected={effectiveDestination === "DESKTOP"}
+      />
       {effectiveDestination !== "DESKTOP" && (
         <>
           <RadioGroup
@@ -447,15 +434,7 @@ export function PreferencesPanel({
   );
 }
 
-function OptionRadio({
-  value,
-  label,
-  description,
-}: {
-  value: string;
-  label: string;
-  description?: string;
-}) {
+function OptionRadio({ value, label }: { value: string; label: string }) {
   return (
     <Radio value={value}>
       <Radio.Content>
@@ -464,7 +443,6 @@ function OptionRadio({
         </Radio.Control>
         {label}
       </Radio.Content>
-      {description && <Description>{description}</Description>}
     </Radio>
   );
 }
