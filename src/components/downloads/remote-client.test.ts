@@ -109,19 +109,19 @@ describe("remote metadata transport", () => {
     expect(remoteOnline(pc, Date.parse(pc.lastSeenAt) + 89999)).toBe(true);
     expect(remoteOnline(pc, Date.parse(pc.lastSeenAt) + 90000)).toBe(false);
   });
-  it("says why the PC set a request aside, from its reason or the API's", () => {
-    expect(attentionReason("local_profile_unavailable")).toBe(
-      "No se descargará · Cambió el perfil de descarga del PC",
+  it("says which PC set a request aside and why, from its reason or the API's", () => {
+    expect(attentionReason("local_profile_unavailable", "PC 1")).toBe(
+      "No se descargará · PC 1 cambió su perfil de descarga; vuelve a enviarla",
     );
-    expect(attentionReason("Destination profile changed")).toBe(
-      attentionReason("local_profile_unavailable"),
+    expect(attentionReason("Destination profile changed", "PC 1")).toBe(
+      attentionReason("local_profile_unavailable", "PC 1"),
     );
-    expect(attentionReason("local_record_unavailable")).toBe(
-      "No se descargará · El PC no pudo añadir el anime a su biblioteca",
+    expect(attentionReason("local_record_unavailable", "PC 1")).toBe(
+      "No se descargará · PC 1 no pudo añadir el anime a su biblioteca; vuelve a enviarla",
     );
-    expect(attentionReason("Desktop requires attention")).toBe(
-      "Requiere atención en el PC",
+    expect(attentionReason("Desktop requires attention", "PC 1")).toBe(
+      "Requiere atención en PC 1",
     );
-    expect(attentionReason(null)).toBe("Requiere atención en el PC");
+    expect(attentionReason(null, "PC 1")).toBe("Requiere atención en PC 1");
   });
 });

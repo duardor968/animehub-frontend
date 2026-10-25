@@ -283,9 +283,9 @@ export function RemotePreferences({
 }
 function remoteStatus(request: RemoteRequest, name: string, offline = false) {
   if (request.status === "accepted") return `Recibida por ${name} · En cola`;
-  if (request.status === "cancelled") return "Solicitud cancelada";
+  if (request.status === "cancelled") return `Solicitud cancelada · ${name}`;
   if (request.status === "requires_attention")
-    return attentionReason(request.reason);
+    return attentionReason(request.reason, name);
   return `Pendiente de entrega · ${name}${offline ? " sin conexión" : ""}`;
 }
 function episodeLabel(request: RemoteRequest) {
@@ -449,7 +449,7 @@ export function RemoteDownloadDrawer({
                             <div className="min-w-0 flex-1">
                               <p className="break-words text-sm">
                                 {r.animeTitle ?? "Título no disponible"} ·{" "}
-                                {episodeLabel(r)} · {targetName}
+                                {episodeLabel(r)}
                               </p>
                               <p className="text-xs text-muted">
                                 {remoteStatus(r, targetName)}
