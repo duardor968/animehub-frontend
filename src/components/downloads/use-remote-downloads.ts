@@ -16,11 +16,13 @@ import {
 import type { DownloadRequest } from "./download-types";
 
 const preferenceKey = "animehub.remote.preferred.v1";
+const targetKey = "animehub.remote.target.v1";
 export function useRemoteDownloads(settingsOpen: boolean) {
   const [devices, setDevices] = useState<RemoteDevice[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [requests, setRequests] = useState<RemoteRequest[]>([]);
   const [preferred, setPreferred] = useState("");
+  const [storedTarget, setStoredTarget] = useState("");
   const [chosenDeviceId, setChosenDeviceId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +50,8 @@ export function useRemoteDownloads(settingsOpen: boolean) {
       if (!mounted.current) return;
       try {
         setPreferred(localStorage.getItem(preferenceKey) ?? "");
+        if (hasRemoteSession())
+          setStoredTarget(localStorage.getItem(targetKey) ?? "");
       } catch {
         /* Browser privacy mode. */
       }
@@ -114,6 +118,10 @@ export function useRemoteDownloads(settingsOpen: boolean) {
         if (active) timer = setTimeout(poll, 5000);
       } catch (cause) {
         report(cause);
+        // A dropped connection tries again; an expired link has nothing left to poll.
+        const expired =
+          cause instanceof ApiResponseError && cause.status === 401;
+        if (active && !expired) timer = setTimeout(poll, 5000);
       }
     }
     void poll();
@@ -122,6 +130,21 @@ export function useRemoteDownloads(settingsOpen: boolean) {
       clearTimeout(timer);
     };
   }, [settingsOpen, pending, refresh, report]);
+  // The PC the selection bar names. It is remembered so that a reload shows it without asking the API.
+  const liveTarget = loaded
+    ? (remoteTarget(devices, preferred)?.name ??
+      (devices.length && preferred === "ask"
+        ? "Preguntar cada vez"
+        : "Elegir PC"))
+    : null;
+  useEffect(() => {
+    if (!liveTarget) return;
+    try {
+      localStorage.setItem(targetKey, liveTarget);
+    } catch {
+      /* The live name still applies. */
+    }
+  }, [liveTarget]);
 
   async function run(
     action: () => Promise<void>,
@@ -234,6 +257,7 @@ export function useRemoteDownloads(settingsOpen: boolean) {
     loaded,
     requests,
     preferred,
+    targetLabel: liveTarget ?? (storedTarget || "Elegir PC"),
     chosenDeviceId,
     setChosenDeviceId,
     choosePreferred,

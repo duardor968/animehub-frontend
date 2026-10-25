@@ -529,8 +529,6 @@ export interface components {
       engine: "direct" | "jdownloader";
     };
     RemoteRequestDto: {
-      /** @description Current canonical catalog title; null when catalog metadata is unavailable */
-      animeTitle: string | null;
       id: string;
       deviceId: string;
       animeSlug: string;
@@ -542,13 +540,27 @@ export interface components {
       /** @enum {string} */
       status: "pending" | "accepted" | "cancelled" | "requires_attention";
       reason: string | null;
-      /** Format: date-time */
-      createdAt: string;
-      /** Format: date-time */
-      acceptedAt: string | null;
+      /** @description Current canonical catalog title; null when catalog metadata is unavailable */
+      animeTitle: string | null;
     };
     RemoteRequestsDto: {
       requests: components["schemas"]["RemoteRequestDto"][];
+    };
+    DeviceRemoteRequestDto: {
+      id: string;
+      deviceId: string;
+      animeSlug: string;
+      episodeNumbers: number[];
+      profileId: string;
+      profileRevision: number;
+      /** @enum {string} */
+      engine: "direct" | "jdownloader";
+      /** @enum {string} */
+      status: "pending" | "accepted" | "cancelled" | "requires_attention";
+      reason: string | null;
+    };
+    DeviceRemoteRequestsDto: {
+      requests: components["schemas"]["DeviceRemoteRequestDto"][];
     };
     AckRemoteRequestDto: {
       reason?: string;
@@ -1096,7 +1108,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["RemoteRequestsDto"];
+          "application/json": components["schemas"]["DeviceRemoteRequestsDto"];
         };
       };
     };
@@ -1119,7 +1131,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["RemoteRequestDto"];
+          "application/json": components["schemas"]["DeviceRemoteRequestDto"];
         };
       };
     };
@@ -1146,7 +1158,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["RemoteRequestDto"];
+          "application/json": components["schemas"]["DeviceRemoteRequestDto"];
         };
       };
     };

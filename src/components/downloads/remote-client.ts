@@ -107,6 +107,18 @@ export function remoteTarget(devices: RemoteDevice[], preferred: string) {
       ? undefined
       : devices.find((d) => d.id === preferred);
 }
+// What the PC (local_*) or the API recorded when it set a request aside.
+const attentionReasons: Record<string, string> = {
+  local_profile_unavailable:
+    "No se descargará · Cambió el perfil de descarga del PC",
+  "Destination profile changed":
+    "No se descargará · Cambió el perfil de descarga del PC",
+  local_record_unavailable:
+    "No se descargará · El PC no pudo añadir el anime a su biblioteca",
+};
+export function attentionReason(reason: string | null) {
+  return (reason && attentionReasons[reason]) || "Requiere atención en el PC";
+}
 export async function remoteEpisodeNumbers(
   request: DownloadRequest,
 ): Promise<number[]> {

@@ -19,7 +19,11 @@ import {
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { formatEpisodeNumber, formatNumber } from "@/lib/format";
-import { remoteOnline, type RemoteRequest } from "./remote-client";
+import {
+  attentionReason,
+  remoteOnline,
+  type RemoteRequest,
+} from "./remote-client";
 import type { RemoteDownloads } from "./use-remote-downloads";
 import { describeRequest } from "./download-copy";
 
@@ -281,7 +285,7 @@ function remoteStatus(request: RemoteRequest, name: string, offline = false) {
   if (request.status === "accepted") return `Recibida por ${name} · En cola`;
   if (request.status === "cancelled") return "Solicitud cancelada";
   if (request.status === "requires_attention")
-    return "Requiere atención en el PC";
+    return attentionReason(request.reason);
   return `Pendiente de entrega · ${name}${offline ? " sin conexión" : ""}`;
 }
 function episodeLabel(request: RemoteRequest) {

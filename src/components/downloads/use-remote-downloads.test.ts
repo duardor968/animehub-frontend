@@ -42,8 +42,6 @@ const request: RemoteRequest = {
   engine: "direct",
   status: "pending",
   reason: null,
-  createdAt: new Date().toISOString(),
-  acceptedAt: null,
 };
 beforeEach(() => {
   localStorage.clear();
@@ -58,6 +56,38 @@ it("does not fetch before a user action", () => {
   renderHook(() => useRemoteDownloads(false));
   expect(remoteClient.devices).not.toHaveBeenCalled();
   expect(remoteClient.requests).not.toHaveBeenCalled();
+});
+it("names the PC it last sent to after a reload, without fetching", async () => {
+  localStorage.setItem("animehub.remote.target.v1", "PC 1");
+  const { result } = renderHook(() => useRemoteDownloads(false));
+  await waitFor(() => expect(result.current.targetLabel).toBe("PC 1"));
+  expect(remoteClient.devices).not.toHaveBeenCalled();
+});
+it("remembers the PC the bar names once the PCs load", async () => {
+  const { result } = renderHook(() => useRemoteDownloads(false));
+  expect(result.current.targetLabel).toBe("Elegir PC");
+  act(() => result.current.refresh());
+  await waitFor(() => expect(result.current.targetLabel).toBe("PC 1"));
+  expect(localStorage.getItem("animehub.remote.target.v1")).toBe("PC 1");
+});
+it("polls again after a dropped connection and stops once the link expired", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(remoteClient.devices).mockRejectedValueOnce(new Error("offline"));
+    const { unmount } = renderHook(() => useRemoteDownloads(true));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(remoteClient.devices).toHaveBeenCalledTimes(1);
+    vi.mocked(remoteClient.devices).mockRejectedValueOnce(
+      new ApiResponseError(401, "expired"),
+    );
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(remoteClient.devices).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(remoteClient.devices).toHaveBeenCalledTimes(2);
+    unmount();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 it("sends directly to the sole PC and preserves ask for a later second PC", async () => {
   localStorage.setItem("animehub.remote.preferred.v1", "ask");

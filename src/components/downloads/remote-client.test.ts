@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiFetch, ApiResponseError } from "@/lib/api/client";
 import {
+  attentionReason,
   hasRemoteSession,
   remoteClient,
   remoteEpisodeNumbers,
@@ -107,5 +108,20 @@ describe("remote metadata transport", () => {
   it("treats a stale heartbeat as offline", () => {
     expect(remoteOnline(pc, Date.parse(pc.lastSeenAt) + 89999)).toBe(true);
     expect(remoteOnline(pc, Date.parse(pc.lastSeenAt) + 90000)).toBe(false);
+  });
+  it("says why the PC set a request aside, from its reason or the API's", () => {
+    expect(attentionReason("local_profile_unavailable")).toBe(
+      "No se descargará · Cambió el perfil de descarga del PC",
+    );
+    expect(attentionReason("Destination profile changed")).toBe(
+      attentionReason("local_profile_unavailable"),
+    );
+    expect(attentionReason("local_record_unavailable")).toBe(
+      "No se descargará · El PC no pudo añadir el anime a su biblioteca",
+    );
+    expect(attentionReason("Desktop requires attention")).toBe(
+      "Requiere atención en el PC",
+    );
+    expect(attentionReason(null)).toBe("Requiere atención en el PC");
   });
 });

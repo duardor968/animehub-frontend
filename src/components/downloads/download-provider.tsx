@@ -79,7 +79,6 @@ import {
 } from "./download-job-storage";
 import type { MyJdDevice } from "./download-panels";
 import { useRemoteDownloads } from "./use-remote-downloads";
-import { remoteTarget } from "./remote-client";
 import { RemoteDownloadDrawer } from "./remote-panels";
 import type {
   AudioPreference,
@@ -1451,12 +1450,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         deviceProfile,
         destination: effectiveDestination,
         desktopTargetLabel:
-          effectiveDestination === "DESKTOP"
-            ? (remoteTarget(remote.devices, remote.preferred)?.name ??
-              (remote.devices.length && remote.preferred === "ask"
-                ? "Preguntar cada vez"
-                : "Elegir PC"))
-            : undefined,
+          effectiveDestination === "DESKTOP" ? remote.targetLabel : undefined,
         dockSlot,
         cachedEpisodeLinks,
         resolveEpisodeLinks,
