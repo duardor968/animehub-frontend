@@ -25,6 +25,7 @@ import {
   type EpisodePageResponse,
 } from "@/lib/api/client";
 import { formatEpisodeNumber, formatNumber, plural } from "@/lib/format";
+import { siteUrl } from "@/lib/site";
 import { AnimeImage } from "../anime-image";
 import { ButtonLink } from "../button-link";
 import { EmptyState } from "../empty-state";
@@ -43,7 +44,11 @@ import type {
   DownloadActivityStatus,
   DownloadRequest,
 } from "../downloads/download-types";
-import { EPISODE_PAGE_SIZE, parseEpisodePage } from "./anime-detail";
+import {
+  animePagePath,
+  EPISODE_PAGE_SIZE,
+  parseEpisodePage,
+} from "./anime-detail";
 
 const isBusy = (status: DownloadActivityStatus | undefined) =>
   status !== undefined && activeStatuses.has(status);
@@ -56,7 +61,7 @@ const dateFormatter = new Intl.DateTimeFormat("es", {
 });
 
 const pageHref = (slug: string, page: number) =>
-  `/anime/${slug}${page > 1 ? `?page=${page}` : ""}#episodios`;
+  `${animePagePath(slug, page)}#episodios`;
 
 const reducedMotion = () =>
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -236,6 +241,20 @@ export function EpisodeBrowser({
     if (await loadPage(target, { userAction: true }))
       window.history.pushState(null, "", pageHref(slug, target));
   }
+
+  // pushState and popstate retain Next's original metadata. Follow the page
+  // that actually loaded, including when Back restores an older router tree.
+  useEffect(() => {
+    const url = `${siteUrl}${animePagePath(slug, page)}`;
+    const canonical = document.querySelector<HTMLLinkElement>(
+      'link[rel="canonical"]',
+    );
+    const openGraphUrl = document.querySelector<HTMLMetaElement>(
+      'meta[property="og:url"]',
+    );
+    if (canonical) canonical.href = url;
+    if (openGraphUrl) openGraphUrl.content = url;
+  }, [slug, page]);
 
   useEffect(() => {
     const intent = focusAfterLoad.current;

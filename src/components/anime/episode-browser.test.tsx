@@ -21,6 +21,7 @@ import {
 import { I18nProvider } from "@heroui/react";
 import type { ReactNode } from "react";
 import { apiFetch, type Episode } from "@/lib/api/client";
+import { siteUrl } from "@/lib/site";
 import type {
   DownloadActivityStatus,
   DownloadRequest,
@@ -85,7 +86,23 @@ beforeEach(() => {
   window.history.replaceState(null, "", "/anime/otome");
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  document.head
+    .querySelectorAll('link[rel="canonical"], meta[property="og:url"]')
+    .forEach((element) => element.remove());
+});
+
+function seedMetadata() {
+  const canonical = document.createElement("link");
+  canonical.rel = "canonical";
+  canonical.href = `${siteUrl}/anime/otome`;
+  const openGraphUrl = document.createElement("meta");
+  openGraphUrl.setAttribute("property", "og:url");
+  openGraphUrl.content = canonical.href;
+  document.head.append(canonical, openGraphUrl);
+  return () => [canonical.href, openGraphUrl.content];
+}
 
 const anime = { slug: "otome", title: "Otome Kaijuu Caraméliser" };
 
@@ -304,6 +321,7 @@ describe("EpisodeBrowser", () => {
   });
 
   it("keeps the page in the URL and recovers from a failed load", async () => {
+    const metadata = seedMetadata();
     renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
     const top = screen.getByRole("navigation", {
       name: "Páginas de episodios",
@@ -320,6 +338,7 @@ describe("EpisodeBrowser", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("No se pudo cargar la página 2");
     expect(window.location.search).toBe("");
+    expect(metadata()).toEqual(Array(2).fill(`${siteUrl}/anime/otome`));
 
     vi.mocked(apiFetch).mockResolvedValueOnce({
       data: pageOf(51),
@@ -328,6 +347,8 @@ describe("EpisodeBrowser", () => {
     fireEvent.click(within(alert).getByRole("button", { name: "Reintentar" }));
 
     await waitFor(() => expect(window.location.search).toBe("?page=2"));
+    expect(metadata()).toEqual(Array(2).fill(`${siteUrl}/anime/otome?page=2`));
+    expect(document.querySelectorAll('link[rel="canonical"]')).toHaveLength(1);
     expect(screen.queryByRole("alert")).toBeNull();
     expect(
       screen.getByRole("list", { name: "Episodios, página 2 de 3" }),
@@ -346,9 +367,11 @@ describe("EpisodeBrowser", () => {
         screen.getByRole("list", { name: "Episodios, página 1 de 3" }),
       ).toBeInTheDocument(),
     );
+    expect(metadata()).toEqual(Array(2).fill(`${siteUrl}/anime/otome`));
   });
 
   it("shows the page in the URL after Back restored an older render", async () => {
+    const metadata = seedMetadata();
     // Next restored the page-1 render while the URL says ?page=2.
     window.history.replaceState(null, "", "/anime/otome?page=2");
     vi.mocked(apiFetch).mockResolvedValueOnce({
@@ -367,6 +390,7 @@ describe("EpisodeBrowser", () => {
       {},
       true,
     );
+    expect(metadata()).toEqual(Array(2).fill(`${siteUrl}/anime/otome?page=2`));
   });
 
   it("keeps the pressed pager control focused while its page loads", () => {
