@@ -5,6 +5,7 @@ import {
   Drawer,
   Label,
   ListBox,
+  NumberField,
   SearchField,
   Select,
   Slider,
@@ -56,6 +57,9 @@ import {
 import { EmptyState } from "../empty-state";
 
 type Category = components["schemas"]["CategoryDto"];
+
+// Years are not quantities: "1999", never "1.999".
+const yearFormat = { useGrouping: false } as const;
 
 const defaultSort: Record<CatalogScope, readonly [string, string]> = {
   catalog: ["latest_added", "Últimos agregados"],
@@ -445,6 +449,12 @@ function FilterPanel({
     normalizeForSearch(genre.name).includes(normalizedGenreQuery),
   );
   const selectedKeys = (key: string) => new Set(params.getAll(key));
+  const years: [number, number] = [
+    Number(params.get("minYear") ?? bounds.min),
+    Number(params.get("maxYear") ?? bounds.max),
+  ];
+  const setYears = (value: [number, number]) =>
+    setParams((draft) => setCatalogYearRange(draft, value, bounds));
   // Single-select chips: pressing the selected one empties the selection,
   // which clears the filter.
   const selectOne = (key: "genre" | "status" | "letter") => (keys: Selection) =>
@@ -504,30 +514,57 @@ function FilterPanel({
         </TagGroup.List>
       </TagGroup>
 
-      <Slider
-        value={[
-          Number(params.get("minYear") ?? bounds.min),
-          Number(params.get("maxYear") ?? bounds.max),
-        ]}
-        minValue={bounds.min}
-        maxValue={bounds.max}
-        // Years are not quantities: "1999", never "1.999".
-        formatOptions={{ useGrouping: false }}
-        onChange={(value) => {
-          if (Array.isArray(value))
-            setParams((draft) =>
-              setCatalogYearRange(draft, [value[0], value[1]], bounds),
-            );
-        }}
-      >
-        <Label>Año</Label>
-        <Slider.Output />
-        <Slider.Track>
-          <Slider.Fill />
-          <Slider.Thumb index={0} aria-label="Año inicial" />
-          <Slider.Thumb index={1} aria-label="Año final" />
-        </Slider.Track>
-      </Slider>
+      {/* The slider sets the range at a glance; the fields set an exact year,
+        which a long range makes hard to hit by dragging. */}
+      <div className="flex flex-col gap-3">
+        <Slider
+          value={years}
+          minValue={bounds.min}
+          maxValue={bounds.max}
+          formatOptions={yearFormat}
+          onChange={(value) => {
+            if (Array.isArray(value)) setYears([value[0], value[1]]);
+          }}
+        >
+          <Label>Año</Label>
+          <Slider.Track>
+            <Slider.Fill />
+            <Slider.Thumb index={0} aria-label="Año inicial" />
+            <Slider.Thumb index={1} aria-label="Año final" />
+          </Slider.Track>
+        </Slider>
+        <div className="year-range-fields grid grid-cols-2 gap-3">
+          {(
+            [
+              ["Desde", 0],
+              ["Hasta", 1],
+            ] as const
+          ).map(([label, index]) => (
+            <NumberField
+              key={label}
+              variant="secondary"
+              value={years[index]}
+              minValue={bounds.min}
+              maxValue={bounds.max}
+              formatOptions={yearFormat}
+              onChange={(value) => {
+                const next: [number, number] = [...years];
+                next[index] = Number.isFinite(value)
+                  ? value
+                  : index === 0
+                    ? bounds.min
+                    : bounds.max;
+                setYears(next);
+              }}
+            >
+              <Label>{label}</Label>
+              <NumberField.Group>
+                <NumberField.Input className="min-w-0" />
+              </NumberField.Group>
+            </NumberField>
+          ))}
+        </div>
+      </div>
 
       <TagGroup
         escapeKeyBehavior="none"

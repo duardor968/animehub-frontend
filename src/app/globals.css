@@ -811,6 +811,14 @@
     border-color: var(--faint);
   }
 
+  /* The catalog's exact-year fields sit under the "Año" group title: their
+     labels read as secondary, at the size of the drawer's chips. */
+  .year-range-fields .label {
+    font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
+    color: var(--muted);
+  }
+
   /* Header controls are 40 px tall like the search field, with the 14 px
      text of the navigation links. */
   .site-header .button--lg {

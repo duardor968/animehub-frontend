@@ -389,6 +389,28 @@ describe("CatalogFilters interactions", () => {
     );
   });
 
+  it("sets exact years across a long range, in either order", async () => {
+    render(filters({ years: [1969, 2026] }));
+    const dialog = await openDrawer();
+    const from = within(dialog).getByRole("textbox", { name: "Desde" });
+    const to = within(dialog).getByRole("textbox", { name: "Hasta" });
+    expect(from).toHaveValue("1969");
+    expect(to).toHaveValue("2026");
+
+    fireEvent.change(from, { target: { value: "1990" } });
+    fireEvent.blur(from);
+    fireEvent.change(to, { target: { value: "1975" } });
+    fireEvent.blur(to);
+    fireEvent.click(applyButton(dialog));
+
+    await waitFor(() =>
+      expect(navigation.push).toHaveBeenCalledWith(
+        "/buscar?q=one&genre=accion&minYear=1975&maxYear=1990&order=title",
+        { scroll: false },
+      ),
+    );
+  });
+
   it("keeps the dual year slider controlled without React state warnings", async () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     render(filters());
