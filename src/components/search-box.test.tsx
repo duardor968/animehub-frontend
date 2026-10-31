@@ -31,6 +31,14 @@ const anime = (slug: string, title: string) => ({
 beforeEach(() => {
   // jsdom has no layout APIs.
   Element.prototype.scrollIntoView = vi.fn();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   push.mockReset();
   pathname = "/";
   sessionStorage.clear();
@@ -253,17 +261,37 @@ describe("SearchBox", () => {
     expect(input).toHaveValue("");
   });
 
-  it("keeps previous suggestions dimmed while the next query loads", async () => {
+  it("drops the previous suggestions while the next query loads", async () => {
     render(<SearchBox />);
     const input = await typeAndLoad("fr");
     expect(screen.getByRole("status")).toHaveTextContent("2 sugerencias");
 
     fireEvent.change(input, { target: { value: "fru" } });
     expect(screen.getByRole("listbox")).toHaveAttribute("aria-busy", "true");
-    expect(screen.getByRole("option", { name: /Fruits Basket/ })).toHaveClass(
-      "opacity-50",
-    );
+    expect(screen.queryByRole("option", { name: /Fruits Basket/ })).toBeNull();
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    // As many placeholder rows as titles the last answer had.
+    expect(
+      screen.getByRole("listbox").querySelectorAll(":scope > [aria-hidden]"),
+    ).toHaveLength(2);
     expect(screen.getByRole("status")).toHaveTextContent("");
+  });
+
+  it("describes each title by its year and category", async () => {
+    vi.mocked(apiFetch).mockResolvedValue({
+      data: [
+        {
+          ...anime("sousou-no-frieren", "Sousou no Frieren"),
+          startDate: "2023-09-29",
+        },
+        anime("fruits-basket", "Fruits Basket"),
+      ],
+    });
+    render(<SearchBox />);
+    await typeAndLoad("fr");
+
+    expect(screen.getByText("2023 · TV Anime")).toBeInTheDocument();
+    expect(screen.getByText("TV Anime")).toBeInTheDocument();
   });
 
   it("offers the search itself without restating it when nothing is suggested", async () => {

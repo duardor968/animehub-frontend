@@ -16,13 +16,41 @@ import {
 import type { DownloadRequest } from "./download-types";
 
 const preferenceKey = "animehub.remote.preferred.v1";
-const targetKey = "animehub.remote.target.v1";
+/** The PC the selection bar names ({ id, name }), so a reload shows it
+ *  without asking the API. */
+const targetKey = "animehub.remote.target.v2";
+/** v1 also held labels of the UI ("Elegir PC") as if they were a PC. */
+const legacyTargetKey = "animehub.remote.target.v1";
+
+type StoredTarget = { id: string; name: string };
+
+function parseTarget(raw: string | null): StoredTarget | null {
+  try {
+    const value = JSON.parse(raw ?? "null") as Partial<StoredTarget> | null;
+    return typeof value?.id === "string" && typeof value.name === "string"
+      ? { id: value.id, name: value.name }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The preference as stored now: another tab may have changed it. Null when
+ *  the browser blocks storage. */
+function storedPreference(): string | null {
+  try {
+    return localStorage.getItem(preferenceKey) ?? "";
+  } catch {
+    return null;
+  }
+}
+
 export function useRemoteDownloads(settingsOpen: boolean) {
   const [devices, setDevices] = useState<RemoteDevice[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [requests, setRequests] = useState<RemoteRequest[]>([]);
   const [preferred, setPreferred] = useState("");
-  const [storedTarget, setStoredTarget] = useState("");
+  const [storedTarget, setStoredTarget] = useState<StoredTarget | null>(null);
   const [chosenDeviceId, setChosenDeviceId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,15 +77,25 @@ export function useRemoteDownloads(settingsOpen: boolean) {
     queueMicrotask(() => {
       if (!mounted.current) return;
       try {
-        setPreferred(localStorage.getItem(preferenceKey) ?? "");
+        setPreferred(storedPreference() ?? "");
+        localStorage.removeItem(legacyTargetKey);
         if (hasRemoteSession())
-          setStoredTarget(localStorage.getItem(targetKey) ?? "");
+          setStoredTarget(parseTarget(localStorage.getItem(targetKey)));
       } catch {
         /* Browser privacy mode. */
       }
     });
+    // A change made in another tab applies here too.
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === preferenceKey || event.key === null)
+        setPreferred(storedPreference() ?? "");
+      if (event.key === targetKey || event.key === null)
+        setStoredTarget(parseTarget(event.newValue));
+    };
+    window.addEventListener("storage", onStorage);
     return () => {
       mounted.current = false;
+      window.removeEventListener("storage", onStorage);
     };
   }, []);
   function choosePreferred(id: string) {
@@ -130,21 +168,20 @@ export function useRemoteDownloads(settingsOpen: boolean) {
       clearTimeout(timer);
     };
   }, [settingsOpen, pending, refresh, report]);
-  // The PC the selection bar names. It is remembered so that a reload shows it without asking the API.
-  const liveTarget = loaded
-    ? (remoteTarget(devices, preferred)?.name ??
-      (devices.length && preferred === "ask"
-        ? "Preguntar cada vez"
-        : "Elegir PC"))
-    : null;
+  // The PC the selection bar names, remembered for the next reload.
+  const live = loaded ? remoteTarget(devices, preferred) : undefined;
+  const liveTarget = live
+    ? JSON.stringify({ id: live.id, name: live.name })
+    : "";
   useEffect(() => {
-    if (!liveTarget) return;
+    if (!loaded) return;
     try {
-      localStorage.setItem(targetKey, liveTarget);
+      if (liveTarget) localStorage.setItem(targetKey, liveTarget);
+      else localStorage.removeItem(targetKey);
     } catch {
       /* The live name still applies. */
     }
-  }, [liveTarget]);
+  }, [loaded, liveTarget]);
 
   async function run(
     action: () => Promise<void>,
@@ -169,7 +206,7 @@ export function useRemoteDownloads(settingsOpen: boolean) {
       setProfileRetry(device.id);
       throw new ApiResponseError(
         409,
-        `En ${device.name}, abre AnimeHub Desktop → Ajustes → Descargas y configura un perfil predeterminado.`,
+        `En ${device.name}, abre AnimeHub para PC → Ajustes → Descargas y configura un perfil predeterminado.`,
       );
     }
     setProfileRetry(null);
@@ -237,7 +274,7 @@ export function useRemoteDownloads(settingsOpen: boolean) {
         needDestination();
         return;
       }
-      const target = remoteTarget(linked, preferred);
+      const target = remoteTarget(linked, storedPreference() ?? preferred);
       if (!target) {
         setChosenDeviceId("");
         setPanel("choose");
@@ -257,7 +294,12 @@ export function useRemoteDownloads(settingsOpen: boolean) {
     loaded,
     requests,
     preferred,
-    targetLabel: liveTarget ?? (storedTarget || "Elegir PC"),
+    /** The PC a download goes to, if one is set. */
+    target: loaded
+      ? live
+        ? { id: live.id, name: live.name }
+        : null
+      : storedTarget,
     chosenDeviceId,
     setChosenDeviceId,
     choosePreferred,

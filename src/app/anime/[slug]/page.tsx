@@ -27,8 +27,11 @@ import {
 } from "@/components/anime/episode-browser";
 import {
   animePagePath,
+  defaultEpisodeOrder,
   isSameTitle,
+  loadEpisodes,
   MAX_EPISODE_PAGE,
+  parseEpisodeOrder,
   parseEpisodePage,
   summarize,
 } from "@/components/anime/anime-detail";
@@ -52,31 +55,63 @@ type AnimeDetail = AnimeResponse["data"];
 type Relation = AnimeDetail["relations"][number];
 type PageProps = {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ page?: string | string[] }>;
+  searchParams: Promise<{
+    page?: string | string[];
+    orden?: string | string[];
+  }>;
 };
+
+const first = (value?: string | string[]) =>
+  Array.isArray(value) ? value[0] : value;
 
 // Metadata and content share the same validated episode page and API requests.
 const getAnime = cache((slug: string) => loadAnime(slug));
-const getEpisodePage = cache(async (slug: string, rawPage?: string) => {
-  // Clamp to the API limit before checking the anime's actual page count.
-  const requestedPage = parseEpisodePage(rawPage, MAX_EPISODE_PAGE);
-  const episodes = await apiFetch<EpisodePageResponse>(
-    `/anime/${encodeURIComponent(slug)}/episodes?page=${requestedPage}`,
-  ).catch((error: unknown) => {
-    if (isApiNotFoundError(error)) notFound();
-    if (
-      error instanceof ApiResponseError &&
-      error.status === 400 &&
-      requestedPage > 1
-    )
-      redirect(`${animePagePath(slug, 1)}#episodios`);
-    throw error;
-  });
-  const { totalPages } = episodes.meta;
-  if (requestedPage > 1 && requestedPage > totalPages)
-    redirect(`${animePagePath(slug, Math.max(1, totalPages))}#episodios`);
-  return { episodes, requestedPage };
-});
+const fetchEpisodePage = cache((slug: string, page: number) =>
+  apiFetch<EpisodePageResponse>(
+    `/anime/${encodeURIComponent(slug)}/episodes?page=${page}`,
+  ),
+);
+const getEpisodePage = cache(
+  async (
+    slug: string,
+    status: AnimeDetail["status"],
+    rawPage?: string,
+    rawOrder?: string,
+  ) => {
+    // Clamp to the API limit before checking the anime's actual page count.
+    const requestedPage = parseEpisodePage(rawPage, MAX_EPISODE_PAGE);
+    // The requested page in the API's order; its meta has the totals.
+    const head = await fetchEpisodePage(slug, requestedPage).catch(
+      (error: unknown) => {
+        if (isApiNotFoundError(error)) notFound();
+        if (
+          error instanceof ApiResponseError &&
+          error.status === 400 &&
+          requestedPage > 1
+        )
+          redirect(`${animePagePath(slug, 1)}#episodios`);
+        throw error;
+      },
+    );
+    const { totalPages, totalRecords } = head.meta;
+    const fallback = defaultEpisodeOrder(status, totalPages);
+    const order = {
+      value: parseEpisodeOrder(rawOrder, fallback),
+      default: fallback,
+    };
+    if (requestedPage > 1 && requestedPage > totalPages)
+      redirect(
+        `${animePagePath(slug, Math.max(1, totalPages), order)}#episodios`,
+      );
+    const data =
+      order.value === "asc"
+        ? head.data
+        : await loadEpisodes(requestedPage, "desc", totalRecords, (page) =>
+            fetchEpisodePage(slug, page).then((response) => response.data),
+          );
+    return { episodes: { ...head, data }, requestedPage, order };
+  },
+);
 
 const isMovie = (anime: Pick<AnimeDetail, "category">) =>
   anime.category?.slug === "pelicula";
@@ -98,15 +133,17 @@ export async function generateMetadata({
   // Unknown slug: the page answers 404 and Next adds the noindex itself.
   if (!response) return { title: "Anime no encontrado" };
   const anime = response.data;
-  const rawPage = (await searchParams).page;
-  const { requestedPage } = await getEpisodePage(
+  const query = await searchParams;
+  const { requestedPage, order } = await getEpisodePage(
     anime.slug,
-    Array.isArray(rawPage) ? rawPage[0] : rawPage,
+    anime.status,
+    first(query.page),
+    first(query.orden),
   );
   const description = anime.synopsis?.trim()
     ? summarize(anime.synopsis)
     : `Episodios y descargas de ${anime.title}.`;
-  const url = animePagePath(anime.slug, requestedPage);
+  const url = animePagePath(anime.slug, requestedPage, order);
   const image = anime.backdropUrl ?? anime.posterUrl;
   return {
     title: anime.title,
@@ -128,10 +165,12 @@ export default async function AnimePage({ params, searchParams }: PageProps) {
   const response = await getAnime(slug);
   if (!response) notFound();
   const anime = response.data;
-  const rawPage = (await searchParams).page;
-  const { episodes, requestedPage } = await getEpisodePage(
+  const query = await searchParams;
+  const { episodes, requestedPage, order } = await getEpisodePage(
     anime.slug,
-    Array.isArray(rawPage) ? rawPage[0] : rawPage,
+    anime.status,
+    first(query.page),
+    first(query.orden),
   );
   const { totalRecords } = episodes.meta;
   // A movie is downloaded from its header, without an episode list.
@@ -262,13 +301,12 @@ export default async function AnimePage({ params, searchParams }: PageProps) {
               </ExternalButtonLink>
             )}
             <ExternalButtonLink href={anime.sourceUrl} variant="tertiary">
-              Ficha original
+              Ver en AnimeAV1
             </ExternalButtonLink>
           </div>
         </div>
       </header>
       <div className="mt-8 flex flex-col gap-12">
-        {anime.relations.length > 0 && <RelatedAnime anime={anime} />}
         {!movieEpisode && (
           <EpisodeBrowser
             slug={anime.slug}
@@ -284,8 +322,11 @@ export default async function AnimePage({ params, searchParams }: PageProps) {
               episodes.meta.lastNumber ?? episodes.meta.firstNumber ?? 1
             }
             nextEpisodeAt={anime.nextEpisodeAt}
+            order={order.value}
+            defaultOrder={order.default}
           />
         )}
+        {anime.relations.length > 0 && <RelatedAnime anime={anime} />}
       </div>
     </main>
   );

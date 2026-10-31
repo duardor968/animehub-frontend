@@ -17,11 +17,15 @@
 @import "@heroui/styles/components/pagination.css" layer(components);
 @import "@heroui/styles/components/tabs.css" layer(components);
 @import "@heroui/styles/components/button.css" layer(components);
+@import "@heroui/styles/components/dropdown.css" layer(components);
 @import "@heroui/styles/components/list-box-item.css" layer(components);
 @import "@heroui/styles/components/list-box.css" layer(components);
+@import "@heroui/styles/components/menu-item.css" layer(components);
+@import "@heroui/styles/components/menu-section.css" layer(components);
 @import "@heroui/styles/components/tag-group.css" layer(components);
 @import "@heroui/styles/components/tag.css" layer(components);
 @import "@heroui/styles/components/slider.css" layer(components);
+@import "@heroui/styles/components/switch.css" layer(components);
 @import "@heroui/styles/components/chip.css" layer(components);
 @import "@heroui/styles/components/alert.css" layer(components);
 @import "@heroui/styles/components/skeleton.css" layer(components);
@@ -144,11 +148,6 @@
 
 /* Heading scale (Typography): page, section and group/overlay titles. */
 @layer components {
-  .typography--h3.remote-devices-heading {
-    font-size: var(--text-base);
-    line-height: 1.5;
-    color: var(--muted);
-  }
   .typography--h1,
   .typography--h2 {
     font-family: var(--font-display);
@@ -178,6 +177,9 @@
     min-width: 320px;
     background: var(--background);
     scroll-behavior: smooth;
+    /* Pages that grow past the viewport (another schedule day) don't shift
+       sideways when the scrollbar appears. */
+    scrollbar-gutter: stable;
   }
 
   /* Content scrolled into view (anchors, focus) clears the sticky header. On
@@ -504,6 +506,13 @@
     }
   }
 
+  /* A section's "Ver …" link: a 28 px tall target (20 px of text) that
+     takes no extra room. */
+  .section-heading__more {
+    padding-block: 0.25rem;
+    margin-block: -0.25rem;
+  }
+
   /* Skip-link target: focused programmatically, no outline around the page. */
   main[tabindex="-1"]:focus-visible {
     outline: none;
@@ -606,11 +615,26 @@
     background-color: transparent;
   }
 
+  /* The suggestions grow and shrink to their content (skeleton rows, then the
+     answer) instead of jumping; search-box sets the height it measures. */
+  .search-suggestions-frame {
+    overflow: hidden;
+    transition: height 200ms var(--ease-out);
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+    }
+  }
+
   /* Suggestions: the pointer moves the active row too (see search-box), so
      only the active row paints. */
+  /* Up to the query row (3 rem) and six whole titles (3.75 rem, each after
+     the list's 0.25 rem margin), so the list never ends on half a row. */
   .search-suggestions {
     padding: 0.375rem;
     scroll-padding-block: 0.375rem;
+    max-height: calc(0.75rem + 3rem + 6 * 4rem);
+    scrollbar-width: thin;
 
     & .list-box-item {
       &:hover {
@@ -812,6 +836,127 @@
     border-color: var(--muted);
   }
 
+  /* A download provider that can't change now: HeroUI's disabled look, but
+     read-only rather than disabled, so it still takes focus, hover and taps
+     and its tooltip says why. Hover doesn't light it up. */
+  .checkbox.provider-option[data-readonly="true"] {
+    opacity: var(--disabled-opacity);
+
+    &,
+    & [data-slot="checkbox-content"],
+    & [data-slot="label"] {
+      cursor: var(--cursor-disabled);
+    }
+  }
+
+  .checkbox-visible.provider-option[data-readonly="true"]:hover
+    .checkbox__control {
+    border-color: var(--faint);
+  }
+
+  /* Episode card selector (approved custom piece): a triangle folded over the
+     card's top-right corner, like a cloth over a physical card. It overshoots
+     by 2px inside the card's clip (.media-card__clip), so the rounded edge
+     cuts it without a seam. From 640px; phones select from the row. */
+  .episode-select-corner {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    z-index: 30;
+    display: block;
+    width: 54px;
+    height: 54px;
+    border-radius: 0;
+    opacity: 0;
+    transition: opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+    & .checkbox__content {
+      position: relative;
+      display: block;
+      width: 100%;
+      height: 100%;
+      gap: 0;
+      padding: 0;
+      border-radius: 0;
+      box-shadow: none;
+      color: var(--foreground);
+      background-color: var(--surface-tertiary);
+      clip-path: polygon(0 0, 100% 0, 100% 100%);
+      transition: background-color 300ms cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    @media (hover: hover) {
+      &:not(:has(input:checked)) .checkbox__content:hover {
+        background-color: var(--default-hover);
+      }
+    }
+
+    &:not(:has(input:checked)) .checkbox__content[data-focus-visible="true"] {
+      background-color: var(--accent-soft-hover);
+    }
+
+    &:has(input:checked) .checkbox__content {
+      background-color: var(--accent);
+    }
+  }
+
+  .episode-select-corner__icon {
+    position: absolute;
+    top: 11px;
+    right: 11px;
+    display: grid;
+    place-items: center;
+    width: 1rem;
+    height: 1rem;
+    pointer-events: none;
+  }
+
+  /* Shown on the card's hover, on keyboard focus, when selected and on
+     touch screens. */
+  .media-card:hover .episode-select-corner,
+  .episode-select-corner:has(input:checked),
+  .episode-select-corner:has([data-focus-visible="true"]) {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    .episode-select-corner {
+      opacity: 1;
+    }
+  }
+
+  /* A selected card: a lighter surface and a blue glow. */
+  .media-card:has(.episode-select-corner input:checked) {
+    background-color: var(--surface-secondary);
+
+    &:not(:hover) {
+      box-shadow:
+        0 20px 25px -5px color-mix(in srgb, var(--accent) 15%, transparent),
+        0 8px 10px -6px color-mix(in srgb, var(--accent) 15%, transparent);
+    }
+
+    & .media-label {
+      background-color: var(--surface-secondary);
+    }
+  }
+
+  .media-card:has(.episode-select-corner [data-focus-visible="true"]) {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* While the selection bar floats over the page, the list ends above it,
+     and so does whatever keyboard focus scrolls into view. */
+  .episode-list[data-docked] {
+    padding-bottom: var(--download-dock-height, 0px);
+  }
+
+  html:has(.episode-list[data-docked]) {
+    scroll-padding-bottom: calc(
+      var(--bottom-nav-clearance) + var(--download-dock-height, 0px) + 1rem
+    );
+  }
+
   /* Bottom stack above the mobile nav: pending download and page bars. */
   .download-dock {
     position: fixed;
@@ -831,6 +976,13 @@
     &[data-exiting] {
       @apply animate-out fade-out-0 slide-out-to-bottom-2 fill-mode-forwards;
     }
+  }
+
+  /* The bar's destination menu: its settings action has no check, but its
+     text starts where the destinations' does (HeroUI's ps-7 beside one).
+     Two classes, as the popover's own item padding has. */
+  .menu-item.destination-menu__settings {
+    @apply ps-7;
   }
 
   /* An episode's action (download or copy) and the copy ring's center:

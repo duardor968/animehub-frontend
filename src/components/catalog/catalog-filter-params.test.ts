@@ -192,10 +192,10 @@ describe("catalog filter parameters", () => {
     ).toBe("genre=accion&order=title&search=one&page=3");
   });
 
-  it("keeps the source's relevance for search and asks for the newest additions in the catalog", () => {
+  it("ranks search like its suggestions and the catalog by newest additions", () => {
     expect(
       toCatalogApiParams(new URLSearchParams("q=one"), "search").toString(),
-    ).toBe("search=one&page=1");
+    ).toBe("search=one&order=popular&page=1");
     expect(
       toCatalogApiParams(new URLSearchParams("q=one"), "catalog").toString(),
     ).toBe("order=latest_added&page=1");

@@ -609,8 +609,11 @@ export interface components {
       /** @description srcset of the WebP backdrop ("<url> 640w, <url> 1280w, <url> 1900w"; narrower sources stop at their own width). null until the backdrop is converted, or without backdropUrl. */
       backdropSrcSet?: string | null;
       category?: components["schemas"]["CategoryDto"] | null;
-      /** @enum {string} */
-      status: "UNKNOWN" | "AIRING" | "FINISHED" | "UPCOMING";
+      /**
+       * @description PAUSED: a series that already started and is between seasons.
+       * @enum {string}
+       */
+      status: "UNKNOWN" | "AIRING" | "FINISHED" | "UPCOMING" | "PAUSED";
       startDate?: string | null;
       mature: boolean;
       /** @description Sorted by name (Spanish collation). */
@@ -630,8 +633,11 @@ export interface components {
       /** @description srcset of the WebP backdrop ("<url> 640w, <url> 1280w, <url> 1900w"; narrower sources stop at their own width). null until the backdrop is converted, or without backdropUrl. */
       backdropSrcSet?: string | null;
       category?: components["schemas"]["CategoryDto"] | null;
-      /** @enum {string} */
-      status: "UNKNOWN" | "AIRING" | "FINISHED" | "UPCOMING";
+      /**
+       * @description PAUSED: a series that already started and is between seasons.
+       * @enum {string}
+       */
+      status: "UNKNOWN" | "AIRING" | "FINISHED" | "UPCOMING" | "PAUSED";
       startDate?: string | null;
       mature: boolean;
     };
@@ -715,8 +721,11 @@ export interface components {
       /** @description srcset of the WebP backdrop ("<url> 640w, <url> 1280w, <url> 1900w"; narrower sources stop at their own width). null until the backdrop is converted, or without backdropUrl. */
       backdropSrcSet?: string | null;
       category?: components["schemas"]["CategoryDto"] | null;
-      /** @enum {string} */
-      status: "UNKNOWN" | "AIRING" | "FINISHED" | "UPCOMING";
+      /**
+       * @description PAUSED: a series that already started and is between seasons.
+       * @enum {string}
+       */
+      status: "UNKNOWN" | "AIRING" | "FINISHED" | "UPCOMING" | "PAUSED";
       startDate?: string | null;
       mature: boolean;
       alternativeTitle?: string | null;
@@ -1382,6 +1391,7 @@ export interface operations {
         minYear?: number;
         category?: string[];
         genre?: string[];
+        /** @description proximamente returns both UPCOMING and PAUSED anime. */
         status?: "emision" | "finalizado" | "proximamente";
         letter?: string;
         order?:

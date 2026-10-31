@@ -52,9 +52,9 @@ const episodes: EpisodePageResponse = {
     lastNumber: 500,
   },
 };
-const props = (page?: string | string[]) => ({
+const props = (page?: string | string[], orden?: string) => ({
   params: Promise.resolve({ slug: anime.data.slug }),
-  searchParams: Promise.resolve({ page }),
+  searchParams: Promise.resolve({ page, orden }),
 });
 
 beforeEach(() => {
@@ -84,6 +84,24 @@ describe("anime episode page metadata", () => {
       );
     },
   );
+
+  it("starts an airing series at its newest episodes", async () => {
+    vi.mocked(loadAnime).mockResolvedValue({
+      ...anime,
+      data: { ...anime.data, status: "AIRING" },
+    });
+    // 500 episodes: the newest 50 are the API's page 10.
+    expect((await generateMetadata(props())).alternates?.canonical).toBe(
+      "/anime/naruto-shippuuden",
+    );
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/anime/naruto-shippuuden/episodes?page=10",
+    );
+    expect(
+      (await generateMetadata(props(undefined, "primeros"))).alternates
+        ?.canonical,
+    ).toBe("/anime/naruto-shippuuden?orden=primeros");
+  });
 
   it("does not create a canonical for an unknown anime", async () => {
     vi.mocked(loadAnime).mockResolvedValue(null);

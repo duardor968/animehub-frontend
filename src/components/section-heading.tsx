@@ -21,7 +21,10 @@ export function SectionHeading({
         {title}
       </Typography>
       {more ? (
-        <Link href={more.href} className={`${link.base()} shrink-0 text-sm`}>
+        <Link
+          href={more.href}
+          className={`${link.base()} section-heading__more shrink-0 text-sm`}
+        >
           {more.label}
           <ArrowRight aria-hidden="true" className={link.icon()} />
         </Link>

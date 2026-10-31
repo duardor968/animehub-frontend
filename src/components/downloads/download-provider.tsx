@@ -79,6 +79,7 @@ import {
 } from "./download-job-storage";
 import type { MyJdDevice } from "./download-panels";
 import { useRemoteDownloads } from "./use-remote-downloads";
+import { hasRemoteSession } from "./remote-client";
 import { RemoteDownloadDrawer } from "./remote-panels";
 import type {
   AudioPreference,
@@ -228,7 +229,14 @@ interface DownloadContextValue {
   /** Where links go on this device (a phone sends Click'n'Load to
    *  MyJDownloader). */
   destination: DownloadDestination;
-  desktopTargetLabel?: string;
+  /** The linked PC a download goes to, when the destination is a PC. */
+  pcTarget: { id: string; name: string } | null;
+  /** Linked PCs, once loaded (see loadPcs). */
+  pcs: { id: string; name: string }[];
+  /** Asks the API for the linked PCs (when this browser has linked one). */
+  loadPcs: () => void;
+  /** Sends the next downloads to `destination` (a PC: `pcId`). */
+  chooseDestination: (destination: DownloadDestination, pcId?: string) => void;
   /** Fixed bottom stack where page-level bars (episode selection) portal in,
    *  so they never overlap the pending-download button. */
   dockSlot: HTMLElement | null;
@@ -654,6 +662,23 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     store("localStorage", storageKey, JSON.stringify(next));
   }
 
+  /** Another tab may have changed the preferences since this one read them:
+   *  an action goes where they say now. */
+  function syncPreferences() {
+    const stored = storedPreferences();
+    if (
+      stored &&
+      JSON.stringify(stored) !== JSON.stringify(preferencesRef.current)
+    )
+      setPreferences(stored);
+  }
+
+  function chooseDestination(destination: DownloadDestination, pcId?: string) {
+    syncPreferences();
+    savePreferences({ ...preferencesRef.current, destination });
+    if (pcId) remote.choosePreferred(pcId);
+  }
+
   function rememberDevice(deviceId: string | null) {
     setSelectedDeviceId(deviceId);
     store("sessionStorage", selectedDeviceStorageKey, deviceId);
@@ -1040,6 +1065,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   }
 
   function openDownload(next: DownloadRequest) {
+    syncPreferences();
     // Device picker, link list and fallbacks all live in the drawer.
     preloadDownloadDrawer();
     const running = activitiesRef.current.find(
@@ -1387,6 +1413,16 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     }
   });
 
+  // Preferences changed in another tab apply here at once.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === storageKey || event.key === null)
+        setPreferences(storedPreferences() ?? defaults);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [setPreferences]);
+
   useLayoutEffect(() => {
     mountedRef.current = true;
     const profile = getDeviceProfile();
@@ -1449,8 +1485,12 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         preferences,
         deviceProfile,
         destination: effectiveDestination,
-        desktopTargetLabel:
-          effectiveDestination === "DESKTOP" ? remote.targetLabel : undefined,
+        pcTarget: remote.target,
+        pcs: remote.devices,
+        loadPcs: () => {
+          if (hasRemoteSession()) remote.refresh();
+        },
+        chooseDestination,
         dockSlot,
         cachedEpisodeLinks,
         resolveEpisodeLinks,
@@ -1479,7 +1519,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                 )
               }
             >
-              Desktop · Pendiente de entrega
+              PC · Pendiente de entrega
             </Button>
           ) : undefined
         }

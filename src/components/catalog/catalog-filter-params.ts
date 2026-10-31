@@ -12,7 +12,8 @@ const filterKeys = [
 export const catalogStatusOptions = [
   ["emision", "En emisión"],
   ["finalizado", "Finalizado"],
-  ["proximamente", "Próximamente"],
+  // AnimeAV1's "proximamente" also returns paused series.
+  ["proximamente", "Próximamente o en pausa"],
 ] as const;
 const supportedStatus = new Set<string>(
   catalogStatusOptions.map(([value]) => value),
@@ -43,7 +44,7 @@ export const catalogApiYearBounds = { min: 1900, max: 2200 } as const;
 
 /**
  * Where the filters run. The catalog defaults to "Últimos agregados"; search
- * keeps the source's own relevance order (exact title first, then newest).
+ * to "Más populares", the order of its suggestions.
  */
 export type CatalogScope = "catalog" | "search";
 
@@ -246,8 +247,9 @@ export function toCatalogApiParams(
   if (scope === "search" && q) apiParams.set("search", q);
   // The source's implicit order isn't "latest added" (it lags and sorts by
   // release), so the catalog asks for the order its sort menu promises.
-  if (scope === "catalog" && !apiParams.has("order"))
-    apiParams.set("order", "latest_added");
+  // Search ranks like its suggestions (the API asks for "popular").
+  if (!apiParams.has("order"))
+    apiParams.set("order", scope === "catalog" ? "latest_added" : "popular");
   apiParams.set("page", String(page));
   return apiParams;
 }

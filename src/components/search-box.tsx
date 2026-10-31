@@ -5,6 +5,7 @@ import {
   CloseButton,
   InputGroup,
   Kbd,
+  Skeleton,
   TextField,
   Tooltip,
 } from "@heroui/react";
@@ -21,6 +22,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -33,6 +35,8 @@ import { AnimeImage } from "./anime-image";
 const SEARCH_MAX_LENGTH = 100;
 /** Shortest query the suggestions endpoint accepts. */
 const SUGGESTION_MIN_LENGTH = 2;
+/** The most titles /catalog/suggestions returns (its contract: "hasta ocho"). */
+const SUGGESTION_LIMIT = 8;
 const SUGGESTION_DEBOUNCE_MS = 220;
 // Set when a search box opens /buscar with a query and the page's field
 // replaces it (the header's is hidden there; the page's remounts per query):
@@ -54,6 +58,9 @@ type SuggestionItem = {
 
 type SearchOption =
   { kind: "QUERY"; label: string } | ({ kind: "ANIME" } & SuggestionItem);
+
+const yearOf = (date?: string | null) =>
+  date ? String(new Date(date).getUTCFullYear()) : null;
 
 const searchHref = (q: string) => `/buscar?q=${encodeURIComponent(q)}`;
 const optionHref = (option: SearchOption) =>
@@ -171,9 +178,14 @@ function SearchBoxState({
   const hasSuggestionQuery = normalizedQuery.length >= SUGGESTION_MIN_LENGTH;
   const isLoadingSuggestions =
     hasSuggestionQuery && result?.query !== normalizedQuery;
-  // Previous results stay visible (dimmed) while the next query loads, so the
-  // list doesn't collapse and re-expand on every keystroke.
-  const suggestions = hasSuggestionQuery ? (result?.items ?? []) : [];
+  // Only the answer for what is typed now. While it loads, skeleton rows
+  // stand in for as many titles as the last answer had (the most the API
+  // gives before the first one), so the list keeps its height.
+  const suggestions =
+    hasSuggestionQuery && !isLoadingSuggestions ? (result?.items ?? []) : [];
+  const skeletonRows = isLoadingSuggestions
+    ? (result?.items.length ?? SUGGESTION_LIMIT)
+    : 0;
 
   const focusInput = useCallback(() => {
     const input = searchInputRef.current;
@@ -250,7 +262,9 @@ function SearchBoxState({
             items: response.data.map((anime) => ({
               slug: anime.slug,
               label: anime.title,
-              meta: anime.category?.name ?? "Anime",
+              meta: [yearOf(anime.startDate), anime.category?.name ?? "Anime"]
+                .filter(Boolean)
+                .join(" · "),
               posterUrl: anime.posterUrl ?? null,
             })),
           });
@@ -276,6 +290,26 @@ function SearchBoxState({
     : [];
 
   const isSuggestionsOpen = isSearchFocused && options.length > 0;
+
+  // The list's height follows its content (skeleton, then the answer) with a
+  // transition (globals.css) instead of jumping: the frame holds the last
+  // measured height until the new one is set.
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [frameHeight, setFrameHeight] = useState<number>();
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const observer = new ResizeObserver(() =>
+      setFrameHeight(content.offsetHeight),
+    );
+    observer.observe(content);
+    return () => {
+      observer.disconnect();
+      // Reopened, the list starts from its own height.
+      setFrameHeight(undefined);
+    };
+  }, [isSuggestionsOpen]);
+
   const activeOptionId =
     isSuggestionsOpen && activeOptionIndex >= 0
       ? `${listboxId}-option-${activeOptionIndex}`
@@ -453,76 +487,96 @@ function SearchBoxState({
           onMouseDown={(event) => event.preventDefault()}
         >
           <div
-            aria-label="Sugerencias de búsqueda"
-            aria-busy={isLoadingSuggestions}
-            className={`${listboxClass} search-suggestions max-h-96 overflow-y-auto overscroll-contain`}
-            id={listboxId}
-            role="listbox"
+            className="search-suggestions-frame"
+            style={{ height: frameHeight }}
           >
-            {options.map((option, index) => (
-              <Link
-                aria-selected={index === activeOptionIndex}
-                data-focus-visible={
-                  (index === activeOptionIndex && isActiveByKeyboard) ||
-                  undefined
-                }
-                className={`${optionClass} ${option.kind === "ANIME" && isLoadingSuggestions ? "opacity-50" : ""}`}
-                href={optionHref(option)}
-                id={`${listboxId}-option-${index}`}
-                key={option.kind === "QUERY" ? "query" : option.slug}
-                prefetch={false}
-                role="option"
-                tabIndex={-1}
-                onClick={closeSuggestions}
-                // One active option: the pointer moves it like the arrows do.
-                // Moves only, so the list opening under a resting pointer
-                // or scrolling under it never takes it.
-                onPointerMove={(event) => {
-                  if (event.pointerType === "touch") return;
-                  setIsActiveByKeyboard(false);
-                  setActiveOptionIndex(index);
-                }}
+            <div ref={contentRef}>
+              <div
+                aria-label="Sugerencias de búsqueda"
+                aria-busy={isLoadingSuggestions}
+                className={`${listboxClass} search-suggestions overflow-y-auto overscroll-contain`}
+                id={listboxId}
+                role="listbox"
               >
-                {option.kind === "QUERY" ? (
-                  <>
-                    {/* In the posters' column, so icon and text line up
+                {options.map((option, index) => (
+                  <Link
+                    aria-selected={index === activeOptionIndex}
+                    data-focus-visible={
+                      (index === activeOptionIndex && isActiveByKeyboard) ||
+                      undefined
+                    }
+                    className={optionClass}
+                    href={optionHref(option)}
+                    id={`${listboxId}-option-${index}`}
+                    key={option.kind === "QUERY" ? "query" : option.slug}
+                    prefetch={false}
+                    role="option"
+                    tabIndex={-1}
+                    onClick={closeSuggestions}
+                    // One active option: the pointer moves it like the arrows do.
+                    // Moves only, so the list opening under a resting pointer
+                    // or scrolling under it never takes it.
+                    onPointerMove={(event) => {
+                      if (event.pointerType === "touch") return;
+                      setIsActiveByKeyboard(false);
+                      setActiveOptionIndex(index);
+                    }}
+                  >
+                    {option.kind === "QUERY" ? (
+                      <>
+                        {/* In the posters' column, so icon and text line up
                         with the rows below. */}
-                    <span className="grid size-9 shrink-0 place-items-center rounded-md bg-accent-soft text-link">
-                      <Search aria-hidden="true" className="size-4" />
+                        <span className="grid size-9 shrink-0 place-items-center rounded-md bg-accent-soft text-link">
+                          <Search aria-hidden="true" className="size-4" />
+                        </span>
+                        <span className="min-w-0 truncate text-subtle">
+                          Buscar{" "}
+                          <span className="font-semibold text-foreground">
+                            «{option.label}»
+                          </span>
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="relative block h-12 w-9 shrink-0 overflow-hidden rounded-md">
+                          <AnimeImage
+                            src={option.posterUrl}
+                            alt=""
+                            sizes="36px"
+                          />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm text-subtle">
+                            <Highlighted
+                              label={option.label}
+                              query={normalizedQuery}
+                            />
+                          </span>
+                          <span className="block truncate text-xs text-muted">
+                            {option.meta}
+                          </span>
+                        </span>
+                      </>
+                    )}
+                  </Link>
+                ))}
+                {Array.from({ length: skeletonRows }, (_, row) => (
+                  <div key={row} aria-hidden="true" className={optionClass}>
+                    <Skeleton className="h-12 w-9 shrink-0 rounded-md" />
+                    <span className="flex flex-1 flex-col gap-1.5">
+                      <Skeleton className="h-3.5 w-3/5" />
+                      <Skeleton className="h-3 w-1/4" />
                     </span>
-                    <span className="min-w-0 truncate text-subtle">
-                      Buscar{" "}
-                      <span className="font-semibold text-foreground">
-                        «{option.label}»
-                      </span>
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span className="relative block h-12 w-9 shrink-0 overflow-hidden rounded-md">
-                      <AnimeImage src={option.posterUrl} alt="" sizes="36px" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm text-subtle">
-                        <Highlighted
-                          label={option.label}
-                          query={normalizedQuery}
-                        />
-                      </span>
-                      <span className="block truncate text-xs text-muted">
-                        {option.meta}
-                      </span>
-                    </span>
-                  </>
-                )}
-              </Link>
-            ))}
+                  </div>
+                ))}
+              </div>
+              {failed ? (
+                <p aria-hidden="true" className="px-4 pb-3 text-xs text-muted">
+                  No se pudieron cargar las sugerencias.
+                </p>
+              ) : null}
+            </div>
           </div>
-          {failed ? (
-            <p aria-hidden="true" className="px-4 pb-3 text-xs text-muted">
-              No se pudieron cargar las sugerencias.
-            </p>
-          ) : null}
           <div role="status" className="sr-only">
             {announcement}
           </div>

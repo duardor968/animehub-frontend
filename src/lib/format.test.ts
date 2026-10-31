@@ -3,6 +3,7 @@ import {
   formatEpisodeNumber,
   formatNumber,
   formatRelativeTime,
+  formatStatus,
   plural,
 } from "./format";
 
@@ -46,5 +47,15 @@ describe("formatRelativeTime", () => {
 
   it("treats a future timestamp (clock skew) as now", () => {
     expect(formatRelativeTime(ago(-120), now)).toBe("ahora");
+  });
+});
+
+describe("formatStatus", () => {
+  it("labels every API status", () => {
+    expect(formatStatus("AIRING")).toBe("En emisión");
+    expect(formatStatus("FINISHED")).toBe("Finalizado");
+    expect(formatStatus("UPCOMING")).toBe("Próximamente");
+    expect(formatStatus("PAUSED")).toBe("En pausa");
+    expect(formatStatus("UNKNOWN")).toBe("Estado por confirmar");
   });
 });

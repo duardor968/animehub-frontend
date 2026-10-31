@@ -38,16 +38,30 @@ describe("catalog page query helpers", () => {
 
   it("sends pages past the end to the last page, or to the first when empty", () => {
     expect(
-      outOfRangeParams(
-        new URLSearchParams("genre=accion&page=51"),
-        50,
-      )?.toString(),
-    ).toBe("genre=accion&page=50");
+      outOfRangeParams(new URLSearchParams("genre=accion&page=8"), {
+        totalPages: 7,
+      })?.toString(),
+    ).toBe("genre=accion&page=7");
     expect(
-      outOfRangeParams(new URLSearchParams("q=zz&page=3"), 0)?.toString(),
+      outOfRangeParams(new URLSearchParams("q=zz&page=3"), {
+        totalPages: 0,
+      })?.toString(),
     ).toBe("q=zz");
-    expect(outOfRangeParams(new URLSearchParams("page=50"), 50)).toBeNull();
-    expect(outOfRangeParams(new URLSearchParams(""), 0)).toBeNull();
+    expect(
+      outOfRangeParams(new URLSearchParams("page=50"), { totalPages: 50 }),
+    ).toBeNull();
+    expect(
+      outOfRangeParams(new URLSearchParams(""), { totalPages: 0 }),
+    ).toBeNull();
+  });
+
+  it("keeps pages past the source's cap, where the list says it ends", () => {
+    expect(
+      outOfRangeParams(new URLSearchParams("page=51"), {
+        totalPages: 50,
+        capped: true,
+      }),
+    ).toBeNull();
   });
 
   it("keeps the first genre the source offers from a hand-edited URL", async () => {

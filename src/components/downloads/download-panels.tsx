@@ -14,9 +14,10 @@ import {
   Spinner,
   TextArea,
   TextField,
+  Tooltip,
 } from "@heroui/react";
 import { Check, ClipboardCopy, RefreshCw, Send } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent } from "react";
 import { EmptyState } from "../empty-state";
 import { RemotePreferences } from "./remote-panels";
 import type { RemoteDownloads } from "./use-remote-downloads";
@@ -290,7 +291,12 @@ export function LinksPanel({
   );
 }
 
-const destinationOptions: Array<{ id: DownloadDestination; label: string }> = [
+const providerIds = Object.keys(providerLabels) as DownloadProviderId[];
+
+export const destinationOptions: Array<{
+  id: DownloadDestination;
+  label: string;
+}> = [
   { id: "CNL", label: "Click'n'Load" },
   { id: "MYJD", label: "MyJDownloader" },
   { id: "COPY", label: "Copiar enlaces" },
@@ -339,7 +345,7 @@ export function PreferencesPanel({
               <OptionRadio key={option.id} value={option.id} {...option} />
             ))}
           {!!remote.devices.length && (
-            <OptionRadio value="DESKTOP" label="AnimeHub Desktop" />
+            <OptionRadio value="DESKTOP" label="AnimeHub para PC" />
           )}
         </RadioGroup>
         {effectiveDestination === "MYJD" && (
@@ -394,43 +400,97 @@ export function PreferencesPanel({
             onChange={(providers) =>
               savePreferences({
                 ...preferences,
-                providers: providers as DownloadProviderId[],
+                // Priority follows the list, whatever order they were marked.
+                providers: providerIds.filter((id) => providers.includes(id)),
               })
             }
           >
             <Label>Proveedores</Label>
             <div className="grid grid-cols-2 gap-x-4">
-              {(
-                Object.entries(providerLabels) as Array<
-                  [DownloadProviderId, string]
-                >
-              ).map(([provider, label]) => (
-                <Checkbox
-                  key={provider}
-                  value={provider}
-                  // At least one provider a JDownloader takes stays marked.
-                  isDisabled={
-                    sendableProviders.length === 1 &&
-                    sendableProviders[0] === provider
-                  }
-                  className="checkbox-visible"
-                >
-                  <Checkbox.Content>
-                    <Checkbox.Control>
-                      <Checkbox.Indicator />
-                    </Checkbox.Control>
-                    {label}
-                  </Checkbox.Content>
-                  {copyOnlyProviders.has(provider) && (
-                    <Description>Solo al copiar enlaces.</Description>
-                  )}
-                </Checkbox>
-              ))}
+              {providerIds.map((provider) => {
+                // A JDownloader can't take Transfer.it: only copying uses it.
+                const unused =
+                  copyOnlyProviders.has(provider) &&
+                  effectiveDestination !== "COPY";
+                // At least one provider a JDownloader takes stays marked.
+                const locked =
+                  sendableProviders.length === 1 &&
+                  sendableProviders[0] === provider;
+                // Why it can't be changed now.
+                const reason = unused
+                  ? "Solo al copiar enlaces"
+                  : locked
+                    ? "Al menos un proveedor"
+                    : null;
+                return (
+                  <ProviderOption
+                    key={provider}
+                    provider={provider}
+                    reason={reason}
+                  />
+                );
+              })}
             </div>
           </CheckboxGroup>
         </>
       )}
     </div>
+  );
+}
+
+/** A provider in the list. One that can't change now says why in a tooltip
+ *  on hover, focus or tap: read-only rather than disabled, it stays
+ *  focusable and keeps the reason as its description. */
+function ProviderOption({
+  provider,
+  reason,
+}: {
+  provider: DownloadProviderId;
+  reason: string | null;
+}) {
+  const [showReason, setShowReason] = useState(false);
+  const reasonId = useId();
+  const checkbox = (
+    <Checkbox
+      value={provider}
+      isReadOnly={reason !== null}
+      aria-describedby={reason ? reasonId : undefined}
+      onFocusChange={reason ? setShowReason : undefined}
+      className="checkbox-visible provider-option"
+    >
+      <Checkbox.Content>
+        <Checkbox.Control>
+          <Checkbox.Indicator />
+        </Checkbox.Control>
+        {providerLabels[provider]}
+      </Checkbox.Content>
+    </Checkbox>
+  );
+  if (!reason) return checkbox;
+  return (
+    <Tooltip
+      delay={300}
+      isOpen={showReason}
+      onOpenChange={setShowReason}
+      // The press that focuses it (a tap) must not close what focus opens.
+      shouldCloseOnPress={false}
+    >
+      <Tooltip.Trigger
+        role="none"
+        tabIndex={-1}
+        // A tap on the label doesn't focus the box: focus it, so the reason
+        // shows until focus moves on.
+        onClickCapture={(event) =>
+          event.currentTarget.querySelector("input")?.focus()
+        }
+      >
+        {checkbox}
+        <span id={reasonId} hidden>
+          {reason}
+        </span>
+      </Tooltip.Trigger>
+      <Tooltip.Content>{reason}</Tooltip.Content>
+    </Tooltip>
   );
 }
 

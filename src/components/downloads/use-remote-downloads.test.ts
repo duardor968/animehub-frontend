@@ -58,17 +58,66 @@ it("does not fetch before a user action", () => {
   expect(remoteClient.requests).not.toHaveBeenCalled();
 });
 it("names the PC it last sent to after a reload, without fetching", async () => {
-  localStorage.setItem("animehub.remote.target.v1", "PC 1");
+  localStorage.setItem(
+    "animehub.remote.target.v2",
+    JSON.stringify({ id: "pc1", name: "PC 1" }),
+  );
   const { result } = renderHook(() => useRemoteDownloads(false));
-  await waitFor(() => expect(result.current.targetLabel).toBe("PC 1"));
+  await waitFor(() => expect(result.current.target?.name).toBe("PC 1"));
   expect(remoteClient.devices).not.toHaveBeenCalled();
 });
-it("remembers the PC the bar names once the PCs load", async () => {
+it("remembers the PC the bar names once the PCs load, never a label", async () => {
+  // v1 stored labels of the UI as if they were PCs.
+  localStorage.setItem("animehub.remote.target.v1", "Elegir PC");
   const { result } = renderHook(() => useRemoteDownloads(false));
-  expect(result.current.targetLabel).toBe("Elegir PC");
+  await waitFor(() =>
+    expect(localStorage.getItem("animehub.remote.target.v1")).toBeNull(),
+  );
+  expect(result.current.target).toBeNull();
   act(() => result.current.refresh());
-  await waitFor(() => expect(result.current.targetLabel).toBe("PC 1"));
-  expect(localStorage.getItem("animehub.remote.target.v1")).toBe("PC 1");
+  await waitFor(() => expect(result.current.target?.name).toBe("PC 1"));
+  expect(
+    JSON.parse(localStorage.getItem("animehub.remote.target.v2") ?? "null"),
+  ).toEqual({ id: "pc1", name: "PC 1" });
+
+  // Two PCs and "ask every time": no PC to name, nothing stored.
+  vi.mocked(remoteClient.devices).mockResolvedValue({
+    devices: [pc, { ...pc, id: "pc2", name: "PC 2" }],
+  });
+  act(() => result.current.choosePreferred("ask"));
+  act(() => result.current.refresh());
+  await waitFor(() => expect(result.current.target).toBeNull());
+  expect(localStorage.getItem("animehub.remote.target.v2")).toBeNull();
+});
+it("follows the PC chosen in another tab", async () => {
+  const pc2 = { ...pc, id: "pc2", name: "PC 2" };
+  vi.mocked(remoteClient.devices).mockResolvedValue({ devices: [pc, pc2] });
+  localStorage.setItem("animehub.remote.preferred.v1", "pc1");
+  const { result } = renderHook(() => useRemoteDownloads(false));
+  await waitFor(() => expect(result.current.preferred).toBe("pc1"));
+
+  // The other tab writes the preference: the event and the next send follow.
+  localStorage.setItem("animehub.remote.preferred.v1", "pc2");
+  act(() => {
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: "animehub.remote.preferred.v1",
+        newValue: "pc2",
+      }),
+    );
+  });
+  expect(result.current.preferred).toBe("pc2");
+
+  // Even without the event, a send reads the stored preference.
+  localStorage.setItem("animehub.remote.preferred.v1", "pc1");
+  act(() =>
+    result.current.start(
+      { slug: "series", title: "Series", episodeNumbers: [1] },
+      vi.fn(),
+    ),
+  );
+  await waitFor(() => expect(remoteClient.create).toHaveBeenCalled());
+  expect(vi.mocked(remoteClient.create).mock.calls[0][0].deviceId).toBe("pc1");
 });
 it("polls again after a dropped connection and stops once the link expired", async () => {
   vi.useFakeTimers();
@@ -173,7 +222,7 @@ it("locates a missing profile in Desktop and retries the same PC after refreshin
   );
   await waitFor(() =>
     expect(result.current.error).toContain(
-      "AnimeHub Desktop → Ajustes → Descargas",
+      "AnimeHub para PC → Ajustes → Descargas",
     ),
   );
   expect(result.current.errorScope).toBe("request");

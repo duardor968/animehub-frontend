@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ButtonLink } from "@/components/button-link";
 import { StatusPage } from "@/components/status-page";
+import { SearchForSlug } from "./search-for-slug";
 
 // Next already adds <meta name="robots" content="noindex"> to 404 responses.
 export const metadata: Metadata = {
@@ -12,14 +13,12 @@ export default function AnimeNotFound() {
   return (
     <StatusPage
       title="Este anime no existe"
-      description="Puede que el enlace esté mal escrito o que la fuente lo haya retirado."
+      description="Puede que el enlace esté mal escrito o que el anime ya no esté disponible."
       action={
         <div className="flex flex-wrap justify-center gap-3">
-          <ButtonLink href="/buscar" prefetch={false}>
-            Buscar anime
-          </ButtonLink>
+          <SearchForSlug />
           <ButtonLink href="/catalogo" variant="secondary" prefetch={false}>
-            Ver el catálogo
+            Ver catálogo
           </ButtonLink>
         </div>
       }

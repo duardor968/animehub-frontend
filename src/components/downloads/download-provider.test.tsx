@@ -894,24 +894,138 @@ describe("DownloadProvider drawer", () => {
     for (const name of ["Mega", "Pixeldrain"])
       fireEvent.click(within(drawer).getByRole("checkbox", { name }));
 
-    // The last one marked can't be unmarked, and shows it.
+    // The last one marked can't be unmarked, and says why. Read-only, not
+    // disabled: it stays focusable, so the reason is reachable.
     const last = within(drawer).getByRole("checkbox", { name: "MP4Upload" });
+    fireEvent.click(last);
     expect(last).toBeChecked();
-    expect(last).toBeDisabled();
+    expect(last).toBeEnabled();
+    expect(last).toHaveAccessibleDescription("Al menos un proveedor");
     expect(
       JSON.parse(localStorage.getItem("animehub.download-preferences") ?? "{}")
         .providers,
     ).toEqual(["MP4UPLOAD"]);
 
-    // Transfer.it only copies: marking it leaves MP4Upload as the last one a
-    // JDownloader takes.
+    // Transfer.it only copies: a JDownloader destination can't use it.
+    const transfer = within(drawer).getByRole("checkbox", {
+      name: "Transfer.it",
+    });
+    fireEvent.click(transfer);
+    expect(transfer).not.toBeChecked();
+    expect(transfer).toHaveAccessibleDescription("Solo al copiar enlaces");
+  });
+
+  it("keeps the providers' priority when one is marked again", async () => {
+    renderProvider();
+    act(() => handle.current?.openSettings());
+    const drawer = await screen.findByRole("dialog", {
+      name: "Preferencias de descarga",
+    });
+    const mega = within(drawer).getByRole("checkbox", { name: "Mega" });
+    fireEvent.click(mega);
+    fireEvent.click(mega);
+    expect(
+      JSON.parse(localStorage.getItem("animehub.download-preferences") ?? "{}")
+        .providers,
+    ).toEqual(["MEGA", "PIXELDRAIN", "MP4UPLOAD"]);
+  });
+
+  it("offers Transfer.it when links are copied, beside the last JDownloader one", async () => {
+    preferCopy(["MP4UPLOAD"]);
+    renderProvider();
+    act(() => handle.current?.openSettings());
+    const drawer = await screen.findByRole("dialog", {
+      name: "Preferencias de descarga",
+    });
     const transfer = within(drawer).getByRole("checkbox", {
       name: "Transfer.it",
     });
     fireEvent.click(transfer);
     expect(transfer).toBeChecked();
-    expect(last).toBeDisabled();
-    expect(transfer).not.toBeDisabled();
+    expect(transfer).not.toHaveAccessibleDescription();
+    expect(
+      within(drawer).getByRole("checkbox", { name: "MP4Upload" }),
+    ).toHaveAccessibleDescription("Al menos un proveedor");
+  });
+});
+
+describe("DownloadProvider in several tabs", () => {
+  const episode: DownloadRequest = {
+    slug: "series",
+    title: "Series",
+    episodeNumbers: [1],
+  };
+  const otherTabChooses = (destination: string) => {
+    const value = JSON.stringify({
+      audio: "SUB",
+      providers: ["MEGA"],
+      destination,
+    });
+    localStorage.setItem("animehub.download-preferences", value);
+    return value;
+  };
+
+  it("follows a destination chosen in another tab", async () => {
+    renderProvider();
+    await waitFor(() => expect(controls.downloads().destination).toBe("CNL"));
+    const value = otherTabChooses("COPY");
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: "animehub.download-preferences",
+          newValue: value,
+        }),
+      );
+    });
+    expect(controls.downloads().destination).toBe("COPY");
+  });
+
+  it("sends where the stored preference says at the moment of the action", async () => {
+    vi.mocked(apiFetch).mockResolvedValue({
+      data: {
+        packageName: "Series",
+        episodes: [
+          {
+            episodeNumber: 1,
+            audio: "SUB",
+            links: [{ provider: "MEGA", url: "https://mega.example/1" }],
+            errorCode: null,
+          },
+        ],
+      },
+    });
+    renderProvider();
+    await waitFor(() => expect(controls.downloads().destination).toBe("CNL"));
+    // No event reached this tab (e.g. it was asleep): the action reads it.
+    otherTabChooses("COPY");
+    act(() => controls.openDownload(episode));
+    await waitFor(() => expect(copyLinks).toHaveBeenCalled());
+    expect(sendToClickNLoad).not.toHaveBeenCalled();
+  });
+
+  it("sends to the PC when another tab chose it after this one loaded", async () => {
+    localStorage.setItem("animehub.remote.session.v1", "capability");
+    vi.mocked(apiFetch).mockImplementation(async (path: string) =>
+      path.startsWith("/remote/requests") ? { requests: [] } : { devices: [] },
+    );
+    renderProvider();
+    await waitFor(() => expect(controls.downloads().destination).toBe("CNL"));
+    otherTabChooses("DESKTOP");
+    act(() => controls.openDownload(episode));
+    await waitFor(() =>
+      expect(apiFetch).toHaveBeenCalledWith(
+        "/remote/devices",
+        expect.anything(),
+        true,
+        expect.anything(),
+      ),
+    );
+    expect(sendToClickNLoad).not.toHaveBeenCalled();
+    expect(apiFetch).not.toHaveBeenCalledWith(
+      expect.stringContaining("/downloads/resolve"),
+      expect.anything(),
+      true,
+    );
   });
 });
 

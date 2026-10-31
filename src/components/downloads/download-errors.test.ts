@@ -17,7 +17,7 @@ describe("download error copy", () => {
       "Sin conexión con AnimeHub",
     );
     expect(describeApiError(new ApiTimeoutError()).title).toBe(
-      "La fuente tardó demasiado",
+      "AnimeAV1 tardó demasiado",
     );
     expect(describeApiError(new ApiResponseError(429, "Too Many")).title).toBe(
       "Demasiadas solicitudes",

@@ -85,8 +85,8 @@ const knownApiDetails: Array<[RegExp, string]> = [
 export function describeApiError(error: unknown): FriendlyError {
   if (error instanceof ApiTimeoutError) {
     return {
-      title: "La fuente tardó demasiado",
-      detail: "AnimeAV1 no respondió a tiempo. No se envió nada.",
+      title: "AnimeAV1 tardó demasiado",
+      detail: "No respondió a tiempo. No se envió nada.",
     };
   }
   if (error instanceof ApiConnectionError || error instanceof TypeError) {
@@ -120,7 +120,7 @@ export function describeApiError(error: unknown): FriendlyError {
     if (error.status === 503 || error.status === 502 || error.status === 504) {
       return {
         title: "AnimeAV1 no está disponible",
-        detail: "La fuente no responde ahora mismo. Inténtalo en unos minutos.",
+        detail: "No responde ahora mismo. Inténtalo en unos minutos.",
       };
     }
     if (error.status >= 500) {

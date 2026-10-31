@@ -16,12 +16,15 @@ export function EpisodeDownloadButton({
   slug,
   title,
   episodeNumber,
+  lastNumber,
   withSeries = true,
   className = "",
 }: {
   slug: string;
   title: string;
   episodeNumber: number;
+  /** Several consecutive episodes, `episodeNumber` to this one. */
+  lastNumber?: number;
   withSeries?: boolean;
   className?: string;
 }) {
@@ -34,7 +37,8 @@ export function EpisodeDownloadButton({
   } = useDownloads();
   const portable = deviceProfile === "portable";
   const copying = destination === "COPY";
-  if (copying && preferences.providers.length > 1)
+  const several = lastNumber !== undefined && lastNumber !== episodeNumber;
+  if (copying && preferences.providers.length > 1 && !several)
     return (
       <EpisodeCopyMenu
         slug={slug}
@@ -46,10 +50,20 @@ export function EpisodeDownloadButton({
       />
     );
 
-  const request = { slug, title, episodeNumbers: [episodeNumber] };
+  const [from, to] = several
+    ? [Math.min(episodeNumber, lastNumber), Math.max(episodeNumber, lastNumber)]
+    : [episodeNumber, episodeNumber];
+  const request = {
+    slug,
+    title,
+    episodeNumbers: Array.from({ length: to - from + 1 }, (_, i) => from + i),
+  };
   const status = getRequestStatus(request);
   const pending = status !== undefined && activeStatuses.has(status);
-  const label = `${copying ? "Copiar enlaces del" : "Descargar el"} episodio ${formatEpisodeNumber(episodeNumber)}${withSeries ? ` de ${title}` : ""}`;
+  const episodes = several
+    ? `${copying ? "de los" : "los"} episodios ${formatEpisodeNumber(from)}–${formatEpisodeNumber(to)}`
+    : `${copying ? "del" : "el"} episodio ${formatEpisodeNumber(episodeNumber)}`;
+  const label = `${copying ? "Copiar enlaces" : "Descargar"} ${episodes}${withSeries ? ` de ${title}` : ""}`;
   const button = (
     <Button
       isIconOnly

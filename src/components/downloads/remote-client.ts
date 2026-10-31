@@ -57,12 +57,12 @@ async function remote<T>(path: string, init: RequestInit = {}): Promise<T> {
       const message =
         error.status === 404
           ? path === "/links"
-            ? "El código no está disponible. Genera otro en AnimeHub Desktop."
+            ? "El código no está disponible. Genera otro en AnimeHub para PC."
             : "El PC ya no está vinculado a este navegador."
           : error.status === 409
             ? path.endsWith("/cancel")
               ? "El PC ya recibió la solicitud; no se puede cancelar desde aquí."
-              : "El perfil de descarga cambió. Actualiza los equipos y vuelve a elegir el destino."
+              : "El perfil de descarga cambió. Actualiza los dispositivos y vuelve a elegir el destino."
             : error.status === 429
               ? "Demasiados intentos. Espera unos minutos y vuelve a intentarlo."
               : error.status >= 500

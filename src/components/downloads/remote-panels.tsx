@@ -17,7 +17,7 @@ import {
   Typography,
 } from "@heroui/react";
 import { ArrowLeft, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { formatEpisodeNumber, formatNumber } from "@/lib/format";
 import {
   attentionReason,
@@ -26,6 +26,8 @@ import {
 } from "./remote-client";
 import type { RemoteDownloads } from "./use-remote-downloads";
 import { describeRequest } from "./download-copy";
+
+const wideScreen = () => window.matchMedia("(min-width: 64rem)").matches;
 
 function RemoteError({ message }: { message: string | null }) {
   return message ? (
@@ -47,6 +49,7 @@ export function RemotePreferences({
   const [pairing, setPairing] = useState(false);
   const [code, setCode] = useState("");
   const [removing, setRemoving] = useState<string | null>(null);
+  const headingId = useId();
   const device = remote.devices.find((d) => d.id === removing);
   return (
     <div className="flex flex-col gap-6">
@@ -105,11 +108,12 @@ export function RemotePreferences({
           </Select.Popover>
         </Select>
       )}
-      <section className="flex flex-col gap-4" aria-label="Equipos vinculados">
+      <section className="flex flex-col gap-4" aria-labelledby={headingId}>
         <div className="flex items-center justify-between gap-3">
-          <Typography type="h3" className="remote-devices-heading">
-            Equipos vinculados
-          </Typography>
+          {/* A group of the drawer, titled like the others (Destino…). */}
+          <Label elementType="h3" id={headingId}>
+            Dispositivos vinculados
+          </Label>
           <Button
             size="sm"
             variant="secondary"
@@ -119,11 +123,11 @@ export function RemotePreferences({
             }}
             isDisabled={remote.busy}
           >
-            {remote.devices.length ? "Vincular otro" : "Vincular un PC"}
+            Vincular un PC
           </Button>
         </div>
         {!remote.loaded ? (
-          <Skeleton className="h-16" aria-label="Cargando equipos" />
+          <Skeleton className="h-16" aria-label="Cargando dispositivos" />
         ) : remote.devices.length ? (
           <ul className="flex flex-col gap-4">
             {remote.devices.map((d) => (
@@ -147,7 +151,7 @@ export function RemotePreferences({
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-muted">No hay equipos vinculados.</p>
+          <p className="text-sm text-muted">Ningún PC vinculado.</p>
         )}
         {remote.errorScope === "settings" && remote.error && (
           <Button
@@ -157,7 +161,7 @@ export function RemotePreferences({
             isPending={remote.busy}
           >
             <RefreshCw aria-hidden="true" />
-            Actualizar equipos
+            Actualizar dispositivos
           </Button>
         )}
         {!!remote.requests.length && (
@@ -211,7 +215,7 @@ export function RemotePreferences({
                 />
                 <p className="text-sm">
                   Introduce el código de Dispositivos vinculados en AnimeHub
-                  Desktop.
+                  para PC.
                 </p>
                 <TextField
                   name="pair-code"
@@ -219,6 +223,10 @@ export function RemotePreferences({
                   onChange={setCode}
                   isRequired
                   isDisabled={remote.busy}
+                  // On the field, not the input: React Aria focuses it after
+                  // the press that opened the drawer and before the dialog
+                  // takes focus. Phones would open the keyboard over it.
+                  autoFocus={wideScreen()}
                 >
                   <Label>Código de vinculación</Label>
                   <Input

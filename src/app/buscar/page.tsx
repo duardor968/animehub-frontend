@@ -96,7 +96,7 @@ async function Popular() {
 
 async function SearchResults({ incoming }: { incoming: URLSearchParams }) {
   const { params, response, bounds } = await resolveCatalog(incoming, "search");
-  const lastPageParams = outOfRangeParams(params, response.meta.totalPages);
+  const lastPageParams = outOfRangeParams(params, response.meta);
   if (lastPageParams) redirect(catalogHref("/buscar", lastPageParams));
   if (!sameSearchParams(incoming, params))
     redirect(catalogHref("/buscar", params));
@@ -110,6 +110,7 @@ async function SearchResults({ incoming }: { incoming: URLSearchParams }) {
         years={response.meta.years}
         totalRecords={response.meta.totalRecords}
         capped={isCatalogCapped(response.meta)}
+        lastPage={response.meta.page >= response.meta.totalPages}
         footer={
           <Pagination
             page={response.meta.page}
@@ -119,26 +120,32 @@ async function SearchResults({ incoming }: { incoming: URLSearchParams }) {
         }
       >
         <h2 className="sr-only">Resultados</h2>
-        <PosterGrid
-          anime={response.data}
-          emptyState={
-            countCatalogFilters(params) > 0
-              ? {
-                  title: "Ninguna obra coincide con la búsqueda y los filtros",
-                  action: {
-                    href: catalogHref(
-                      "/buscar",
-                      clearCatalogFilters(params, bounds),
-                    ),
-                    label: "Limpiar filtros",
-                  },
-                }
-              : {
-                  title: "Ninguna obra coincide con la búsqueda",
-                  action: { href: "/catalogo", label: "Ver catálogo" },
-                }
-          }
-        />
+        {/* Past the source's cap: no works, only the end of the list. */}
+        {response.meta.page > response.meta.totalPages ? null : (
+          <PosterGrid
+            anime={response.data}
+            // Filtered by one format, every card would repeat it.
+            showCategory={params.getAll("category").length !== 1}
+            emptyState={
+              countCatalogFilters(params) > 0
+                ? {
+                    title:
+                      "Ninguna obra coincide con la búsqueda y los filtros",
+                    action: {
+                      href: catalogHref(
+                        "/buscar",
+                        clearCatalogFilters(params, bounds),
+                      ),
+                      label: "Limpiar filtros",
+                    },
+                  }
+                : {
+                    title: "Ninguna obra coincide con la búsqueda",
+                    action: { href: "/catalogo", label: "Ver catálogo" },
+                  }
+            }
+          />
+        )}
       </CatalogFilters>
     </div>
   );

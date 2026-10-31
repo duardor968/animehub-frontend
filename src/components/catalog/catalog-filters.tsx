@@ -29,6 +29,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import type { components } from "@/lib/api/generated";
+import { plural } from "@/lib/format";
 import {
   catalogHref,
   catalogLetters,
@@ -52,12 +53,14 @@ import {
   CatalogNavigationContext,
   type CatalogNavigation,
 } from "./catalog-navigation";
+import { EmptyState } from "../empty-state";
 
 type Category = components["schemas"]["CategoryDto"];
 
-const defaultSortLabel: Record<CatalogScope, string> = {
-  catalog: "Últimos agregados",
-  search: "Relevancia",
+const defaultSort: Record<CatalogScope, readonly [string, string]> = {
+  catalog: ["latest_added", "Últimos agregados"],
+  // The suggestions' order: the menu doesn't offer it twice.
+  search: ["popular", "Más populares"],
 };
 
 export function CatalogFilters({
@@ -67,6 +70,7 @@ export function CatalogFilters({
   years,
   totalRecords,
   capped = false,
+  lastPage = false,
   children,
   footer,
 }: {
@@ -76,6 +80,8 @@ export function CatalogFilters({
   years: number[];
   totalRecords: number;
   capped?: boolean;
+  /** The page shown is the last one. */
+  lastPage?: boolean;
   children: ReactNode;
   footer: ReactNode;
 }) {
@@ -108,6 +114,7 @@ export function CatalogFilters({
   const [preview, setPreview] = useState<{
     key: string;
     count: number | null;
+    capped?: boolean;
   } | null>(null);
   const [isNavigationPending, startNavigation] = useTransition();
   const [hasNavigated, setHasNavigated] = useState(false);
@@ -150,9 +157,18 @@ export function CatalogFilters({
       })
         .then((response) => {
           if (!response.ok) throw new Error("Catalog preview unavailable");
-          return response.json() as Promise<{ totalRecords: number }>;
+          return response.json() as Promise<{
+            totalRecords: number;
+            capped?: boolean;
+          }>;
         })
-        .then((data) => setPreview({ key: draftKey, count: data.totalRecords }))
+        .then((data) =>
+          setPreview({
+            key: draftKey,
+            count: data.totalRecords,
+            capped: data.capped,
+          }),
+        )
         .catch(() => {
           if (!controller.signal.aborted)
             setPreview({ key: draftKey, count: null });
@@ -228,7 +244,10 @@ export function CatalogFilters({
             <SlidersHorizontal aria-hidden="true" />
             Filtros
           </Button>
-          <p className="text-sm tabular-nums text-muted">{countText}</p>
+          {/* With no results the empty state says so. */}
+          {totalRecords > 0 && (
+            <p className="text-sm tabular-nums text-muted">{countText}</p>
+          )}
           {totalRecords > 0 && (
             <Select
               aria-label="Ordenar"
@@ -253,8 +272,10 @@ export function CatalogFilters({
               <Select.Popover>
                 <ListBox>
                   {[
-                    ["", defaultSortLabel[scope]] as const,
-                    ...catalogSortOptions,
+                    ["", defaultSort[scope][1]] as const,
+                    ...catalogSortOptions.filter(
+                      ([id]) => id !== defaultSort[scope][0],
+                    ),
                   ].map(([id, label]) => (
                     <ListBox.Item key={id} id={id} textValue={label}>
                       {label}
@@ -338,7 +359,11 @@ export function CatalogFilters({
                 isDisabled={draftMatchesApplied || draftIsEmpty}
                 isPending={isNavigationPending}
               >
-                {draftIsEmpty ? "Sin resultados" : "Aplicar filtros"}
+                {draftIsEmpty
+                  ? "Sin resultados"
+                  : draftPreview?.count
+                    ? `Ver ${draftPreview.capped ? "más de " : ""}${plural(draftPreview.count, "obra", "obras")}`
+                    : "Aplicar filtros"}
               </Button>
               <Button
                 fullWidth
@@ -369,6 +394,20 @@ export function CatalogFilters({
         className={`outline-none transition-opacity duration-150 ${isNavigationPending ? "pointer-events-none opacity-50" : ""}`}
       >
         {children}
+        {capped && lastPage && (
+          // The source stops at its last page: the rest is reached by
+          // narrowing the query.
+          <EmptyState
+            title="Aquí termina la lista"
+            description={`Coinciden más de ${plural(totalRecords, "obra", "obras")}. Fíltralas por año, género o inicial para ver el resto.`}
+            action={
+              <Button variant="secondary" onPress={openFilters}>
+                <SlidersHorizontal aria-hidden="true" />
+                Filtros
+              </Button>
+            }
+          />
+        )}
         {footer}
       </div>
       {/* One polite region: announces progress, then the new count once a

@@ -4,19 +4,25 @@ import {
   Alert,
   Button,
   Checkbox,
+  Dropdown,
   Label,
   NumberField,
+  Separator,
   Spinner,
+  Switch,
+  toast,
   Tooltip,
   Typography,
+  type Selection,
 } from "@heroui/react";
-import { Copy, Download, X } from "lucide-react";
+import { Check, ChevronDown, Copy, Download, Square, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
   useRef,
   useState,
   type KeyboardEvent,
+  type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -37,6 +43,8 @@ import {
 } from "../media-card";
 import { Pagination } from "../pagination";
 import { activeStatuses } from "../downloads/download-activity";
+import { destinationOptions } from "../downloads/download-panels";
+import { remoteEpisodeNumbers } from "../downloads/remote-client";
 import { MAX_JOB_EPISODES, useDownloads } from "../downloads/download-provider";
 import { EpisodeDownloadButton } from "../downloads/episode-download-button";
 import { describeApiError } from "../downloads/download-errors";
@@ -47,7 +55,11 @@ import type {
 import {
   animePagePath,
   EPISODE_PAGE_SIZE,
+  episodeAnchor,
+  loadEpisodes,
+  parseEpisodeOrder,
   parseEpisodePage,
+  type EpisodeOrder,
 } from "./anime-detail";
 
 const isBusy = (status: DownloadActivityStatus | undefined) =>
@@ -60,8 +72,10 @@ const dateFormatter = new Intl.DateTimeFormat("es", {
   timeZone: "UTC",
 });
 
-const pageHref = (slug: string, page: number) =>
-  `${animePagePath(slug, page)}#episodios`;
+type OrderState = { value: EpisodeOrder; default: EpisodeOrder };
+
+const pageHref = (slug: string, page: number, order: OrderState) =>
+  `${animePagePath(slug, page, order)}#episodios`;
 
 const reducedMotion = () =>
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -116,6 +130,8 @@ export function EpisodeBrowser({
   firstNumber,
   lastNumber,
   nextEpisodeAt,
+  order: initialOrder = "asc",
+  defaultOrder = "asc",
 }: {
   slug: string;
   title: string;
@@ -128,11 +144,17 @@ export function EpisodeBrowser({
   firstNumber: number;
   lastNumber: number;
   nextEpisodeAt?: string | null;
+  /** The order of `initial`; `defaultOrder` is the work's, kept off the URL. */
+  order?: EpisodeOrder;
+  defaultOrder?: EpisodeOrder;
 }) {
   const { openDownload, getRequestStatus, dockSlot } = useDownloads();
   const copying = useCopying();
   const [episodes, setEpisodes] = useState(initial);
   const [page, setPage] = useState(initialPage);
+  const [order, setOrder] = useState(initialOrder);
+  const orderState = { value: order, default: defaultOrder };
+  const [selectingAll, setSelectingAll] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
   // The selection bar keeps its last count while it slides out.
   const [barCount, setBarCount] = useState(0);
@@ -189,21 +211,32 @@ export function EpisodeBrowser({
   }
 
   const loadPage = useCallback(
-    async (target: number, { userAction }: { userAction: boolean }) => {
+    async (
+      target: number,
+      targetOrder: EpisodeOrder,
+      { userAction }: { userAction: boolean },
+    ) => {
       const sequence = ++requestSeq.current;
       // Back/forward never moves focus.
       focusAfterLoad.current = userAction ? "if-lost" : null;
       setLoadingPage(target);
       setPageError(null);
       try {
-        const response = await apiFetch<EpisodePageResponse>(
-          `/anime/${encodeURIComponent(slug)}/episodes?page=${target}`,
-          {},
-          true,
+        const data = await loadEpisodes(
+          target,
+          targetOrder,
+          totalRecords,
+          (apiPage) =>
+            apiFetch<EpisodePageResponse>(
+              `/anime/${encodeURIComponent(slug)}/episodes?page=${apiPage}`,
+              {},
+              true,
+            ).then((response) => response.data),
         );
         if (sequence !== requestSeq.current) return false;
-        setEpisodes(response.data);
+        setEpisodes(data);
         setPage(target);
+        setOrder(targetOrder);
         // Paged from further down: back to the top of the list (html's
         // scroll-padding clears the header) and keyboard focus follows.
         const toolbar = toolbarRef.current;
@@ -233,19 +266,27 @@ export function EpisodeBrowser({
         if (sequence === requestSeq.current) setLoadingPage(null);
       }
     },
-    [slug],
+    [slug, totalRecords],
   );
 
-  async function changePage(target: number) {
-    if (loading || (target === page && pageError === null)) return;
-    if (await loadPage(target, { userAction: true }))
-      window.history.pushState(null, "", pageHref(slug, target));
+  async function changePage(target: number, targetOrder = order) {
+    if (
+      loading ||
+      (target === page && targetOrder === order && pageError === null)
+    )
+      return;
+    if (await loadPage(target, targetOrder, { userAction: true }))
+      window.history.pushState(
+        null,
+        "",
+        pageHref(slug, target, { value: targetOrder, default: defaultOrder }),
+      );
   }
 
   // pushState and popstate retain Next's original metadata. Follow the page
   // that actually loaded, including when Back restores an older router tree.
   useEffect(() => {
-    const url = `${siteUrl}${animePagePath(slug, page)}`;
+    const url = `${siteUrl}${animePagePath(slug, page, { value: order, default: defaultOrder })}`;
     const canonical = document.querySelector<HTMLLinkElement>(
       'link[rel="canonical"]',
     );
@@ -254,7 +295,18 @@ export function EpisodeBrowser({
     );
     if (canonical) canonical.href = url;
     if (openGraphUrl) openGraphUrl.content = url;
-  }, [slug, page]);
+  }, [slug, page, order, defaultOrder]);
+
+  // A fresh load streams the page in behind its skeleton (loading.tsx), and
+  // the browser may look for #episodios or #episodio-N before it is shown.
+  // Go there now, unless the reader already scrolled.
+  useEffect(() => {
+    const target = window.location.hash
+      ? document.getElementById(window.location.hash.slice(1))
+      : null;
+    if (target && window.scrollY === 0)
+      target.scrollIntoView({ behavior: "instant" });
+  }, []);
 
   useEffect(() => {
     const intent = focusAfterLoad.current;
@@ -266,23 +318,27 @@ export function EpisodeBrowser({
       listRef.current?.focus({ preventScroll: true });
   }, [episodes, loading, pageError]);
 
-  const pageFromUrl = useCallback(
-    () =>
-      parseEpisodePage(
-        new URL(window.location.href).searchParams.get("page"),
-        totalPages,
-      ),
-    [totalPages],
-  );
+  const fromUrl = useCallback(() => {
+    const params = new URL(window.location.href).searchParams;
+    return {
+      page: parseEpisodePage(params.get("page"), totalPages),
+      // One page holds everything: it keeps the work's order.
+      order:
+        totalPages > 1
+          ? parseEpisodeOrder(params.get("orden"), defaultOrder)
+          : defaultOrder,
+    };
+  }, [totalPages, defaultOrder]);
 
   // Back to this page from another one: Next restores the router tree of
   // the original render (page 1) while the URL keeps ?page=N. Follow the URL.
   useEffect(() => {
-    const fromUrl = pageFromUrl();
-    if (fromUrl === initialPage) return;
+    const target = fromUrl();
+    if (target.page === initialPage && target.order === initialOrder) return;
     let active = true;
     queueMicrotask(() => {
-      if (active) void loadPage(fromUrl, { userAction: false });
+      if (active)
+        void loadPage(target.page, target.order, { userAction: false });
     });
     return () => {
       active = false;
@@ -293,11 +349,13 @@ export function EpisodeBrowser({
 
   // Back/forward between episode pages: follow the URL.
   useEffect(() => {
-    const onPopState = () =>
-      void loadPage(pageFromUrl(), { userAction: false });
+    const onPopState = () => {
+      const target = fromUrl();
+      void loadPage(target.page, target.order, { userAction: false });
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [loadPage, pageFromUrl]);
+  }, [loadPage, fromUrl]);
 
   if (totalRecords === 0) {
     return (
@@ -323,17 +381,44 @@ export function EpisodeBrowser({
   }
 
   const visibleNumbers = episodes.map((episode) => episode.number);
-  const selectedOnPage = visibleNumbers.filter((number) =>
-    selected.includes(number),
-  ).length;
-  const allVisible = selectedOnPage === visibleNumbers.length;
+  const allSelected = selected.length === totalRecords;
   const pager = {
     page,
     totalPages,
-    href: (target: number) => pageHref(slug, target),
+    href: (target: number) => pageHref(slug, target, orderState),
     onChange: (target: number) => void changePage(target),
     pendingPage: loadingPage ?? undefined,
   };
+
+  /** Every episode number of the anime, whatever page shows. */
+  async function everyEpisode() {
+    if (totalPages === 1) return visibleNumbers;
+    const gapless =
+      Number.isInteger(firstNumber) &&
+      Number.isInteger(lastNumber) &&
+      totalRecords === lastNumber - firstNumber + 1;
+    if (gapless)
+      return Array.from(
+        { length: totalRecords },
+        (_, index) => firstNumber + index,
+      );
+    return remoteEpisodeNumbers({ slug, title, all: true });
+  }
+
+  async function selectAll(isSelected: boolean) {
+    if (!isSelected) return setSelected([]);
+    setSelectingAll(true);
+    try {
+      setSelected(await everyEpisode());
+    } catch (error) {
+      toast.danger("No se pudieron seleccionar todos", {
+        description: describeApiError(error).detail,
+        timeout: 8_000,
+      });
+    } finally {
+      setSelectingAll(false);
+    }
+  }
 
   function toggleEpisode(number: number) {
     setSelected((current) =>
@@ -371,6 +456,10 @@ export function EpisodeBrowser({
 
       {totalPages > 1 && (
         <RangeDownload
+          // It follows the page shown: its first and last episode.
+          key={`${order}-${page}`}
+          initialFrom={Math.min(...visibleNumbers)}
+          initialTo={Math.max(...visibleNumbers)}
           slug={slug}
           title={title}
           firstNumber={firstNumber}
@@ -386,31 +475,38 @@ export function EpisodeBrowser({
           className="mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-2"
         >
           {selectable && (
+            // Every episode of the anime, on every page: "all but the first
+            // two" is this and two clicks.
             <Checkbox
               className="checkbox-visible"
-              isSelected={allVisible}
-              isIndeterminate={!allVisible && selectedOnPage > 0}
-              onChange={(isSelected) =>
-                setSelected((current) =>
-                  isSelected
-                    ? [...new Set([...current, ...visibleNumbers])]
-                    : current.filter(
-                        (number) => !visibleNumbers.includes(number),
-                      ),
-                )
-              }
+              isSelected={allSelected}
+              isIndeterminate={!allSelected && selected.length > 0}
+              isReadOnly={selectingAll}
+              onChange={(isSelected) => void selectAll(isSelected)}
             >
               <Checkbox.Content>
                 <Checkbox.Control>
                   <Checkbox.Indicator />
                 </Checkbox.Control>
-                <Label>
-                  {totalPages > 1
-                    ? "Seleccionar esta página"
-                    : "Seleccionar todos"}
-                </Label>
+                <Label>Seleccionar todos</Label>
               </Checkbox.Content>
             </Checkbox>
+          )}
+          {totalPages > 1 && (
+            <Switch
+              isSelected={order === "desc"}
+              isDisabled={loading}
+              onChange={(isSelected) =>
+                void changePage(1, isSelected ? "desc" : "asc")
+              }
+            >
+              <Switch.Content>
+                <Switch.Control>
+                  <Switch.Thumb />
+                </Switch.Control>
+                <Label>Más recientes primero</Label>
+              </Switch.Content>
+            </Switch>
           )}
           <Pagination
             {...pager}
@@ -458,12 +554,16 @@ export function EpisodeBrowser({
             ? `Episodios, página ${formatNumber(page)} de ${formatNumber(totalPages)}`
             : "Episodios"
         }
-        className={`grid gap-2 outline-none transition-opacity duration-150 sm:grid-cols-2 sm:gap-x-4 sm:gap-y-6 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 ${loading ? "pointer-events-none opacity-55" : ""}`}
+        // While the selection bar floats over the page, the list ends above
+        // it (globals.css).
+        className={`episode-list grid gap-2 outline-none transition-opacity duration-150 sm:grid-cols-2 sm:gap-x-4 sm:gap-y-6 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 ${loading ? "pointer-events-none opacity-55" : ""}`}
+        data-docked={barCount > 0 || undefined}
       >
-        {episodes.map((episode) => (
+        {episodes.map((episode, index) => (
           <EpisodeItem
             key={episode.id}
             episode={episode}
+            firstRow={index < 5}
             slug={slug}
             title={title}
             fallbackSrc={backdropUrl ?? posterUrl}
@@ -471,7 +571,6 @@ export function EpisodeBrowser({
               selectable
                 ? {
                     checked: selected.includes(episode.number),
-                    active: selected.length > 0,
                     onToggle: () => toggleEpisode(episode.number),
                   }
                 : null
@@ -510,8 +609,8 @@ export function EpisodeBrowser({
   );
 }
 
-// From 640px with a mouse, the card's controls show on hover or focus, and
-// while a download they started is pending.
+// From 640px with a mouse, the card's download button shows on hover or
+// focus, and while a download it started is pending.
 const revealOnHover =
   "transition-opacity sm:pointer-fine:opacity-0 sm:pointer-fine:group-hover:opacity-100 sm:pointer-fine:focus-within:opacity-100 sm:pointer-fine:has-[[data-pending=true]]:opacity-100";
 /** The download button also grows from 90% as it shows. */
@@ -519,8 +618,9 @@ const growOnReveal =
   "sm:pointer-fine:[&>*]:scale-90 sm:pointer-fine:group-hover:[&>*]:scale-100 sm:pointer-fine:focus-within:[&>*]:scale-100";
 
 /**
- * A card from 640px; below, a compact row (thumbnail, number, selection and
- * download) where the selection label fills the row as its touch target.
+ * A card from 640px, selected from its corner; below, a compact row
+ * (thumbnail, number, selection and download) where the selection label
+ * fills the row as its touch target.
  */
 function EpisodeItem({
   episode,
@@ -528,23 +628,30 @@ function EpisodeItem({
   title,
   fallbackSrc,
   selection,
+  firstRow,
 }: {
   episode: Episode;
   slug: string;
   title: string;
   fallbackSrc?: string | null;
-  selection: { checked: boolean; active: boolean; onToggle: () => void } | null;
+  selection: { checked: boolean; onToggle: () => void } | null;
+  /** In the widest grid's first row (5 columns): it can be above the fold
+   *  and, when the poster fails, the page's largest image. */
+  firstRow: boolean;
 }) {
   const number = formatEpisodeNumber(episode.number);
   const name = episode.title?.trim() || `Episodio ${number}`;
   return (
-    <li>
+    <li id={episodeAnchor(episode.number)}>
       <MediaCard className="group h-full max-sm:[&>*]:flex-row max-sm:[&>*]:items-center max-sm:[&>*]:gap-3">
         <MediaCardMedia aspect="still" className="max-sm:w-24 max-sm:shrink-0">
           <AnimeImage
             src={episode.imageUrl}
             fallbackSrc={fallbackSrc}
             alt=""
+            loading={firstRow ? "eager" : "lazy"}
+            // Behind the poster, the page's LCP candidate.
+            fetchPriority={firstRow ? "low" : undefined}
             sizes="(max-width: 639px) 96px, (max-width: 1279px) 33vw, 240px"
           />
           <span className="max-sm:hidden">
@@ -554,31 +661,37 @@ function EpisodeItem({
           </span>
         </MediaCardMedia>
         {selection ? (
-          <Tooltip delay={300}>
-            {/* A checkbox can't trigger a tooltip itself: this wrapper only
-                takes the hover and the focus of the checkbox inside. */}
-            <Tooltip.Trigger
-              role="none"
-              tabIndex={-1}
-              className={`max-sm:flex max-sm:flex-1 max-sm:self-stretch sm:absolute sm:right-2 sm:top-2 ${selection.checked || selection.active ? "" : revealOnHover}`}
+          <>
+            <Checkbox
+              className="checkbox-visible flex-1 items-stretch self-stretch sm:hidden"
+              isSelected={selection.checked}
+              onChange={selection.onToggle}
             >
-              <Checkbox
-                className="checkbox-visible max-sm:flex-1 max-sm:items-stretch"
-                isSelected={selection.checked}
-                onChange={selection.onToggle}
-              >
-                <Checkbox.Content className="max-sm:flex-1">
-                  <Checkbox.Control>
-                    <Checkbox.Indicator />
-                  </Checkbox.Control>
-                  <Label className="sm:sr-only">{name}</Label>
-                </Checkbox.Content>
-              </Checkbox>
-            </Tooltip.Trigger>
-            <Tooltip.Content>
-              {selection.checked ? "Deseleccionar" : "Seleccionar"}
-            </Tooltip.Content>
-          </Tooltip>
+              <Checkbox.Content className="flex-1">
+                <Checkbox.Control>
+                  <Checkbox.Indicator />
+                </Checkbox.Control>
+                <Label>{name}</Label>
+              </Checkbox.Content>
+            </Checkbox>
+            {/* The card's corner, folded over it (globals.css). */}
+            <Checkbox
+              className="episode-select-corner max-sm:hidden"
+              aria-label={`Seleccionar episodio ${number}`}
+              isSelected={selection.checked}
+              onChange={selection.onToggle}
+            >
+              <Checkbox.Content>
+                <span className="episode-select-corner__icon">
+                  {selection.checked ? (
+                    <Check size={15} strokeWidth={2.8} aria-hidden="true" />
+                  ) : (
+                    <Square size={14} aria-hidden="true" />
+                  )}
+                </span>
+              </Checkbox.Content>
+            </Checkbox>
+          </>
         ) : (
           <div className="contents sm:hidden">
             <MediaCardBody title={name} />
@@ -596,6 +709,103 @@ function EpisodeItem({
         </div>
       </MediaCard>
     </li>
+  );
+}
+
+const destinationLabel = (id: string) =>
+  destinationOptions.find((option) => option.id === id)?.label ?? id;
+
+/** Where the selection goes, changed right there. The menu opens above the
+ *  whole bar (`anchorRef`), so it never covers the count. */
+function DestinationMenu({
+  anchorRef,
+}: {
+  anchorRef: RefObject<HTMLDivElement | null>;
+}) {
+  const {
+    destination,
+    deviceProfile,
+    pcTarget,
+    pcs,
+    loadPcs,
+    chooseDestination,
+    openSettings,
+  } = useDownloads();
+  const current =
+    destination === "DESKTOP"
+      ? pcTarget
+        ? `PC · ${pcTarget.name}`
+        : "AnimeHub para PC"
+      : destinationLabel(destination);
+  const selectedKey =
+    destination === "DESKTOP"
+      ? pcTarget
+        ? `pc:${pcTarget.id}`
+        : "DESKTOP"
+      : destination;
+  const options = [
+    ...destinationOptions
+      .filter(
+        (option) => !(deviceProfile === "portable" && option.id === "CNL"),
+      )
+      .map((option) => ({ id: option.id, label: option.label })),
+    ...(pcs.length
+      ? pcs.map((pc) => ({ id: `pc:${pc.id}`, label: `PC · ${pc.name}` }))
+      : destination === "DESKTOP"
+        ? [{ id: "DESKTOP", label: current }]
+        : []),
+  ];
+  const choose = (keys: Selection) => {
+    const key = keys === "all" ? "" : String([...keys][0] ?? "");
+    if (key.startsWith("pc:"))
+      chooseDestination("DESKTOP", key.slice("pc:".length));
+    else if (key && key !== "DESKTOP")
+      chooseDestination(key as "CNL" | "MYJD" | "COPY");
+  };
+  return (
+    <Dropdown onOpenChange={(open) => open && loadPcs()}>
+      <Button
+        size="sm"
+        variant="tertiary"
+        aria-label={`Destino: ${current}`}
+        className="max-w-full"
+      >
+        <span className="min-w-0 truncate">{current}</span>
+        <ChevronDown aria-hidden="true" />
+      </Button>
+      <Dropdown.Popover placement="top start" triggerRef={anchorRef}>
+        <Dropdown.Menu
+          aria-label="Destino"
+          onAction={(key) => key === "settings" && openSettings()}
+        >
+          <Dropdown.Section
+            aria-label="Destinos"
+            selectionMode="single"
+            selectedKeys={new Set([selectedKey])}
+            onSelectionChange={choose}
+          >
+            {options.map((option) => (
+              <Dropdown.Item
+                key={option.id}
+                id={option.id}
+                textValue={option.label}
+              >
+                <Label>{option.label}</Label>
+                <Dropdown.ItemIndicator />
+              </Dropdown.Item>
+            ))}
+          </Dropdown.Section>
+          <Separator />
+          <Dropdown.Item
+            id="settings"
+            textValue="Preferencias de descarga"
+            className="destination-menu__settings"
+          >
+            <Label>Preferencias de descarga</Label>
+          </Dropdown.Item>
+        </Dropdown.Menu>
+      </Dropdown.Popover>
+    </Dropdown>
   );
 }
 
@@ -618,9 +828,10 @@ function SelectionBar({
   onClear: () => void;
 }) {
   const tooLarge = count > MAX_JOB_EPISODES;
-  const { desktopTargetLabel } = useDownloads();
+  const barRef = useRef<HTMLDivElement>(null);
   return (
     <div
+      ref={barRef}
       className="dock-bar pointer-events-auto flex w-full max-w-md items-center gap-2"
       data-exiting={exiting || undefined}
       inert={exiting}
@@ -640,24 +851,19 @@ function SelectionBar({
         </Button>
         <Tooltip.Content>Deseleccionar</Tooltip.Content>
       </Tooltip>
-      <span className="mr-auto min-w-0 text-sm text-muted">
-        {tooLarge ? (
-          `Máximo ${formatNumber(MAX_JOB_EPISODES)} por descarga`
-        ) : (
-          <>
-            <strong className="text-foreground">{formatNumber(count)}</strong>{" "}
-            {count === 1 ? "seleccionado" : "seleccionados"}
-            {desktopTargetLabel && (
-              <span
-                className="block break-words text-xs"
-                title={desktopTargetLabel}
-              >
-                Desktop · {desktopTargetLabel}
-              </span>
-            )}
-          </>
-        )}
-      </span>
+      <div className="mr-auto flex min-w-0 flex-col items-start">
+        <span className="text-sm text-muted">
+          {tooLarge ? (
+            `Máximo ${formatNumber(MAX_JOB_EPISODES)} por descarga`
+          ) : (
+            <>
+              <strong className="text-foreground">{formatNumber(count)}</strong>{" "}
+              {count === 1 ? "seleccionado" : "seleccionados"}
+            </>
+          )}
+        </span>
+        <DestinationMenu anchorRef={barRef} />
+      </div>
       <Button isDisabled={tooLarge} isPending={busy} onPress={onDownload}>
         <BusyIcon busy={busy} copying={copying} />
         {copying ? "Copiar" : "Descargar"}
@@ -678,6 +884,8 @@ function commaDecimal(event: KeyboardEvent<HTMLInputElement>) {
 function RangeDownload({
   slug,
   title,
+  initialFrom,
+  initialTo,
   firstNumber,
   lastNumber,
   totalRecords,
@@ -685,16 +893,17 @@ function RangeDownload({
 }: {
   slug: string;
   title: string;
+  /** Where the range starts and ends until it is edited. */
+  initialFrom: number;
+  initialTo: number;
   firstNumber: number;
   lastNumber: number;
   totalRecords: number;
   copying: boolean;
 }) {
   const { openDownload } = useDownloads();
-  const [from, setFrom] = useState(firstNumber);
-  const [to, setTo] = useState(
-    Math.min(lastNumber, firstNumber + EPISODE_PAGE_SIZE - 1),
-  );
+  const [from, setFrom] = useState(initialFrom);
+  const [to, setTo] = useState(initialTo);
   // Only a gapless whole numbering knows the count up front (the API also
   // sends the specials between the bounds).
   const gapless =

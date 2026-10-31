@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   catalogApiYearBounds,
+  isCatalogCapped,
   normalizeCatalogParams,
   toCatalogApiParams,
   type CatalogScope,
@@ -33,7 +34,10 @@ export async function GET(request: Request) {
       { timeoutMs: 10_000 },
     );
     return NextResponse.json(
-      { totalRecords: response.meta.totalRecords },
+      {
+        totalRecords: response.meta.totalRecords,
+        capped: isCatalogCapped(response.meta),
+      },
       { headers },
     );
   } catch {

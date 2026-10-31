@@ -70,15 +70,16 @@ export function sameSearchParams(a: URLSearchParams, b: URLSearchParams) {
 
 /**
  * Where a request for a page past the end should go: the last page with
- * results (or the first page when there are none). Null when in range.
+ * results (or the first page when there are none). Null when in range, and
+ * past the source's cap (`capped`), where the page says the list ends there.
  */
 export function outOfRangeParams(
   params: URLSearchParams,
-  totalPages: number,
+  { totalPages, capped }: { totalPages: number; capped?: boolean },
 ): URLSearchParams | null {
   const page = Number(params.get("page") ?? 1);
   const lastPage = Math.max(1, totalPages);
-  if (page <= lastPage) return null;
+  if (page <= lastPage || capped) return null;
   const next = new URLSearchParams(params);
   if (lastPage > 1) next.set("page", String(lastPage));
   else next.delete("page");

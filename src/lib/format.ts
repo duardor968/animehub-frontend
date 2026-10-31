@@ -48,5 +48,6 @@ export function formatStatus(status: string) {
   if (status === "AIRING") return "En emisión";
   if (status === "FINISHED") return "Finalizado";
   if (status === "UPCOMING") return "Próximamente";
+  if (status === "PAUSED") return "En pausa";
   return "Estado por confirmar";
 }

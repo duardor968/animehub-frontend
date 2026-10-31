@@ -60,8 +60,10 @@ export async function generateMetadata({
   // the single-genre and single-format pages are indexable. Every page is its
   // own canonical URL, noindex ones too.
   const landing = catalogLanding(params, filters);
+  // Pages past the source's cap only say where the list ends.
   const indexable =
-    landing !== null || (labels.length === 0 && !params.has("order"));
+    page <= response.meta.totalPages &&
+    (landing !== null || (labels.length === 0 && !params.has("order")));
   const canonical = catalogHref("/catalogo", params);
   const title = `${landing?.title ?? (labels.length ? `Catálogo: ${labels.join(", ")}` : "Catálogo")}${page > 1 ? ` (página ${page})` : ""}`;
   const pageDescription = landing?.description ?? description;
@@ -92,8 +94,9 @@ export default async function CatalogPage({
     incoming,
     "catalog",
   );
-  // Past the last page (the source stops at 50): go to the last real page.
-  const lastPageParams = outOfRangeParams(params, response.meta.totalPages);
+  // Past the last page: go to the last real one, unless the source cut the
+  // list there (the page then says where it ends).
+  const lastPageParams = outOfRangeParams(params, response.meta);
   if (lastPageParams) redirect(catalogHref("/catalogo", lastPageParams));
   // Legacy or hand-edited URLs (several genres, reversed years, unknown
   // values…) settle on their canonical form before anything renders.
@@ -110,6 +113,7 @@ export default async function CatalogPage({
         years={response.meta.years}
         totalRecords={response.meta.totalRecords}
         capped={isCatalogCapped(response.meta)}
+        lastPage={response.meta.page >= response.meta.totalPages}
         footer={
           <Pagination
             page={response.meta.page}
@@ -119,23 +123,28 @@ export default async function CatalogPage({
         }
       >
         <h2 className="sr-only">Obras</h2>
-        <PosterGrid
-          anime={response.data}
-          emptyState={
-            countCatalogFilters(params) > 0
-              ? {
-                  title: "Ninguna obra coincide con los filtros",
-                  action: {
-                    href: catalogHref(
-                      "/catalogo",
-                      clearCatalogFilters(params, bounds),
-                    ),
-                    label: "Limpiar filtros",
-                  },
-                }
-              : { title: "No hay obras para mostrar" }
-          }
-        />
+        {/* Past the source's cap: no works, only the end of the list. */}
+        {response.meta.page > response.meta.totalPages ? null : (
+          <PosterGrid
+            anime={response.data}
+            // Filtered by one format, every card would repeat it.
+            showCategory={params.getAll("category").length !== 1}
+            emptyState={
+              countCatalogFilters(params) > 0
+                ? {
+                    title: "Ninguna obra coincide con los filtros",
+                    action: {
+                      href: catalogHref(
+                        "/catalogo",
+                        clearCatalogFilters(params, bounds),
+                      ),
+                      label: "Limpiar filtros",
+                    },
+                  }
+                : { title: "No hay obras para mostrar" }
+            }
+          />
+        )}
       </CatalogFilters>
     </main>
   );

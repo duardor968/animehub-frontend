@@ -39,6 +39,7 @@ vi.mock("@/lib/api/client", async (importOriginal) => {
 
 const downloads = vi.hoisted(() => ({
   openDownload: vi.fn(),
+  chooseDestination: vi.fn(),
   status: undefined as DownloadActivityStatus | undefined,
   destination: "CNL" as "CNL" | "COPY",
 }));
@@ -49,6 +50,12 @@ vi.mock("../downloads/download-provider", () => ({
     openDownload: downloads.openDownload,
     getRequestStatus: () => downloads.status,
     destination: downloads.destination,
+    deviceProfile: "desktop",
+    pcTarget: null,
+    pcs: [],
+    loadPcs: vi.fn(),
+    chooseDestination: downloads.chooseDestination,
+    openSettings: vi.fn(),
     dockSlot: document.body,
   }),
 }));
@@ -182,7 +189,7 @@ describe("EpisodeBrowser", () => {
     // More than one page: the range covers spans the selection can't.
     renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
     expect(screen.getByRole("group", { name: "Rango de episodios" }));
-    expect(screen.getByRole("checkbox", { name: "Seleccionar esta página" }));
+    expect(screen.getByRole("checkbox", { name: "Seleccionar todos" }));
   });
 
   it("never repeats the episode total the page header shows", () => {
@@ -243,16 +250,101 @@ describe("EpisodeBrowser", () => {
     ).toHaveFocus();
   });
 
-  it("sends a whole page selection as one list", () => {
+  it("selects every episode of every page, then all but the first two", async () => {
     renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
     fireEvent.click(
-      screen.getByRole("checkbox", { name: "Seleccionar esta página" }),
+      screen.getByRole("checkbox", { name: "Seleccionar todos" }),
     );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("checkbox", { name: "Seleccionar todos" }),
+      ).toBeChecked(),
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Episodio 1" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Episodio 2" }));
+    expect(
+      screen.getByRole("checkbox", { name: "Seleccionar todos" }),
+    ).toBePartiallyChecked();
     fireEvent.click(screen.getByRole("button", { name: "Descargar" }));
 
     const request = downloads.openDownload.mock.calls[0][0] as DownloadRequest;
-    expect(request.episodeNumbers).toHaveLength(50);
-    expect(request.from).toBeUndefined();
+    expect(request.episodeNumbers).toHaveLength(118);
+    expect(request.episodeNumbers).not.toContain(1);
+    expect(request.episodeNumbers).not.toContain(2);
+    expect(request.all).toBeUndefined();
+    // "Descargar todo" stays the one-step way to get everything.
+    expect(
+      screen.getByRole("button", { name: "Descargar todo" }),
+    ).toBeVisible();
+  });
+
+  it("selects from the card's corner as well as from the row", () => {
+    renderBrowser();
+    const corner = screen.getByRole("checkbox", {
+      name: "Seleccionar episodio 2",
+    });
+    fireEvent.click(corner);
+    expect(corner).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Episodio 2" })).toBeChecked();
+    expect(document.getElementById("episodio-2")).toContainElement(corner);
+  });
+
+  it("starts the range on the page shown and follows it", async () => {
+    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    expect(screen.getByRole("textbox", { name: "Desde" })).toHaveValue("1");
+    expect(screen.getByRole("textbox", { name: "Hasta" })).toHaveValue("50");
+
+    vi.mocked(apiFetch).mockResolvedValueOnce({
+      data: pageOf(51),
+      meta: { page: 2, perPage: 50, totalPages: 3, totalRecords: 120 },
+    });
+    const pager = screen.getByRole("navigation", {
+      name: "Páginas de episodios",
+    });
+    fireEvent.click(within(pager).getByRole("link", { name: "Página 2" }));
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Desde" })).toHaveValue("51"),
+    );
+    expect(screen.getByRole("textbox", { name: "Hasta" })).toHaveValue("100");
+  });
+
+  it("puts the newest first, from the API's pages, and keeps it in the URL", async () => {
+    // 120 episodes: newest-first page 1 is 120…71, from API pages 2 and 3.
+    vi.mocked(apiFetch).mockImplementation(async (path: string) => {
+      const apiPage = Number(new URL(path, siteUrl).searchParams.get("page"));
+      const start = (apiPage - 1) * 50 + 1;
+      return {
+        data: pageOf(start, Math.min(50, 121 - start)),
+        meta: { page: apiPage, perPage: 50, totalPages: 3, totalRecords: 120 },
+      };
+    });
+    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Más recientes primero" }),
+    );
+    await waitFor(() =>
+      expect(window.location.search).toBe("?orden=recientes"),
+    );
+    const cards = screen.getAllByRole("checkbox", { name: /^Episodio / });
+    expect(cards[0]).toHaveAccessibleName("Episodio 120");
+    expect(cards.at(-1)).toHaveAccessibleName("Episodio 71");
+    expect(screen.getByRole("textbox", { name: "Desde" })).toHaveValue("71");
+    expect(screen.getByRole("textbox", { name: "Hasta" })).toHaveValue("120");
+
+    // An airing work starts newest first: then the URL says nothing.
+    cleanup();
+    window.history.replaceState(null, "", "/anime/otome?orden=primeros");
+    renderBrowser({
+      initial: pageOf(1),
+      totalRecords: 120,
+      lastNumber: 120,
+      order: "asc",
+      defaultOrder: "desc",
+    });
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Más recientes primero" }),
+    );
+    await waitFor(() => expect(window.location.search).toBe(""));
   });
 
   it("keeps the range bounds from crossing and refills an emptied one", () => {

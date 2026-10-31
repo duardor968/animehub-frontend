@@ -33,10 +33,13 @@ export function PosterGrid({
   anime,
   variant = "catalog",
   emptyState,
+  showCategory = true,
 }: {
   anime: AnimeSummary[];
   variant?: "catalog" | "home";
   emptyState?: PosterGridEmptyState;
+  /** The format's corner label on each poster. */
+  showCategory?: boolean;
 }) {
   if (anime.length === 0) {
     const content = emptyState ?? {
@@ -107,7 +110,7 @@ export function PosterGrid({
                     ) : null}
                   </MediaCardOverlay>
                 ) : null}
-                <MediaCardLabel>{category}</MediaCardLabel>
+                {showCategory && <MediaCardLabel>{category}</MediaCardLabel>}
               </MediaCardMedia>
               <MediaCardBody title={item.title} meta={year} />
             </Link>
