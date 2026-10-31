@@ -18,12 +18,7 @@ import {
 } from "@heroui/react";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { useId, useState } from "react";
-import { formatEpisodeNumber, formatNumber } from "@/lib/format";
-import {
-  attentionReason,
-  remoteOnline,
-  type RemoteRequest,
-} from "./remote-client";
+import { remoteStatus, requestEpisodes, requestLabel } from "./remote-client";
 import type { RemoteDownloads } from "./use-remote-downloads";
 import { describeRequest } from "./download-copy";
 
@@ -63,17 +58,6 @@ export function RemotePreferences({
             <Alert.Title>Vincula un PC o elige otro destino.</Alert.Title>
           </Alert.Content>
         </Alert>
-      )}
-      {desktopSelected && remote.devices.length === 1 && (
-        <div>
-          <Label>PC de destino</Label>
-          <p className="text-sm">{remote.devices[0].name}</p>
-          <p className="text-sm text-muted">
-            {remoteOnline(remote.devices[0])
-              ? "Conectado"
-              : "Sin conexión · Los envíos quedarán pendientes"}
-          </p>
-        </div>
       )}
       {desktopSelected && remote.devices.length > 1 && (
         <Select
@@ -133,9 +117,13 @@ export function RemotePreferences({
             {remote.devices.map((d) => (
               <li key={d.id} className="flex items-center gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm">{d.name}</p>
+                  <p className="truncate text-sm text-foreground">{d.name}</p>
                   <p className="text-xs text-muted">
-                    {remoteOnline(d) ? "Conectado" : "Sin conexión"}
+                    {d.online
+                      ? "Conectado"
+                      : desktopSelected
+                        ? "Sin conexión · Los envíos quedarán pendientes"
+                        : "Sin conexión"}
                   </p>
                 </div>
                 <Button
@@ -164,15 +152,20 @@ export function RemotePreferences({
             Actualizar dispositivos
           </Button>
         )}
-        {!!remote.requests.length && (
-          <Button
-            variant="ghost"
-            onPress={() => remote.view(remote.requests[0].id)}
-          >
-            Solicitudes recientes
-          </Button>
-        )}
       </section>
+      {!!remote.requests.length && (
+        <div className="flex items-center justify-between gap-3">
+          <Label elementType="h3">Solicitudes recientes</Label>
+          <Button
+            size="sm"
+            variant="secondary"
+            aria-label="Ver las solicitudes recientes"
+            onPress={remote.list}
+          >
+            Ver
+          </Button>
+        </div>
+      )}
       <Drawer.Backdrop
         isOpen={pairing}
         onOpenChange={(open) => {
@@ -289,18 +282,6 @@ export function RemotePreferences({
     </div>
   );
 }
-function remoteStatus(request: RemoteRequest, name: string, offline = false) {
-  if (request.status === "accepted") return `Recibida por ${name} · En cola`;
-  if (request.status === "cancelled") return `Solicitud cancelada · ${name}`;
-  if (request.status === "requires_attention")
-    return attentionReason(request.reason, name);
-  return `Pendiente de entrega · ${name}${offline ? " sin conexión" : ""}`;
-}
-function episodeLabel(request: RemoteRequest) {
-  return request.episodeNumbers.length > 6
-    ? `${formatNumber(request.episodeNumbers.length)} episodios`
-    : `Ep. ${request.episodeNumbers.map(formatEpisodeNumber).join(", ")}`;
-}
 export function RemoteDownloadDrawer({
   remote,
   openPreferences,
@@ -313,8 +294,16 @@ export function RemoteDownloadDrawer({
   const request = remote.requests.find((r) => r.id === remote.selectedRequest);
   const target = remote.devices.find((d) => d.id === request?.deviceId);
   const name = target?.name ?? "PC desvinculado";
-  const otherRequests = remote.requests
-    .filter((r) => r.id !== request?.id)
+  const listing = remote.panel === "requests";
+  const heading =
+    remote.panel === "choose"
+      ? "Elegir PC"
+      : listing
+        ? "Solicitudes recientes"
+        : "Solicitud de descarga";
+  // The list itself, or under one request the others.
+  const listed = remote.requests
+    .filter((r) => listing || r.id !== request?.id)
     .slice(0, 20);
   return (
     <>
@@ -325,21 +314,28 @@ export function RemoteDownloadDrawer({
         }}
       >
         <Drawer.Content placement="right">
-          <Drawer.Dialog
-            aria-label={
-              remote.panel === "choose" ? "Elegir PC" : "Solicitud de descarga"
-            }
-          >
+          <Drawer.Dialog aria-label={heading}>
             <Drawer.CloseTrigger aria-label="Cerrar" isDisabled={remote.busy} />
             <Drawer.Header>
-              <Typography type="h3">
-                {remote.panel === "choose"
-                  ? "Elegir PC"
-                  : "Solicitud de descarga"}
-              </Typography>
+              <Typography type="h3">{heading}</Typography>
             </Drawer.Header>
             <Drawer.Body>
               <div className="flex flex-col gap-6">
+                {remote.panel !== "choose" && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="self-start"
+                    onPress={() => {
+                      remote.setPanel(null);
+                      openPreferences();
+                    }}
+                    isDisabled={remote.busy}
+                  >
+                    <ArrowLeft aria-hidden="true" />
+                    Preferencias
+                  </Button>
+                )}
                 <RemoteError
                   message={
                     remote.errorScope === "request" ? remote.error : null
@@ -354,20 +350,6 @@ export function RemoteDownloadDrawer({
                       isPending={remote.busy}
                     >
                       Volver a intentar
-                    </Button>
-                  )}
-                {remote.errorScope === "request" &&
-                  remote.error &&
-                  !remote.profileRetry &&
-                  !remote.busy && (
-                    <Button
-                      variant="secondary"
-                      onPress={() => {
-                        remote.setPanel(null);
-                        openPreferences();
-                      }}
-                    >
-                      Preferencias de descarga
                     </Button>
                   )}
                 {remote.panel === "choose" ? (
@@ -390,7 +372,7 @@ export function RemoteDownloadDrawer({
                             {d.name}
                           </Radio.Content>
                           <Description>
-                            {remoteOnline(d)
+                            {d.online
                               ? "Conectado"
                               : "Sin conexión · El envío quedará pendiente"}
                           </Description>
@@ -405,19 +387,32 @@ export function RemoteDownloadDrawer({
                       Descargar
                     </Button>
                   </>
-                ) : request ? (
+                ) : listing ? null : request ? (
                   <>
-                    <p className="text-sm">
-                      {request.animeTitle ?? "Título no disponible"} ·{" "}
-                      {episodeLabel(request)}
-                    </p>
-                    <p role="status">
-                      {remoteStatus(
-                        request,
-                        name,
-                        target ? !remoteOnline(target) : false,
-                      )}
-                    </p>
+                    <dl className="flex flex-col gap-4">
+                      <div>
+                        <Label elementType="dt">Anime</Label>
+                        <dd className="text-sm text-foreground">
+                          {request.animeTitle ?? "Título no disponible"}
+                        </dd>
+                      </div>
+                      <div>
+                        <Label elementType="dt">Episodios</Label>
+                        <dd className="text-sm text-foreground">
+                          {requestEpisodes(request)}
+                        </dd>
+                      </div>
+                      <div>
+                        <Label elementType="dt">Estado</Label>
+                        <dd role="status" className="text-sm text-foreground">
+                          {remoteStatus(
+                            request,
+                            name,
+                            target ? !target.online : false,
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
                     {request.status === "pending" && (
                       <Button
                         variant="secondary"
@@ -438,35 +433,41 @@ export function RemoteDownloadDrawer({
                 {remote.canRetry && !remote.busy && (
                   <Button onPress={remote.retry}>Reintentar envío</Button>
                 )}
-                {otherRequests.length > 0 && (
+                {listed.length > 0 && (
                   <section
                     className="flex flex-col gap-4"
                     aria-label="Solicitudes recientes"
                   >
-                    <Typography type="h3">Solicitudes recientes</Typography>
+                    {!listing && (
+                      <Label elementType="h3">Solicitudes recientes</Label>
+                    )}
                     <ul className="flex flex-col gap-4">
-                      {otherRequests.map((r) => {
-                        const targetName =
-                          remote.devices.find((d) => d.id === r.deviceId)
-                            ?.name ?? "PC desvinculado";
+                      {listed.map((r) => {
+                        const device = remote.devices.find(
+                          (d) => d.id === r.deviceId,
+                        );
+                        const targetName = device?.name ?? "PC desvinculado";
                         return (
                           <li
                             key={r.id}
                             className="flex flex-wrap items-center gap-3"
                           >
                             <div className="min-w-0 flex-1">
-                              <p className="break-words text-sm">
-                                {r.animeTitle ?? "Título no disponible"} ·{" "}
-                                {episodeLabel(r)}
+                              <p className="break-words text-sm text-foreground">
+                                {requestLabel(r)}
                               </p>
                               <p className="text-xs text-muted">
-                                {remoteStatus(r, targetName)}
+                                {remoteStatus(
+                                  r,
+                                  targetName,
+                                  device ? !device.online : false,
+                                )}
                               </p>
                             </div>
                             <Button
                               size="sm"
                               variant="ghost"
-                              aria-label={`Ver solicitud para ${targetName}`}
+                              aria-label={`Ver la solicitud de ${requestLabel(r)}`}
                               onPress={() => remote.view(r.id)}
                             >
                               Ver solicitud

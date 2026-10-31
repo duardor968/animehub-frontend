@@ -8,7 +8,8 @@ import {
   remoteClient,
   remoteEpisodeNumbers,
   remoteTarget,
-  remoteOnline,
+  remoteStatus,
+  requestLabel,
   type RemoteDevice,
   type RemoteRequest,
   type RemoteRequestInput,
@@ -58,7 +59,9 @@ export function useRemoteDownloads(settingsOpen: boolean) {
     "settings",
   );
   const [profileRetry, setProfileRetry] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"choose" | "request" | null>(null);
+  const [panel, setPanel] = useState<"choose" | "request" | "requests" | null>(
+    null,
+  );
   const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
   const [download, setDownload] = useState<DownloadRequest | null>(null);
   const operation = useRef(false);
@@ -69,6 +72,12 @@ export function useRemoteDownloads(settingsOpen: boolean) {
     offline: boolean;
   } | null>(null);
   const [canRetry, setCanRetry] = useState(false);
+  // The toast of the last request sent, while the PC has yet to take it.
+  const sent = useRef<{
+    toastId: string;
+    requestId: string;
+    deviceName: string;
+  } | null>(null);
   const mounted = useRef(true);
   const refreshVersion = useRef(0);
 
@@ -145,29 +154,78 @@ export function useRemoteDownloads(settingsOpen: boolean) {
     },
     [],
   );
+  // The toast says what the PC did as soon as the requests read again say so.
+  useEffect(() => {
+    const shown = sent.current;
+    const request = shown && requests.find((r) => r.id === shown.requestId);
+    if (!shown || !request || request.status === "pending") return;
+    sent.current = null;
+    toast.update(shown.toastId, remoteStatus(request, shown.deviceName), {
+      description: requestLabel(request),
+      timeout: 5000,
+    });
+  }, [requests]);
   const pending = requests.some((r) => r.status === "pending");
+  const linked = devices.length > 0;
   useEffect(() => {
     if (!settingsOpen && !pending) return;
     let active = true;
+    // The API announces each change on the live channel; a look every 5 s
+    // stands in only while it is closed.
+    let live = false;
     let timer: ReturnType<typeof setTimeout>;
+    let reconnect: ReturnType<typeof setTimeout>;
+    const channel = new AbortController();
     async function poll() {
+      clearTimeout(timer);
       try {
         await refresh();
-        if (active) timer = setTimeout(poll, 5000);
+        if (active && !live) timer = setTimeout(poll, 5000);
       } catch (cause) {
         report(cause);
         // A dropped connection tries again; an expired link has nothing left to poll.
         const expired =
           cause instanceof ApiResponseError && cause.status === 401;
-        if (active && !expired) timer = setTimeout(poll, 5000);
+        if (active && !expired && !live) timer = setTimeout(poll, 5000);
       }
     }
-    void poll();
+    async function listen(failures: number) {
+      let opened = false;
+      try {
+        await remoteClient.events(
+          {
+            open: () => {
+              opened = live = true;
+              void poll();
+            },
+            change: () => void poll(),
+          },
+          channel.signal,
+        );
+      } catch (cause) {
+        if (cause instanceof ApiResponseError && cause.status === 401) {
+          if (active) report(cause);
+          return;
+        }
+      }
+      live = false;
+      if (!active) return;
+      void poll();
+      const next = opened ? 0 : failures + 1;
+      reconnect = setTimeout(
+        () => void listen(next),
+        Math.min(30000, 1000 * 2 ** next),
+      );
+    }
+    if (linked) void listen(0);
+    else void poll();
     return () => {
       active = false;
+      channel.abort();
       clearTimeout(timer);
+      clearTimeout(reconnect);
     };
-  }, [settingsOpen, pending, refresh, report]);
+  }, [settingsOpen, pending, linked, refresh, report]);
   // The PC the selection bar names, remembered for the next reload.
   const live = loaded ? remoteTarget(devices, preferred) : undefined;
   const liveTarget = live
@@ -225,7 +283,7 @@ export function useRemoteDownloads(settingsOpen: boolean) {
       body,
       key: crypto.randomUUID(),
       deviceName: device.name,
-      offline: !remoteOnline(device),
+      offline: !device.online,
     };
     await submitPinned();
   }
@@ -255,13 +313,16 @@ export function useRemoteDownloads(settingsOpen: boolean) {
     setSelectedRequest(result.id);
     setPanel(null);
     const name = attempt.deviceName;
-    toast("Solicitud enviada", {
-      description:
-        result.status === "accepted"
-          ? `Recibida por ${name} · En cola`
-          : `Pendiente de entrega · ${name}${attempt.offline ? " sin conexión" : ""}`,
+    // Titled with the request's state, as the panel words it; the toast
+    // follows it while the PC has yet to take it.
+    const toastId = toast(remoteStatus(result, name, attempt.offline), {
+      description: requestLabel(result),
       timeout: 5000,
     });
+    sent.current =
+      result.status === "pending"
+        ? { toastId, requestId: result.id, deviceName: name }
+        : null;
   }
   function start(request: DownloadRequest, needDestination: () => void) {
     void run(async () => {
@@ -369,6 +430,10 @@ export function useRemoteDownloads(settingsOpen: boolean) {
       setError(null);
       setSelectedRequest(id);
       setPanel("request");
+    },
+    list: () => {
+      setError(null);
+      setPanel("requests");
     },
   };
 }

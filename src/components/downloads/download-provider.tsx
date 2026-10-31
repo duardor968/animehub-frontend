@@ -1664,24 +1664,33 @@ function DownloadDock({
   // its controls are reachable from landmark navigation.
   const [occupied, setOccupied] = useState(false);
 
-  useEffect(() => {
+  const showsButton = Boolean(pending[0]) || Boolean(remotePending);
+  // Measured as soon as the dock's own buttons change, before paint (the
+  // page's end makes room in the same frame), and again whenever its size
+  // changes, as when a page bar enters the slot.
+  useLayoutEffect(() => {
     const dock = dockRef.current;
-    if (!dock || typeof ResizeObserver === "undefined") return;
+    if (!dock) return;
     const root = document.documentElement;
-    const observer = new ResizeObserver(() => {
+    const measure = () => {
       const height = dock.getBoundingClientRect().height;
       setOccupied(height > 0);
       root.style.setProperty(
         "--download-dock-height",
         height > 0 ? `${Math.ceil(height) + 12}px` : "0px",
       );
-    });
-    observer.observe(dock);
+    };
+    measure();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measure);
+    observer?.observe(dock);
     return () => {
-      observer.disconnect();
+      observer?.disconnect();
       root.style.removeProperty("--download-dock-height");
     };
-  }, []);
+  }, [showsButton]);
 
   const first = pending[0];
   const count = plural(

@@ -5,7 +5,6 @@ import {
   hasRemoteSession,
   remoteClient,
   remoteEpisodeNumbers,
-  remoteOnline,
   remoteTarget,
   type RemoteDevice,
   type RemoteRequestInput,
@@ -21,6 +20,7 @@ const pc: RemoteDevice = {
   profileRevision: 3,
   profiles: [{ id: "p1", label: "Anime", engine: "direct", isDefault: true }],
   lastSeenAt: "2026-10-22T12:00:00Z",
+  online: true,
 };
 beforeEach(() => {
   localStorage.clear();
@@ -105,9 +105,45 @@ describe("remote metadata transport", () => {
     expect(remoteTarget([pc, { ...pc, id: "pc2" }], "ask")).toBeUndefined();
     expect(remoteTarget([pc, { ...pc, id: "pc2" }], "removed")).toBeUndefined();
   });
-  it("treats a stale heartbeat as offline", () => {
-    expect(remoteOnline(pc, Date.parse(pc.lastSeenAt) + 89999)).toBe(true);
-    expect(remoteOnline(pc, Date.parse(pc.lastSeenAt) + 90000)).toBe(false);
+  it("opens the live channel with the capability in a header and reports each announced change", async () => {
+    localStorage.setItem("animehub.remote.session.v1", "private-capability");
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        // A heartbeat, then events split anywhere across chunks.
+        controller.enqueue(encoder.encode("\n:\n\nevent: devices\nid: 1\nda"));
+        controller.enqueue(encoder.encode("ta: {}\n\nevent: requests\n"));
+        controller.enqueue(
+          encoder.encode("data: {}\n\nevent: other\ndata: {}\n\n"),
+        );
+        controller.close();
+      },
+    });
+    const network = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(body, { status: 200 }));
+    const changes: string[] = [];
+    const open = vi.fn();
+    await remoteClient.events(
+      { open, change: (type) => changes.push(type) },
+      new AbortController().signal,
+    );
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(changes).toEqual(["devices", "requests"]);
+    const [url, init] = network.mock.calls[0];
+    expect(String(url)).toMatch(/\/remote\/events$/);
+    expect(new Headers(init?.headers).get("authorization")).toBe(
+      "Bearer private-capability",
+    );
+    network.mockResolvedValue(new Response(null, { status: 401 }));
+    await expect(
+      remoteClient.events(
+        { open, change: vi.fn() },
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(hasRemoteSession()).toBe(false);
+    network.mockRestore();
   });
   it("says which PC set a request aside and why, from its reason or the API's", () => {
     expect(attentionReason("local_profile_unavailable", "PC 1")).toBe(

@@ -1,5 +1,6 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { toast } from "@heroui/react";
 import { ApiResponseError } from "@/lib/api/client";
 import {
   remoteClient,
@@ -8,12 +9,18 @@ import {
   type RemoteRequest,
 } from "./remote-client";
 import { useRemoteDownloads } from "./use-remote-downloads";
-vi.mock("@heroui/react", () => ({ toast: vi.fn() }));
+vi.mock("@heroui/react", () => ({
+  toast: Object.assign(
+    vi.fn(() => "toast-1"),
+    { update: vi.fn() },
+  ),
+}));
 vi.mock("./remote-client", async (original) => ({
   ...(await original<typeof import("./remote-client")>()),
   hasRemoteSession: () => true,
   remoteEpisodeNumbers: vi.fn(),
   remoteClient: {
+    events: vi.fn(),
     devices: vi.fn(),
     requests: vi.fn(),
     link: vi.fn(),
@@ -30,6 +37,7 @@ const pc: RemoteDevice = {
     { id: "profile1", label: "Anime", engine: "direct", isDefault: true },
   ],
   lastSeenAt: new Date().toISOString(),
+  online: true,
 };
 const request: RemoteRequest = {
   id: "r1",
@@ -50,6 +58,8 @@ beforeEach(() => {
   vi.mocked(remoteClient.requests).mockResolvedValue({ requests: [] });
   vi.mocked(remoteEpisodeNumbers).mockResolvedValue([1]);
   vi.mocked(remoteClient.create).mockResolvedValue(request);
+  // The live channel stays connecting unless a test opens it.
+  vi.mocked(remoteClient.events).mockReturnValue(new Promise(() => {}));
 });
 afterEach(cleanup);
 it("does not fetch before a user action", () => {
@@ -137,6 +147,118 @@ it("polls again after a dropped connection and stops once the link expired", asy
   } finally {
     vi.useRealTimers();
   }
+});
+it("reads again on each change the live channel announces, and looks every 5 s only while it is down", async () => {
+  vi.useFakeTimers();
+  try {
+    type On = Parameters<typeof remoteClient.events>[0];
+    const channels: { on: On; drop: () => void }[] = [];
+    vi.mocked(remoteClient.events).mockImplementation(
+      (on) =>
+        new Promise<void>((resolve) => channels.push({ on, drop: resolve })),
+    );
+    const { unmount } = renderHook(() => useRemoteDownloads(true));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(remoteClient.devices).toHaveBeenCalledTimes(1);
+    expect(channels).toHaveLength(1);
+    act(() => channels[0].on.open());
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(remoteClient.devices).toHaveBeenCalledTimes(2);
+    await act(() => vi.advanceTimersByTimeAsync(20000));
+    expect(remoteClient.devices).toHaveBeenCalledTimes(2);
+    act(() => channels[0].on.change("devices"));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(remoteClient.devices).toHaveBeenCalledTimes(3);
+
+    // Dropped: one look at once, then every 5 s until it reconnects (1 s).
+    channels[0].drop();
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(remoteClient.devices).toHaveBeenCalledTimes(4);
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(channels).toHaveLength(2);
+    await act(() => vi.advanceTimersByTimeAsync(4000));
+    expect(remoteClient.devices).toHaveBeenCalledTimes(5);
+    act(() => channels[1].on.open());
+    await act(() => vi.advanceTimersByTimeAsync(20000));
+    expect(remoteClient.devices).toHaveBeenCalledTimes(6);
+    unmount();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("says a send to a PC whose channel is closed waits for it", async () => {
+  vi.mocked(remoteClient.devices).mockResolvedValue({
+    devices: [{ ...pc, online: false }],
+  });
+  const { result } = renderHook(() => useRemoteDownloads(false));
+  act(() =>
+    result.current.start(
+      { slug: "series", title: "Series", episodeNumbers: [1] },
+      vi.fn(),
+    ),
+  );
+  await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
+  expect(toast).toHaveBeenCalledWith(
+    "Pendiente de entrega · PC 1 sin conexión",
+    expect.objectContaining({ description: "Series · Ep. 1" }),
+  );
+});
+it("turns the sent toast to what the PC did once the channel says so", async () => {
+  type On = Parameters<typeof remoteClient.events>[0];
+  const channels: On[] = [];
+  vi.mocked(remoteClient.events).mockImplementation((on) => {
+    channels.push(on);
+    return new Promise(() => {});
+  });
+  const { result } = renderHook(() => useRemoteDownloads(false));
+  act(() =>
+    result.current.start(
+      { slug: "series", title: "Series", episodeNumbers: [1] },
+      vi.fn(),
+    ),
+  );
+  await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(toast).mock.calls[0][0]).toBe("Pendiente de entrega · PC 1");
+  // Pending, so the channel opens; the PC takes it and the API says so.
+  await waitFor(() => expect(channels).toHaveLength(1));
+  vi.mocked(remoteClient.requests).mockResolvedValue({
+    requests: [{ ...request, status: "accepted" }],
+  });
+  act(() => channels[0].change("requests"));
+  await waitFor(() =>
+    expect(toast.update).toHaveBeenCalledWith(
+      "toast-1",
+      "Recibida por PC 1 · En cola",
+      expect.objectContaining({ description: "Series · Ep. 1" }),
+    ),
+  );
+  expect(toast.update).toHaveBeenCalledTimes(1);
+});
+it("titles the sent toast with the state a cancellation leaves", async () => {
+  vi.mocked(remoteClient.cancel).mockResolvedValue({
+    ...request,
+    status: "cancelled",
+  });
+  const { result } = renderHook(() => useRemoteDownloads(false));
+  act(() =>
+    result.current.start(
+      { slug: "series", title: "Series", episodeNumbers: [1] },
+      vi.fn(),
+    ),
+  );
+  await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(result.current.busy).toBe(false));
+  vi.mocked(remoteClient.requests).mockResolvedValue({
+    requests: [{ ...request, status: "cancelled" }],
+  });
+  act(() => result.current.cancel("r1"));
+  await waitFor(() =>
+    expect(toast.update).toHaveBeenCalledWith(
+      "toast-1",
+      "Solicitud cancelada · PC 1",
+      expect.objectContaining({ description: "Series · Ep. 1" }),
+    ),
+  );
 });
 it("sends directly to the sole PC and preserves ask for a later second PC", async () => {
   localStorage.setItem("animehub.remote.preferred.v1", "ask");

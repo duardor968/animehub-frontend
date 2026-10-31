@@ -68,6 +68,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/remote/events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["RemoteController_sessionEvents"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/remote/devices/me/profiles": {
     parameters: {
       query?: never;
@@ -94,6 +110,22 @@ export interface paths {
     get: operations["RemoteController_requests"];
     put?: never;
     post: operations["RemoteController_create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/remote/devices/me/events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["RemoteController_deviceEvents"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -508,6 +540,8 @@ export interface components {
       profiles: components["schemas"]["DestinationProfileDto"][];
       /** Format: date-time */
       lastSeenAt: string;
+      /** @description Its live channel is open; for a PC without one, seen in the last 90 s */
+      online: boolean;
     };
     RemoteDevicesDto: {
       devices: components["schemas"]["RemoteDeviceDto"][];
@@ -1027,6 +1061,26 @@ export interface operations {
       };
     };
   };
+  RemoteController_sessionEvents: {
+    parameters: {
+      query?: never;
+      header: {
+        authorization: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Server-sent events for this browser: `devices` (linked PCs changed) and `requests` (a request changed). Each says what to read again; read both when the stream opens. A comment line every 25 s keeps it open. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   RemoteController_profiles: {
     parameters: {
       query?: never;
@@ -1098,6 +1152,26 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["RemoteRequestDto"];
         };
+      };
+    };
+  };
+  RemoteController_deviceEvents: {
+    parameters: {
+      query?: never;
+      header: {
+        authorization: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Server-sent events for this PC: `inbox` (pending requests changed) and `links` (linked browsers changed). Each says what to read again; read both when the stream opens. While open, the PC counts as seen; a comment line every 25 s keeps it open. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

@@ -1,9 +1,11 @@
 import type { components } from "@/lib/api/generated";
 import {
+  apiBase,
   apiFetch,
   ApiResponseError,
   type EpisodePageResponse,
 } from "@/lib/api/client";
+import { formatEpisodeNumber, formatNumber } from "@/lib/format";
 import type { DownloadRequest } from "./download-types";
 
 export type RemoteDevice = components["schemas"]["RemoteDeviceDto"];
@@ -73,7 +75,68 @@ async function remote<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw error;
   }
 }
+/** What the API says changed: the linked PCs or the requests sent. */
+export type RemoteChange = "devices" | "requests";
+// The API sends a heartbeat every 25 s; a silent minute is a dead connection.
+const channelIdle = 60000;
+/** The live channel of this browser's session: `open` once connected, then
+ *  `change` for each event, until the API closes it (resolves), the
+ *  connection fails or `signal` aborts (rejects). */
+async function events(
+  on: { open: () => void; change: (type: RemoteChange) => void },
+  signal: AbortSignal,
+): Promise<void> {
+  const capability = token();
+  if (!capability)
+    throw new ApiResponseError(401, "Este navegador no está vinculado.");
+  const connection = new AbortController();
+  const abort = () => connection.abort();
+  signal.addEventListener("abort", abort, { once: true });
+  let idle: ReturnType<typeof setTimeout> | undefined;
+  const alive = () => {
+    clearTimeout(idle);
+    idle = setTimeout(abort, channelIdle);
+  };
+  try {
+    alive();
+    const response = await fetch(`${apiBase(true)}/remote/events`, {
+      headers: {
+        Authorization: `Bearer ${capability}`,
+        Accept: "text/event-stream",
+      },
+      cache: "no-store",
+      signal: connection.signal,
+    });
+    if (!response.ok || !response.body) {
+      if (response.status === 401) localStorage.removeItem(sessionKey);
+      throw new ApiResponseError(
+        response.status,
+        `API error ${response.status}`,
+      );
+    }
+    on.open();
+    const reader = response.body
+      .pipeThrough(new TextDecoderStream())
+      .getReader();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      alive();
+      const blocks = (buffer + value).split(/\r?\n\r?\n/);
+      buffer = blocks.pop() ?? "";
+      for (const block of blocks) {
+        const type = /^event: ?(.+)$/m.exec(block)?.[1].trim();
+        if (type === "devices" || type === "requests") on.change(type);
+      }
+    }
+  } finally {
+    clearTimeout(idle);
+    signal.removeEventListener("abort", abort);
+  }
+}
 export const remoteClient = {
+  events,
   devices: () => remote<{ devices: RemoteDevice[] }>("/devices"),
   requests: () => remote<{ requests: RemoteRequest[] }>("/requests"),
   link: (code: string) =>
@@ -97,9 +160,6 @@ export const remoteClient = {
       method: "POST",
     }),
 };
-export function remoteOnline(device: RemoteDevice, now = Date.now()) {
-  return now - Date.parse(device.lastSeenAt) < 90000;
-}
 export function remoteTarget(devices: RemoteDevice[], preferred: string) {
   return devices.length === 1
     ? devices[0]
@@ -120,6 +180,28 @@ export function attentionReason(reason: string | null, name: string) {
   return why
     ? `No se descargará · ${why(name)}; vuelve a enviarla`
     : `Requiere atención en ${name}`;
+}
+/** "Ep. 1, 2", or "12 episodios" past six. */
+export function requestEpisodes(request: RemoteRequest) {
+  return request.episodeNumbers.length > 6
+    ? `${formatNumber(request.episodeNumbers.length)} episodios`
+    : `Ep. ${request.episodeNumbers.map(formatEpisodeNumber).join(", ")}`;
+}
+/** What a request asks for: "Series · Ep. 1, 2". */
+export function requestLabel(request: RemoteRequest) {
+  return `${request.animeTitle ?? "Título no disponible"} · ${requestEpisodes(request)}`;
+}
+/** Where a request stands, for the PC named. */
+export function remoteStatus(
+  request: RemoteRequest,
+  name: string,
+  offline = false,
+) {
+  if (request.status === "accepted") return `Recibida por ${name} · En cola`;
+  if (request.status === "cancelled") return `Solicitud cancelada · ${name}`;
+  if (request.status === "requires_attention")
+    return attentionReason(request.reason, name);
+  return `Pendiente de entrega · ${name}${offline ? " sin conexión" : ""}`;
 }
 export async function remoteEpisodeNumbers(
   request: DownloadRequest,
