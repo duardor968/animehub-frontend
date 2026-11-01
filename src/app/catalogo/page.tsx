@@ -13,6 +13,7 @@ import {
 } from "@/components/catalog/catalog-filter-params";
 import {
   outOfRangeParams,
+  pastCappedEnd,
   resolveCatalog,
   sameSearchParams,
   toSearchParams,
@@ -124,7 +125,7 @@ export default async function CatalogPage({
       >
         <h2 className="sr-only">Obras</h2>
         {/* Past the source's cap: no works, only the end of the list. */}
-        {response.meta.page > response.meta.totalPages ? null : (
+        {pastCappedEnd(response.meta) ? null : (
           <PosterGrid
             anime={response.data}
             // Filtered by one format, every card would repeat it.

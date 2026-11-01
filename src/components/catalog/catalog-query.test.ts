@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { CatalogResponse } from "@/lib/api/client";
 import {
   outOfRangeParams,
+  pastCappedEnd,
   resolveCatalog,
   sameSearchParams,
   toSearchParams,
@@ -78,5 +79,22 @@ describe("catalog page query helpers", () => {
       "catalog",
     );
     expect(params.toString()).toBe("genre=accion");
+  });
+});
+
+describe("pastCappedEnd", () => {
+  it("is past the end only of a list the source cut short", () => {
+    expect(pastCappedEnd({ page: 51, totalPages: 50, capped: true })).toBe(
+      true,
+    );
+    expect(pastCappedEnd({ page: 50, totalPages: 50, capped: true })).toBe(
+      false,
+    );
+  });
+
+  it("leaves an empty result set to its empty state", () => {
+    expect(pastCappedEnd({ page: 1, totalPages: 0, capped: false })).toBe(
+      false,
+    );
   });
 });

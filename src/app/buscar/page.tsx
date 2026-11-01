@@ -13,6 +13,7 @@ import {
 import {
   loadCatalog,
   outOfRangeParams,
+  pastCappedEnd,
   resolveCatalog,
   sameSearchParams,
   toSearchParams,
@@ -121,7 +122,7 @@ async function SearchResults({ incoming }: { incoming: URLSearchParams }) {
       >
         <h2 className="sr-only">Resultados</h2>
         {/* Past the source's cap: no works, only the end of the list. */}
-        {response.meta.page > response.meta.totalPages ? null : (
+        {pastCappedEnd(response.meta) ? null : (
           <PosterGrid
             anime={response.data}
             // Filtered by one format, every card would repeat it.

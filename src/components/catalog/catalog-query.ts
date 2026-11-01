@@ -59,6 +59,19 @@ export async function resolveCatalog(
   return { params, response, bounds, page };
 }
 
+/**
+ * The page asked for lies past the end of a list the source cut short
+ * (`capped`): it shows where the list ends instead of works. An empty result
+ * set is not one: it shows its empty state.
+ */
+export function pastCappedEnd(meta: {
+  page: number;
+  totalPages: number;
+  capped?: boolean;
+}) {
+  return meta.capped === true && meta.page > meta.totalPages;
+}
+
 /** Same keys and values, ignoring the order of the keys. */
 export function sameSearchParams(a: URLSearchParams, b: URLSearchParams) {
   const left = new URLSearchParams(a);

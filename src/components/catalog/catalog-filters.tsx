@@ -248,10 +248,7 @@ export function CatalogFilters({
             <SlidersHorizontal aria-hidden="true" />
             Filtros
           </Button>
-          {/* With no results the empty state says so. */}
-          {totalRecords > 0 && (
-            <p className="text-sm tabular-nums text-muted">{countText}</p>
-          )}
+          <p className="text-sm tabular-nums text-muted">{countText}</p>
           {totalRecords > 0 && (
             <Select
               aria-label="Ordenar"

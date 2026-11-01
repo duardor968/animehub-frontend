@@ -19,7 +19,7 @@ const supportedStatus = new Set<string>(
   catalogStatusOptions.map(([value]) => value),
 );
 
-/** Sort keys the source supports; without one, each scope uses its default. */
+/** Sort keys the catalog API supports; without one, each scope uses its default. */
 export const catalogSortOptions = [
   ["score", "Mejor puntuación"],
   ["popular", "Más populares"],
@@ -33,7 +33,10 @@ const supportedOrder = new Set<string>(
 /** Highest page the catalog API accepts; anything above is clamped to it. */
 const maxCatalogPage = 500;
 
-/** Initials the source can filter by: A–Z plus "#" for digits and symbols. */
+/**
+ * Initials the catalog filters by, leading signs and accents aside: A–Z plus "#"
+ * for titles that start with a digit or have no letter.
+ */
 export const catalogLetters = [
   ..."abcdefghijklmnopqrstuvwxyz".split(""),
   "#",
@@ -245,9 +248,8 @@ export function toCatalogApiParams(
   apiParams.delete("q");
   apiParams.delete("page");
   if (scope === "search" && q) apiParams.set("search", q);
-  // The source's implicit order isn't "latest added" (it lags and sorts by
-  // release), so the catalog asks for the order its sort menu promises.
-  // Search ranks like its suggestions (the API asks for "popular").
+  // Each scope asks for its default explicitly: the catalog for the order its
+  // sort menu promises, search for the one of its suggestions ("popular").
   if (!apiParams.has("order"))
     apiParams.set("order", scope === "catalog" ? "latest_added" : "popular");
   apiParams.set("page", String(page));

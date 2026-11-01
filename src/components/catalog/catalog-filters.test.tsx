@@ -287,10 +287,11 @@ describe("CatalogFilters interactions", () => {
     );
   });
 
-  it("hides sorting and the chip row's clear action without results", () => {
+  it("counts zero works and hides sorting and the chip row's clear action without results", () => {
     render(filters({ totalRecords: 0 }));
 
     expect(screen.getByRole("button", { name: "Filtros" })).toBeTruthy();
+    expect(screen.getByText("0 obras")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Ordenar/ })).toBeNull();
     // The empty state below the chips offers "Limpiar filtros" instead.
     expect(
