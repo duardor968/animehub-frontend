@@ -80,7 +80,7 @@ import {
 import type { MyJdDevice } from "./download-panels";
 import { useRemoteDownloads } from "./use-remote-downloads";
 import { hasRemoteSession } from "./remote-client";
-import { RemoteDownloadDrawer } from "./remote-panels";
+import { RemoteDownloadDrawer, RemotePendingButton } from "./remote-panels";
 import type {
   AudioPreference,
   DownloadActivityStatus,
@@ -517,6 +517,8 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   });
   const { open: openDrawer, close: closeDrawer } = drawer;
   const remote = useRemoteDownloads(drawer.isOpen && panel.mode === "settings");
+  // The newest request still waiting for its PC.
+  const remotePending = remote.requests.find((r) => r.status === "pending");
 
   function showDrawer(next: DrawerPanel) {
     setPanel(next);
@@ -1509,19 +1511,9 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         portable={portable}
         onReopen={reopenDismissed}
         remotePending={
-          remote.requests.some((r) => r.status === "pending") ? (
-            <Button
-              variant="secondary"
-              className="pointer-events-auto"
-              onPress={() =>
-                remote.view(
-                  remote.requests.find((r) => r.status === "pending")!.id,
-                )
-              }
-            >
-              PC · Pendiente de entrega
-            </Button>
-          ) : undefined
+          remotePending && (
+            <RemotePendingButton remote={remote} request={remotePending} />
+          )
         }
       />
       {confirmation && (

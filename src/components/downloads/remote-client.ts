@@ -191,17 +191,20 @@ export function requestEpisodes(request: RemoteRequest) {
 export function requestLabel(request: RemoteRequest) {
   return `${request.animeTitle ?? "Título no disponible"} · ${requestEpisodes(request)}`;
 }
-/** Where a request stands, for the PC named. */
+/** Where a request stands, for the PC named. `sending`: just sent to that PC
+ *  while connected, and not yet past the wait for it to take it. */
 export function remoteStatus(
   request: RemoteRequest,
   name: string,
   offline = false,
+  sending = false,
 ) {
   if (request.status === "accepted") return `Recibida por ${name} · En cola`;
   if (request.status === "cancelled") return `Solicitud cancelada · ${name}`;
   if (request.status === "requires_attention")
     return attentionReason(request.reason, name);
-  return `Pendiente de entrega · ${name}${offline ? " sin conexión" : ""}`;
+  if (offline) return `Pendiente de entrega · ${name} sin conexión`;
+  return sending ? `Enviando a ${name}…` : `Pendiente de entrega · ${name}`;
 }
 export async function remoteEpisodeNumbers(
   request: DownloadRequest,

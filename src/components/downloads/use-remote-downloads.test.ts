@@ -218,7 +218,10 @@ it("turns the sent toast to what the PC did once the channel says so", async () 
     ),
   );
   await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
-  expect(vi.mocked(toast).mock.calls[0][0]).toBe("Pendiente de entrega · PC 1");
+  expect(toast).toHaveBeenCalledWith(
+    "Enviando a PC 1…",
+    expect.objectContaining({ isLoading: true, timeout: 0 }),
+  );
   // Pending, so the channel opens; the PC takes it and the API says so.
   await waitFor(() => expect(channels).toHaveLength(1));
   vi.mocked(remoteClient.requests).mockResolvedValue({
@@ -229,10 +232,133 @@ it("turns the sent toast to what the PC did once the channel says so", async () 
     expect(toast.update).toHaveBeenCalledWith(
       "toast-1",
       "Recibida por PC 1 · En cola",
-      expect.objectContaining({ description: "Series · Ep. 1" }),
+      expect.objectContaining({
+        description: "Series · Ep. 1",
+        isLoading: false,
+        timeout: 5000,
+      }),
     ),
   );
   expect(toast.update).toHaveBeenCalledTimes(1);
+});
+it("reads again after a reload only the requests it left waiting", async () => {
+  vi.mocked(remoteClient.requests).mockResolvedValue({ requests: [request] });
+  localStorage.setItem("animehub.remote.pending.v1", "1");
+  const { result, unmount } = renderHook(() => useRemoteDownloads(false));
+  await waitFor(() => expect(result.current.requests).toEqual([request]));
+  expect(result.current.brief(request)).toEqual({
+    state: "Pendiente",
+    name: "PC 1",
+  });
+  expect(localStorage.getItem("animehub.remote.pending.v1")).toBe("1");
+  unmount();
+
+  // Taken meanwhile: the mark goes, and the next reload reads nothing.
+  vi.mocked(remoteClient.requests).mockResolvedValue({
+    requests: [{ ...request, status: "accepted" }],
+  });
+  renderHook(() => useRemoteDownloads(false));
+  await waitFor(() =>
+    expect(localStorage.getItem("animehub.remote.pending.v1")).toBeNull(),
+  );
+  vi.clearAllMocks();
+  renderHook(() => useRemoteDownloads(false));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(remoteClient.requests).not.toHaveBeenCalled();
+});
+async function sendWithFakeTimers() {
+  type On = Parameters<typeof remoteClient.events>[0];
+  const channels: On[] = [];
+  vi.mocked(remoteClient.events).mockImplementation((on) => {
+    channels.push(on);
+    return new Promise(() => {});
+  });
+  vi.mocked(remoteClient.requests).mockResolvedValue({ requests: [request] });
+  const hook = renderHook(() => useRemoteDownloads(false));
+  act(() =>
+    hook.result.current.start(
+      { slug: "series", title: "Series", episodeNumbers: [1] },
+      vi.fn(),
+    ),
+  );
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  expect(hook.result.current.status(request)).toBe("Enviando a PC 1…");
+  expect(hook.result.current.brief(request).state).toBe("Enviando…");
+  expect(channels).toHaveLength(1);
+  return { ...hook, channel: channels[0] };
+}
+it("reads as waiting for the PC once 15 s pass without it taking the request", async () => {
+  vi.useFakeTimers();
+  try {
+    const { result, unmount } = await sendWithFakeTimers();
+    await act(() => vi.advanceTimersByTimeAsync(14000));
+    expect(result.current.status(request)).toBe("Enviando a PC 1…");
+    expect(toast.update).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(result.current.status(request)).toBe("Pendiente de entrega · PC 1");
+    expect(toast.update).toHaveBeenCalledWith(
+      "toast-1",
+      "Pendiente de entrega · PC 1",
+      expect.objectContaining({ isLoading: false, timeout: 5000 }),
+    );
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("times each request sent on its own", async () => {
+  vi.useFakeTimers();
+  try {
+    const { result, unmount } = await sendWithFakeTimers();
+    await act(() => vi.advanceTimersByTimeAsync(10000));
+    const second = { ...request, id: "r2", episodeNumbers: [2] };
+    vi.mocked(remoteClient.create).mockResolvedValue(second);
+    vi.mocked(remoteClient.requests).mockResolvedValue({
+      requests: [second, request],
+    });
+    act(() =>
+      result.current.start(
+        { slug: "series", title: "Series", episodeNumbers: [2] },
+        vi.fn(),
+      ),
+    );
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(result.current.status(request)).toBe("Pendiente de entrega · PC 1");
+    expect(result.current.status(second)).toBe("Enviando a PC 1…");
+    await act(() => vi.advanceTimersByTimeAsync(10000));
+    expect(result.current.status(second)).toBe("Pendiente de entrega · PC 1");
+    unmount();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("says the PC is offline as soon as it disconnects while sending, and stays pending when it returns", async () => {
+  vi.useFakeTimers();
+  try {
+    const { result, channel, unmount } = await sendWithFakeTimers();
+    vi.mocked(remoteClient.devices).mockResolvedValue({
+      devices: [{ ...pc, online: false }],
+    });
+    act(() => channel.change("devices"));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(result.current.status(request)).toBe(
+      "Pendiente de entrega · PC 1 sin conexión",
+    );
+    expect(toast.update).toHaveBeenCalledWith(
+      "toast-1",
+      "Pendiente de entrega · PC 1 sin conexión",
+      expect.objectContaining({ isLoading: false, timeout: 5000 }),
+    );
+    // Back within the 15 s: still waiting, not "Enviando" again.
+    vi.mocked(remoteClient.devices).mockResolvedValue({ devices: [pc] });
+    act(() => channel.change("devices"));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(result.current.status(request)).toBe("Pendiente de entrega · PC 1");
+    unmount();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 it("titles the sent toast with the state a cancellation leaves", async () => {
   vi.mocked(remoteClient.cancel).mockResolvedValue({

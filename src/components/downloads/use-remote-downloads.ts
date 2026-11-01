@@ -17,9 +17,14 @@ import {
 import type { DownloadRequest } from "./download-types";
 
 const preferenceKey = "animehub.remote.preferred.v1";
+/** How long a request sent to a connected PC reads "Enviando" before it reads
+ *  as waiting for that PC. */
+export const sendingMs = 15000;
 /** The PC the selection bar names ({ id, name }), so a reload shows it
  *  without asking the API. */
 const targetKey = "animehub.remote.target.v2";
+/** Set while a request waits for its PC, so a reload reads them again. */
+const pendingKey = "animehub.remote.pending.v1";
 /** v1 also held labels of the UI ("Elegir PC") as if they were a PC. */
 const legacyTargetKey = "animehub.remote.target.v1";
 
@@ -76,8 +81,18 @@ export function useRemoteDownloads(settingsOpen: boolean) {
   const sent = useRef<{
     toastId: string;
     requestId: string;
-    deviceName: string;
+    title: string;
+    open: boolean;
   } | null>(null);
+  // Requests sent to a connected PC, each "Enviando" for its own sendingMs
+  // unless its PC disconnects first; it never reads "Enviando" again.
+  const [sending, setSending] = useState<ReadonlySet<string>>(new Set());
+  const sendingTimers = useRef(
+    new Map<
+      string,
+      { deviceId: string; timer: ReturnType<typeof setTimeout> }
+    >(),
+  );
   const mounted = useRef(true);
   const refreshVersion = useRef(0);
 
@@ -102,11 +117,33 @@ export function useRemoteDownloads(settingsOpen: boolean) {
         setStoredTarget(parseTarget(event.newValue));
     };
     window.addEventListener("storage", onStorage);
+    const timers = sendingTimers.current;
     return () => {
       mounted.current = false;
       window.removeEventListener("storage", onStorage);
+      for (const { timer } of timers.values()) clearTimeout(timer);
+      timers.clear();
     };
   }, []);
+  const stopSending = useCallback((ids: string[]) => {
+    if (!ids.length) return;
+    for (const id of ids) {
+      clearTimeout(sendingTimers.current.get(id)?.timer);
+      sendingTimers.current.delete(id);
+    }
+    setSending((old) => {
+      const next = new Set(old);
+      for (const id of ids) next.delete(id);
+      return next;
+    });
+  }, []);
+  function startSending(id: string, deviceId: string) {
+    const timer = setTimeout(() => {
+      if (mounted.current) stopSending([id]);
+    }, sendingMs);
+    sendingTimers.current.set(id, { deviceId, timer });
+    setSending((old) => new Set(old).add(id));
+  }
   function choosePreferred(id: string) {
     setPreferred(id);
     try {
@@ -131,9 +168,21 @@ export function useRemoteDownloads(settingsOpen: boolean) {
       setDevices(linked.devices);
       setRequests(recent.requests);
       setLoaded(true);
+      // Taken, or its PC gone offline: done sending.
+      stopSending(
+        [...sendingTimers.current]
+          .filter(
+            ([id, { deviceId }]) =>
+              !linked.devices.some((d) => d.id === deviceId && d.online) ||
+              recent.requests.some(
+                (r) => r.id === id && r.status !== "pending",
+              ),
+          )
+          .map(([id]) => id),
+      );
     }
     return linked.devices;
-  }, []);
+  }, [stopSending]);
   const report = useCallback(
     (cause: unknown, scope: "settings" | "request" = "settings") => {
       if (!mounted.current) return;
@@ -154,19 +203,81 @@ export function useRemoteDownloads(settingsOpen: boolean) {
     },
     [],
   );
-  // The toast says what the PC did as soon as the requests read again say so.
+  /** Where a request stands, worded the same in the toast, the dock and the
+   *  panels. */
+  const standing = useCallback(
+    (request: RemoteRequest) => {
+      const device = devices.find((d) => d.id === request.deviceId);
+      return {
+        name: device?.name ?? "PC desvinculado",
+        offline: device ? !device.online : false,
+        sending: sending.has(request.id),
+      };
+    },
+    [devices, sending],
+  );
+  const status = useCallback(
+    (request: RemoteRequest) => {
+      const { name, offline, sending } = standing(request);
+      return remoteStatus(request, name, offline, sending);
+    },
+    [standing],
+  );
+  /** A pending request's state in a word or two, apart from its PC's name,
+   *  for where the name may not fit. */
+  const brief = useCallback(
+    (request: RemoteRequest) => {
+      const { name, offline, sending } = standing(request);
+      return {
+        state: offline ? "Sin conexión" : sending ? "Enviando…" : "Pendiente",
+        name,
+      };
+    },
+    [standing],
+  );
+  // The toast follows the request until the PC takes it.
   useEffect(() => {
     const shown = sent.current;
     const request = shown && requests.find((r) => r.id === shown.requestId);
-    if (!shown || !request || request.status === "pending") return;
-    sent.current = null;
-    toast.update(shown.toastId, remoteStatus(request, shown.deviceName), {
+    if (!shown || !request) return;
+    const title = status(request);
+    if (request.status !== "pending") sent.current = null;
+    // Once closed, it shows again only for what the PC did.
+    if (title === shown.title || (!shown.open && request.status === "pending"))
+      return;
+    shown.title = title;
+    const waiting = request.status === "pending" && sending.has(request.id);
+    toast.update(shown.toastId, title, {
       description: requestLabel(request),
-      timeout: 5000,
+      isLoading: waiting,
+      timeout: waiting ? 0 : 5000,
     });
-  }, [requests]);
+  }, [requests, sending, status]);
   const pending = requests.some((r) => r.status === "pending");
   const linked = devices.length > 0;
+  // A request left waiting shows again after a reload; with none, nothing is
+  // read before the user acts.
+  useEffect(() => {
+    let left = false;
+    try {
+      left = hasRemoteSession() && localStorage.getItem(pendingKey) === "1";
+    } catch {
+      /* Browser privacy mode. */
+    }
+    if (left)
+      queueMicrotask(
+        () => void refresh().catch((cause: unknown) => report(cause)),
+      );
+  }, [refresh, report]);
+  useEffect(() => {
+    if (!loaded) return;
+    try {
+      if (pending) localStorage.setItem(pendingKey, "1");
+      else localStorage.removeItem(pendingKey);
+    } catch {
+      /* Read again on the next action. */
+    }
+  }, [loaded, pending]);
   useEffect(() => {
     if (!settingsOpen && !pending) return;
     let active = true;
@@ -312,16 +423,27 @@ export function useRemoteDownloads(settingsOpen: boolean) {
     setRequests((old) => [result, ...old.filter((r) => r.id !== result.id)]);
     setSelectedRequest(result.id);
     setPanel(null);
-    const name = attempt.deviceName;
+    const waiting = result.status === "pending" && !attempt.offline;
+    if (waiting) startSending(result.id, attempt.body.deviceId);
     // Titled with the request's state, as the panel words it; the toast
     // follows it while the PC has yet to take it.
-    const toastId = toast(remoteStatus(result, name, attempt.offline), {
+    const title = remoteStatus(
+      result,
+      attempt.deviceName,
+      attempt.offline,
+      waiting,
+    );
+    const toastId = toast(title, {
       description: requestLabel(result),
-      timeout: 5000,
+      isLoading: waiting,
+      timeout: waiting ? 0 : 5000,
+      onClose: () => {
+        if (sent.current?.toastId === toastId) sent.current.open = false;
+      },
     });
     sent.current =
       result.status === "pending"
-        ? { toastId, requestId: result.id, deviceName: name }
+        ? { toastId, requestId: result.id, title, open: true }
         : null;
   }
   function start(request: DownloadRequest, needDestination: () => void) {
@@ -354,6 +476,8 @@ export function useRemoteDownloads(settingsOpen: boolean) {
     devices,
     loaded,
     requests,
+    status,
+    brief,
     preferred,
     /** The PC a download goes to, if one is set. */
     target: loaded

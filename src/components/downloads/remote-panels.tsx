@@ -18,7 +18,11 @@ import {
 } from "@heroui/react";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { useId, useState } from "react";
-import { remoteStatus, requestEpisodes, requestLabel } from "./remote-client";
+import {
+  requestEpisodes,
+  requestLabel,
+  type RemoteRequest,
+} from "./remote-client";
 import type { RemoteDownloads } from "./use-remote-downloads";
 import { describeRequest } from "./download-copy";
 
@@ -282,6 +286,32 @@ export function RemotePreferences({
     </div>
   );
 }
+/** The dock's way back to a request still waiting for its PC. Its state is
+ *  never what gets cut: a long PC name gives way first. */
+export function RemotePendingButton({
+  remote,
+  request,
+}: {
+  remote: RemoteDownloads;
+  request: RemoteRequest;
+}) {
+  const { state, name } = remote.brief(request);
+  return (
+    <Button
+      variant="secondary"
+      className="pointer-events-auto max-w-full"
+      aria-label={remote.status(request)}
+      onPress={() => remote.view(request.id)}
+    >
+      {/* One run of text: the button's gap would widen the space after "·". */}
+      <span className="flex min-w-0">
+        <span className="shrink-0 whitespace-pre">{state} · </span>
+        <span className="min-w-0 truncate">{name}</span>
+      </span>
+    </Button>
+  );
+}
+
 export function RemoteDownloadDrawer({
   remote,
   openPreferences,
@@ -292,8 +322,6 @@ export function RemoteDownloadDrawer({
   const chosen = remote.chosenDeviceId;
   const [cancelId, setCancelId] = useState<string | null>(null);
   const request = remote.requests.find((r) => r.id === remote.selectedRequest);
-  const target = remote.devices.find((d) => d.id === request?.deviceId);
-  const name = target?.name ?? "PC desvinculado";
   const listing = remote.panel === "requests";
   const heading =
     remote.panel === "choose"
@@ -405,11 +433,7 @@ export function RemoteDownloadDrawer({
                       <div>
                         <Label elementType="dt">Estado</Label>
                         <dd role="status" className="text-sm text-foreground">
-                          {remoteStatus(
-                            request,
-                            name,
-                            target ? !target.online : false,
-                          )}
+                          {remote.status(request)}
                         </dd>
                       </div>
                     </dl>
@@ -443,10 +467,6 @@ export function RemoteDownloadDrawer({
                     )}
                     <ul className="flex flex-col gap-4">
                       {listed.map((r) => {
-                        const device = remote.devices.find(
-                          (d) => d.id === r.deviceId,
-                        );
-                        const targetName = device?.name ?? "PC desvinculado";
                         return (
                           <li
                             key={r.id}
@@ -457,11 +477,7 @@ export function RemoteDownloadDrawer({
                                 {requestLabel(r)}
                               </p>
                               <p className="text-xs text-muted">
-                                {remoteStatus(
-                                  r,
-                                  targetName,
-                                  device ? !device.online : false,
-                                )}
+                                {remote.status(r)}
                               </p>
                             </div>
                             <Button

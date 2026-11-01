@@ -1,8 +1,16 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
-import type { RemoteDevice, RemoteRequest } from "./remote-client";
-import { RemoteDownloadDrawer, RemotePreferences } from "./remote-panels";
+import {
+  remoteStatus,
+  type RemoteDevice,
+  type RemoteRequest,
+} from "./remote-client";
+import {
+  RemoteDownloadDrawer,
+  RemotePendingButton,
+  RemotePreferences,
+} from "./remote-panels";
 import type { RemoteDownloads } from "./use-remote-downloads";
 
 const pc: RemoteDevice = {
@@ -41,9 +49,26 @@ function remote(overrides: Partial<RemoteDownloads> = {}) {
     setPanel: vi.fn(),
     view: vi.fn(),
     list: vi.fn(),
+    status: (r: RemoteRequest) => remoteStatus(r, pc.name, !pc.online),
     ...overrides,
   } as unknown as RemoteDownloads;
 }
+it("keeps the state of a waiting request whole, giving way with the PC name", () => {
+  const name = "PC del salón con un nombre larguísimo";
+  const state = remote({
+    status: () => `Pendiente de entrega · ${name} sin conexión`,
+    brief: () => ({ state: "Sin conexión", name }),
+  });
+  render(<RemotePendingButton remote={state} request={request} />);
+  const button = screen.getByRole("button", {
+    name: `Pendiente de entrega · ${name} sin conexión`,
+  });
+  // Only the name may be cut.
+  expect(screen.getByText("Sin conexión ·")).toHaveClass("shrink-0");
+  expect(screen.getByText(name)).toHaveClass("truncate");
+  fireEvent.click(button);
+  expect(state.view).toHaveBeenCalledWith("r1");
+});
 beforeAll(() => {
   vi.stubGlobal(
     "matchMedia",
