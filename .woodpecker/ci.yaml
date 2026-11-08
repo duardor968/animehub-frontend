@@ -1,0 +1,41 @@
+# CI in the KVM8 Woodpecker (https://ci.asrlabs.space). Coolify deploys main on its own.
+when:
+  - event: push
+    branch: [main, dev]
+  - event: [pull_request, manual]
+
+steps:
+  quality:
+    image: node:24.21.0
+    depends_on: []
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+      API_INTERNAL_URL: http://localhost:8000/api/v1
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+    commands:
+      - corepack enable && corepack prepare pnpm@12.10.1 --activate
+      - pnpm install --frozen-lockfile
+      - pnpm format:check
+      - pnpm lint
+      - pnpm typecheck
+      - pnpm test
+      - pnpm contract:check
+      - pnpm test:audit
+      - pnpm audit:ci
+      - pnpm build
+
+  secrets:
+    image: zricethezav/gitleaks:v8.30.1
+    depends_on: []
+    commands:
+      - git config --global --add safe.directory '*'
+      - if [ "$(git rev-parse --is-shallow-repository)" = true ]; then git fetch --quiet --unshallow; fi
+      - gitleaks git --redact --verbose .
+
+  containers:
+    image: woodpeckerci/plugin-docker-buildx:6.1.2
+    depends_on: []
+    settings:
+      repo: animehub-frontend
+      tags: test
+      dry_run: true
