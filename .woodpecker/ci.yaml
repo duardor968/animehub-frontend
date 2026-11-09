@@ -13,8 +13,10 @@ steps:
       API_INTERNAL_URL: http://localhost:8000/api/v1
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
     commands:
+      # pnpm and its package store live in the agent's persistent cache (/ci-cache).
+      - export COREPACK_HOME=/ci-cache/corepack
       - corepack enable && corepack prepare pnpm@12.10.1 --activate
-      - pnpm install --frozen-lockfile
+      - pnpm install --frozen-lockfile --store-dir /ci-cache/pnpm
       - pnpm format:check
       - pnpm lint
       - pnpm typecheck
