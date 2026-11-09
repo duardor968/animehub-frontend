@@ -18,8 +18,9 @@ steps:
       - pnpm format:check
       - pnpm lint
       - pnpm typecheck
-      # Workers for the agent's 4 CPUs, not the host's 8: jsdom tests time out when oversubscribed.
-      - pnpm test --maxWorkers=3
+      # Fewer workers than the host's 8 CPUs, which the agent shares with other pipelines, and a
+      # longer timeout: the heaviest EpisodeBrowser test takes ~4 s of the default 5 s on GitHub.
+      - pnpm test --maxWorkers=3 --testTimeout=20000
       - pnpm contract:check
       - pnpm test:audit
       - pnpm audit:ci
