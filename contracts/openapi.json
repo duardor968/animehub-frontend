@@ -1,6 +1,200 @@
 {
   "openapi": "3.0.0",
   "paths": {
+    "/api/v1/desktop/releases/latest": {
+      "get": {
+        "description": "Sirve el lanzamiento en caché para el canal indicado (por defecto stable), incluyendo kill-switch paused, versión mínima soportada, artefactos con espejos y manifiestos firmados.",
+        "operationId": "DesktopController_getLatest",
+        "parameters": [
+          {
+            "name": "channel",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["stable"],
+              "default": "stable"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopReleaseResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "La solicitud no supera la validación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Se superó temporalmente el límite de solicitudes.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que conviene esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "El servidor no pudo completar la operación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "La dependencia necesaria no está disponible o no respondió a tiempo: a AnimeAV1 se le esperan como máximo 8 s.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que conviene esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Devuelve los metadatos del último lanzamiento de AnimeHub Desktop",
+        "tags": ["desktop"]
+      }
+    },
+    "/api/v1/desktop/releases/sync": {
+      "post": {
+        "description": "Invocado por CI tras publicar un lanzamiento. Requiere Authorization: Bearer <DESKTOP_RELEASE_WEBHOOK_SECRET>; responde 503 si el secreto no está configurado.",
+        "operationId": "DesktopController_sync",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopReleaseResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La capacidad falta, no coincide o ha expirado.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El recurso solicitado no existe.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Se superó temporalmente el límite de solicitudes.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que conviene esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "El servidor no pudo completar la operación.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "La dependencia necesaria no está disponible o no respondió a tiempo: a AnimeAV1 se le esperan como máximo 8 s.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos que conviene esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "desktopReleaseWebhook": []
+          }
+        ],
+        "summary": "Sincroniza el último lanzamiento de Desktop desde GitHub",
+        "tags": ["desktop"]
+      }
+    },
     "/api/v1/remote/devices": {
       "post": {
         "operationId": "RemoteController_register",
@@ -1926,9 +2120,232 @@
         "scheme": "bearer",
         "bearerFormat": "opaque remote capability",
         "type": "http"
+      },
+      "desktopReleaseWebhook": {
+        "scheme": "bearer",
+        "bearerFormat": "shared webhook secret",
+        "type": "http",
+        "description": "Secreto compartido configurado en DESKTOP_RELEASE_WEBHOOK_SECRET para sincronizar lanzamientos desde CI."
       }
     },
     "schemas": {
+      "ProblemDetailsDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "number"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": ["type", "title", "status", "detail", "instance"]
+      },
+      "DesktopReleaseAssetDto": {
+        "type": "object",
+        "properties": {
+          "fileName": {
+            "type": "string"
+          },
+          "size": {
+            "type": "number"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["fileName", "size", "sha256", "urls"]
+      },
+      "DesktopReleaseAppImageAssetDto": {
+        "type": "object",
+        "properties": {
+          "fileName": {
+            "type": "string"
+          },
+          "size": {
+            "type": "number"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "zsyncUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": ["fileName", "size", "sha256", "urls", "zsyncUrl"]
+      },
+      "DesktopReleaseAssetsDto": {
+        "type": "object",
+        "properties": {
+          "windowsInstaller": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DesktopReleaseAssetDto"
+              }
+            ]
+          },
+          "windowsPortable": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DesktopReleaseAssetDto"
+              }
+            ]
+          },
+          "linuxAppImage": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DesktopReleaseAppImageAssetDto"
+              }
+            ]
+          },
+          "linuxDeb": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DesktopReleaseAssetDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "windowsInstaller",
+          "windowsPortable",
+          "linuxAppImage",
+          "linuxDeb"
+        ]
+      },
+      "DesktopReleaseManifestDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "envelope": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true,
+            "description": "Envolvente JSON firmada del manifiesto de actualización (verbatim), o null si no se pudo incorporar."
+          }
+        },
+        "required": ["url", "sha256", "envelope"]
+      },
+      "DesktopReleaseManifestsDto": {
+        "type": "object",
+        "properties": {
+          "win64": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DesktopReleaseManifestDto"
+              }
+            ]
+          },
+          "linuxX64": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DesktopReleaseManifestDto"
+              }
+            ]
+          }
+        },
+        "required": ["win64", "linuxX64"]
+      },
+      "DesktopReleaseDto": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "releaseUrl": {
+            "type": "string"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "minSupportedVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "assets": {
+            "$ref": "#/components/schemas/DesktopReleaseAssetsDto"
+          },
+          "manifests": {
+            "$ref": "#/components/schemas/DesktopReleaseManifestsDto"
+          }
+        },
+        "required": [
+          "version",
+          "tag",
+          "channel",
+          "publishedAt",
+          "notes",
+          "releaseUrl",
+          "paused",
+          "minSupportedVersion",
+          "assets",
+          "manifests"
+        ]
+      },
+      "DesktopReleaseResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DesktopReleaseDto"
+          }
+        },
+        "required": ["data"]
+      },
       "RegisterDeviceDto": {
         "type": "object",
         "properties": {
@@ -2301,30 +2718,6 @@
           }
         },
         "required": ["deviceId", "revoked"]
-      },
-      "ProblemDetailsDto": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "status": {
-            "type": "number"
-          },
-          "detail": {
-            "type": "string"
-          },
-          "instance": {
-            "type": "string"
-          },
-          "requestId": {
-            "type": "string"
-          }
-        },
-        "required": ["type", "title", "status", "detail", "instance"]
       },
       "CategoryDto": {
         "type": "object",

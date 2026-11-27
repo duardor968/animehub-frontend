@@ -13,6 +13,9 @@ export type ResolveDownloadsResponse =
   components["schemas"]["ResolveDownloadsResponseDto"];
 export type DownloadJobResponse =
   components["schemas"]["DownloadJobResponseDto"];
+export type DesktopRelease = components["schemas"]["DesktopReleaseDto"];
+export type DesktopReleaseResponse =
+  components["schemas"]["DesktopReleaseResponseDto"];
 
 export class ApiConnectionError extends Error {
   constructor() {

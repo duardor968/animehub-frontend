@@ -19,6 +19,7 @@ import {
 import { Check, ClipboardCopy, RefreshCw, Send } from "lucide-react";
 import { useId, useRef, useState, type FormEvent } from "react";
 import { EmptyState } from "../empty-state";
+import { PreferencesDesktopCard } from "./desktop-promo";
 import { RemotePreferences } from "./remote-panels";
 import type { RemoteDownloads } from "./use-remote-downloads";
 import { copyLinks } from "./download-client";
@@ -378,6 +379,7 @@ export function PreferencesPanel({
         remote={remote}
         desktopSelected={effectiveDestination === "DESKTOP"}
       />
+      <PreferencesDesktopCard />
       {effectiveDestination !== "DESKTOP" && (
         <>
           <RadioGroup

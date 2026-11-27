@@ -81,6 +81,8 @@ import type { MyJdDevice } from "./download-panels";
 import { useRemoteDownloads } from "./use-remote-downloads";
 import { hasRemoteSession } from "./remote-client";
 import { RemoteDownloadDrawer, RemotePendingButton } from "./remote-panels";
+import { DesktopPromoModal } from "./desktop-promo";
+import { hasSeenDesktopPromo, markDesktopPromoSeen } from "./desktop-release";
 import type {
   AudioPreference,
   DownloadActivityStatus,
@@ -492,6 +494,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     null,
   );
   const confirmDialog = useOverlayState();
+  const desktopPromoDialog = useOverlayState();
   const toastIds = useRef(new Map<string, string>());
   const pollsRef = useRef(new Map<string, { timeout?: number }>());
   const deliveringRef = useRef(new Set<string>());
@@ -517,8 +520,28 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   });
   const { open: openDrawer, close: closeDrawer } = drawer;
   const remote = useRemoteDownloads(drawer.isOpen && panel.mode === "settings");
+  const remoteLinked = remote.devices.length > 0 || remote.target !== null;
+  const remoteLinkedRef = useRef(remoteLinked);
+  useLayoutEffect(() => {
+    remoteLinkedRef.current = remoteLinked;
+  }, [remoteLinked]);
   // The newest request still waiting for its PC.
   const remotePending = remote.requests.find((r) => r.status === "pending");
+
+  function maybeShowDesktopPromo() {
+    if (!mountedRef.current) return;
+    if (deviceProfileRef.current === "portable") return;
+    if (remoteLinkedRef.current) return;
+    if (hasSeenDesktopPromo()) return;
+    markDesktopPromoSeen();
+    desktopPromoDialog.open();
+  }
+
+  function completeDelivery(activity: Activity, via: DownloadDestination) {
+    const result = delivered(activity, via);
+    updateActivity(activity.id, result);
+    if (result.status === "handed-off") maybeShowDesktopPromo();
+  }
 
   function showDrawer(next: DrawerPanel) {
     setPanel(next);
@@ -761,8 +784,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       // clipboard unannounced. The links wait for an explicit copy.
       if (dismissedIdsRef.current.has(id))
         updateActivity(id, { status: "ready" });
-      else if (await copyLinks(urls))
-        updateActivity(id, delivered(activity, "COPY"));
+      else if (await copyLinks(urls)) completeDelivery(activity, "COPY");
       else
         updateActivity(id, {
           status: "ready",
@@ -814,7 +836,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     } finally {
       deliveringRef.current.delete(id);
     }
-    updateActivity(id, delivered(activity, destination));
+    completeDelivery(activity, destination);
   }
 
   async function pollJob(id: string, receipt: SavedJob, deferDelivery = false) {
@@ -1183,7 +1205,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       activity &&
       (unfinishedStatuses.has(activity.status) || activity.noLinks)
     )
-      updateActivity(id, delivered(activity, "COPY"));
+      completeDelivery(activity, "COPY");
   }
 
   async function copyActivityLinks(id: string) {
@@ -1551,6 +1573,10 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           </AlertDialog.Container>
         </AlertDialog.Backdrop>
       )}
+      <DesktopPromoModal
+        isOpen={desktopPromoDialog.isOpen}
+        onOpenChange={desktopPromoDialog.setOpen}
+      />
       {drawerLoaded && (
         <DownloadDrawer
           state={drawer}
