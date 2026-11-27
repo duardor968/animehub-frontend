@@ -51,13 +51,16 @@ describe("weekly slot status, the same on every day of the week", () => {
       deriveScheduleEntry(entry(), at(utc("2026-09-28", "13:00"))),
     ).toEqual({ number: 12, status: "upcoming" });
   });
-  it("shows the slot as happening now until the grace period ends, then late", () => {
+  it("keeps the slot upcoming during the 3-hour grace window, then marks it late at +3h", () => {
     expect(
       deriveScheduleEntry(entry(), at(utc("2026-09-28", "14:00"))),
-    ).toEqual({ number: 12, status: "due" });
+    ).toEqual({ number: 12, status: "upcoming" });
     expect(
       deriveScheduleEntry(entry(), at(utc("2026-09-28", "16:59"))),
-    ).toEqual({ number: 12, status: "due" });
+    ).toEqual({ number: 12, status: "upcoming" });
+    expect(
+      deriveScheduleEntry(entry(), at(utc("2026-09-28", "17:00"))),
+    ).toEqual({ number: 12, status: "delayed" });
     expect(
       deriveScheduleEntry(entry(), at(utc("2026-09-28", "17:01"))),
     ).toEqual({ number: 12, status: "delayed" });
@@ -122,7 +125,7 @@ describe("weekly slot status, the same on every day of the week", () => {
         entry(last),
         at(new Date("2026-10-26T15:30:00Z"), madrid),
       ),
-    ).toEqual({ number: 12, status: "due" });
+    ).toEqual({ number: 12, status: "upcoming" });
     expect(
       deriveScheduleEntry(
         entry(last),

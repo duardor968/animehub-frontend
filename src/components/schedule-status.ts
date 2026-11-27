@@ -3,7 +3,7 @@ import type { components } from "@/lib/api/generated";
 type ScheduleEntry = components["schemas"]["ScheduleEntryDto"];
 
 export type ScheduleStatus =
-  "aired" | "upcoming" | "due" | "delayed" | "final" | "unknown";
+  "aired" | "upcoming" | "delayed" | "final" | "unknown";
 
 /** Cookie holding the viewer's IANA time zone, so the server can render the
  * week the way the viewer will see it. */
@@ -97,8 +97,8 @@ export type ScheduleClock = {
  * is expected at P + 7 days:
  * - P falls in this week (on or after O's day) → "EP N · Emitido"
  *   ("EP N · Final" when N completes the series);
- * - otherwise, before O → "EP N+1 · Próximo"; from O until O + grace →
- *   "EP N+1 · Ahora"; later → "EP N+1 · Retrasado".
+ * - otherwise, before O + grace → "EP N+1 · Próximo"; from O + grace onward →
+ *   "EP N+1 · Retrasado".
  * A finale from an earlier week has no slot left, and entries older than 21
  * days are dropped (the API omits them too).
  */
@@ -133,9 +133,8 @@ export function deriveScheduleEntry(
   const nowMinutes = today.dayNumber * MINUTES_PER_DAY + today.minutes;
   const slotMinutes = slotDay * MINUTES_PER_DAY + slot.minutes;
   const next = number + 1;
-  if (nowMinutes < slotMinutes) return { number: next, status: "upcoming" };
-  if (nowMinutes <= slotMinutes + DELAY_GRACE_MINUTES)
-    return { number: next, status: "due" };
+  if (nowMinutes < slotMinutes + DELAY_GRACE_MINUTES)
+    return { number: next, status: "upcoming" };
   return { number: next, status: "delayed" };
 }
 

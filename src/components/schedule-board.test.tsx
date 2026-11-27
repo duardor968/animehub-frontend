@@ -135,15 +135,16 @@ describe("schedule states", () => {
     const card = (title: string) =>
       screen.getByRole("link", { name: new RegExp(`^${title},`) });
     expect(card("Antes")).toHaveTextContent("Retrasado");
-    expect(card("En hora")).toHaveTextContent("Ahora");
+    expect(card("En hora")).toHaveTextContent("Próximo");
     expect(card("Después")).toHaveTextContent("Próximo");
+    expect(screen.queryByText("Ahora")).toBeNull();
   });
   it("predicts nothing from data that could not be refreshed", () => {
     vi.setSystemTime(new Date(2026, 8, 28, 15));
     render(<ScheduleBoard entries={entries} {...server} stale />);
     expect(
       screen.getByRole("link", { name: "Antes, episodio 11, 09:00" }),
-    ).not.toHaveTextContent(/Retrasado|Ahora|Próximo/);
+    ).not.toHaveTextContent(/Emitido|Próximo|Retrasado|Final/);
   });
 });
 

@@ -49,10 +49,9 @@ const statusChips: Partial<
 > = {
   aired: { label: "Emitido", color: "success", variant: "soft" },
   upcoming: { label: "Próximo", color: "accent", variant: "soft" },
-  // Solid: expected right now, and the end of a series.
-  due: { label: "Ahora", color: "accent", variant: "primary" },
   delayed: { label: "Retrasado", color: "warning", variant: "soft" },
-  final: { label: "Final", color: "success", variant: "primary" },
+  // Same soft green as `aired`; only the label distinguishes a finale.
+  final: { label: "Final", color: "success", variant: "soft" },
 };
 
 // Don't re-run the server component more than this often when the tab regains
