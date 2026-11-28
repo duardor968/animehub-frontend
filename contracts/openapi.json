@@ -428,9 +428,10 @@
         "operationId": "RemoteController_create",
         "parameters": [
           {
-            "name": "idempotency-key",
+            "name": "Idempotency-Key",
             "required": true,
             "in": "header",
+            "description": "UUID unique within this browser session",
             "schema": {
               "type": "string"
             }
@@ -439,15 +440,6 @@
             "name": "authorization",
             "required": true,
             "in": "header",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "description": "UUID unique within this browser session",
-            "required": true,
             "schema": {
               "type": "string"
             }

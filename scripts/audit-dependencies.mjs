@@ -56,14 +56,22 @@ export function parseAudit(result, scope) {
       `${scope} audit failed without a high/critical advisory report.`,
     );
   }
-  const reported = Object.values(document.metadata.vulnerabilities).reduce(
-    (total, count) => total + count,
-    0,
-  );
+  const { vulnerabilities } = document.metadata;
+  const blockingReported = vulnerabilities.high + vulnerabilities.critical;
+  const blockingVisible = advisories.filter((advisory) =>
+    blockingSeverities.has(advisory.severity),
+  ).length;
+  const nonBlockingReported =
+    vulnerabilities.info + vulnerabilities.low + vulnerabilities.moderate;
+  const nonBlockingVisible = advisories.length - blockingVisible;
   return {
     scope,
     advisories,
-    configuredExclusions: Math.max(0, reported - advisories.length),
+    // `--audit-level high` omits info/low/moderate entries from `advisories` while
+    // keeping their totals in `metadata.vulnerabilities`. Only missing high or
+    // critical entries indicate exclusions in `pnpm-workspace.yaml`.
+    configuredExclusions: Math.max(0, blockingReported - blockingVisible),
+    nonBlockingOmitted: Math.max(0, nonBlockingReported - nonBlockingVisible),
   };
 }
 
@@ -124,6 +132,11 @@ export function main(run = runAudit) {
         annotation(
           "warning",
           `${scope}: ${report.configuredExclusions} pre-existing configured exclusion(s) remain in pnpm-workspace.yaml. They are not a claim of zero vulnerabilities.`,
+        );
+      }
+      if (report.nonBlockingOmitted) {
+        console.log(
+          `${scope}: ${report.nonBlockingOmitted} non-blocking lower-severity advisory/advisories (info/low/moderate) omitted by --audit-level high.`,
         );
       }
       for (const entry of report.advisories) {

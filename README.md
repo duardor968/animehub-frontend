@@ -1,6 +1,6 @@
 # AnimeHub Web
 
-AnimeHub Web permite explorar anime, consultar sus episodios y enviar enlaces a JDownloader desde el navegador. Puedes usarlo sin crear una cuenta en <https://animehub.duardo.dev/>.
+AnimeHub Web permite explorar anime, consultar sus episodios y enviar descargas a AnimeHub para PC o enlaces a JDownloader desde el navegador. Puedes usarlo sin crear una cuenta en <https://animehub.duardo.dev/>.
 
 Este repositorio contiene la interfaz web. Los datos y la resolución de enlaces llegan desde [AnimeHub API](https://animehub-api.duardo.dev/api/v1), que se desarrolla y despliega por separado en su [propio repositorio](https://github.com/duardor968/animehub-api).
 
@@ -10,21 +10,21 @@ Este repositorio contiene la interfaz web. Los datos y la resolución de enlaces
 - Buscar anime, filtrar el catálogo y consultar un horario semanal estimado.
 - Abrir fichas con metadatos, relaciones y episodios paginados.
 - Resolver enlaces de un episodio, un rango o una serie completa.
-- Enviar los enlaces a Click'n'Load o MyJDownloader, o copiarlos para usarlos por tu cuenta.
+- Enviar descargas a un PC vinculado con AnimeHub para PC (con código de vinculación desde Preferencias), a Click'n'Load o MyJDownloader, o copiar los enlaces para usarlos por tu cuenta.
+- Descargar la aplicación de escritorio AnimeHub para PC (Windows y Linux) desde Preferencias o el aviso promocional.
 
 Los lotes muestran su progreso y permiten recuperar resultados parciales. El horario y la disponibilidad de enlaces dependen de los datos de la fuente actual, AnimeAV1.
 
-La Web no incluye reproducción, cuentas, biblioteca personal ni seguimiento de lo visto. JDownloader se encarga de transferir los archivos.
+La Web no incluye reproducción, cuentas, biblioteca personal ni seguimiento de lo visto. AnimeHub para PC o JDownloader se encargan de transferir los archivos.
 
 ## Arranque local
 
-Necesitas Node.js 24, pnpm 12.10.1 y una instancia accesible de AnimeHub API. No hace falta instalar PostgreSQL ni Prisma para trabajar en la Web.
+Necesitas Node.js 26, pnpm 12.23.0 y una instancia accesible de AnimeHub API. No hace falta instalar PostgreSQL ni Prisma para trabajar en la Web.
 
 Desde la raíz del repositorio:
 
 ```sh
-corepack enable
-corepack prepare pnpm@12.10.1 --activate
+npm install -g pnpm@12.23.0
 pnpm install --frozen-lockfile
 ```
 

@@ -1357,10 +1357,9 @@ export interface operations {
     parameters: {
       query?: never;
       header: {
-        "idempotency-key": string;
-        authorization: string;
         /** @description UUID unique within this browser session */
         "Idempotency-Key": string;
+        authorization: string;
       };
       path?: never;
       cookie?: never;

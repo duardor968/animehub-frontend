@@ -6,7 +6,7 @@ when:
 
 steps:
   quality:
-    image: node:24.21.0
+    image: node:26.13.1
     depends_on: []
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
@@ -14,15 +14,15 @@ steps:
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
     commands:
       # pnpm and its package store live in the agent's persistent cache (/ci-cache).
-      - export COREPACK_HOME=/ci-cache/corepack
-      - corepack enable && corepack prepare pnpm@12.10.1 --activate
+      - export NPM_CONFIG_PREFIX=/ci-cache/npm-global
+      - export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
+      - '[ "$(pnpm --version 2>/dev/null)" = "12.23.0" ] || npm install -g pnpm@12.23.0'
       - pnpm install --frozen-lockfile --store-dir /ci-cache/pnpm
       - pnpm format:check
       - pnpm lint
       - pnpm typecheck
-      # Fewer workers than the host's 8 CPUs, which the agent shares with other pipelines, and a
-      # longer timeout: the heaviest EpisodeBrowser test takes ~4 s of the default 5 s on GitHub.
-      - pnpm test --maxWorkers=3 --testTimeout=20000
+      # Fewer workers than the host's 8 CPUs, which the agent shares with other pipelines.
+      - pnpm test --maxWorkers=3
       - pnpm contract:check
       - pnpm test:audit
       - pnpm audit:ci

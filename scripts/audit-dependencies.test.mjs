@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { assessAudits, parseAudit } from "./audit-dependencies.mjs";
+import { assessAudits, main, parseAudit } from "./audit-dependencies.mjs";
 
 const advisory = (severity = "high", id = "GHSA-dev-only-test") => ({
   severity,
@@ -8,23 +8,21 @@ const advisory = (severity = "high", id = "GHSA-dev-only-test") => ({
   title: "Test advisory",
   url: `https://github.com/advisories/${id}`,
 });
-function result(
-  advisories = {},
-  status = 0,
-  counts = { high: Object.keys(advisories).length },
-) {
+function result(advisories = {}, status = 0, counts) {
+  const tally = { info: 0, low: 0, moderate: 0, high: 0, critical: 0 };
+  if (counts) {
+    Object.assign(tally, counts);
+  } else {
+    for (const item of Object.values(advisories)) {
+      if (item && item.severity in tally) tally[item.severity] += 1;
+    }
+  }
   return {
     status,
     stdout: JSON.stringify({
       advisories,
       metadata: {
-        vulnerabilities: {
-          info: 0,
-          low: 0,
-          moderate: 0,
-          critical: 0,
-          ...counts,
-        },
+        vulnerabilities: tally,
       },
     }),
   };
@@ -96,4 +94,60 @@ test("registry, process and malformed-result failures cannot become informationa
 test("pre-existing configured exclusions are disclosed instead of called zero findings", () => {
   const report = parseAudit(result({}, 0, { high: 1 }), "production");
   assert.equal(report.configuredExclusions, 1);
+  assert.equal(report.nonBlockingOmitted, 0);
+});
+
+test("lower-severity advisories omitted by --audit-level high are not misreported as configured exclusions", () => {
+  const report = parseAudit(
+    result({}, 0, { info: 1, low: 2, moderate: 7 }),
+    "production",
+  );
+  assert.equal(report.configuredExclusions, 0);
+  assert.equal(report.nonBlockingOmitted, 10);
+});
+
+test("mixed exclusions and lower-severity advisories are counted separately", () => {
+  const report = parseAudit(
+    result({ one: advisory("high") }, 1, {
+      low: 1,
+      moderate: 4,
+      high: 2,
+      critical: 1,
+    }),
+    "all dependencies",
+  );
+  assert.equal(report.configuredExclusions, 2);
+  assert.equal(report.nonBlockingOmitted, 5);
+});
+
+test("main does not emit a workspace exclusion warning for omitted moderate advisories", () => {
+  const lines = [];
+  const originalLog = console.log;
+  console.log = (line) => lines.push(String(line));
+  try {
+    const code = main((production) =>
+      production
+        ? result({}, 0, { moderate: 7 })
+        : result({ one: advisory("high") }, 1, { moderate: 12, high: 1 }),
+    );
+    assert.equal(code, 0);
+  } finally {
+    console.log = originalLog;
+  }
+  assert.equal(
+    lines.some((line) => line.includes("pnpm-workspace.yaml")),
+    false,
+  );
+  assert.equal(
+    lines.some((line) =>
+      line.includes("production: 7 non-blocking lower-severity"),
+    ),
+    true,
+  );
+  assert.equal(
+    lines.some((line) =>
+      line.includes("all dependencies: 12 non-blocking lower-severity"),
+    ),
+    true,
+  );
 });
