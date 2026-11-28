@@ -21,10 +21,10 @@ const supportedStatus = new Set<string>(
 
 /** Sort keys the catalog API supports; without one, each scope uses its default. */
 export const catalogSortOptions = [
-  ["score", "Mejor puntuación"],
+  ["score", "Mejor puntuados"],
   ["popular", "Más populares"],
   ["title", "Título A–Z"],
-  ["latest_released", "Últimos emitidos"],
+  ["latest_released", "Último episodio"],
 ] as const;
 const supportedOrder = new Set<string>(
   catalogSortOptions.map(([value]) => value),
@@ -46,7 +46,7 @@ const supportedLetters = new Set<string>(catalogLetters);
 export const catalogApiYearBounds = { min: 1900, max: 2200 } as const;
 
 /**
- * Where the filters run. The catalog defaults to "Últimos agregados"; search
+ * Where the filters run. The catalog defaults to "Recién añadidos"; search
  * to "Más populares", the order of its suggestions.
  */
 export type CatalogScope = "catalog" | "search";

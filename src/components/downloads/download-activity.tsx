@@ -157,7 +157,7 @@ function deliverLabel(destination: DownloadDestination) {
     : `Enviar a ${destinationNames[destination]}`;
 }
 
-/** "4 enlaces copiados", "1 enlace de Mega copiado", "4 enlaces enviados a
+/** "4 enlaces copiados", "1 enlace de MEGA copiado", "4 enlaces enviados a
  *  JDownloader". */
 export function deliveredSentence(
   episodes: ResolvedEpisodeLike[],

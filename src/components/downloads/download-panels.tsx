@@ -16,7 +16,7 @@ import {
   TextField,
   Tooltip,
 } from "@heroui/react";
-import { Check, ClipboardCopy, RefreshCw, Send } from "lucide-react";
+import { Check, Copy, RotateCw, Send } from "lucide-react";
 import { useId, useRef, useState, type FormEvent } from "react";
 import { EmptyState } from "../empty-state";
 import { PreferencesDesktopCard } from "./desktop-promo";
@@ -129,7 +129,7 @@ export function MyJdPanel({
               onPress={onRefresh}
               isPending={devicesLoading}
             >
-              <RefreshCw aria-hidden="true" />
+              <RotateCw aria-hidden="true" />
               Actualizar
             </Button>
             <Button variant="ghost" onPress={onReset}>
@@ -147,7 +147,7 @@ export function MyJdPanel({
             onPress={onCopyInstead}
             isDisabled={deliveryPending}
           >
-            <ClipboardCopy aria-hidden="true" />
+            <Copy aria-hidden="true" />
             Copiar enlaces
           </Button>
           {!portable && (
@@ -280,7 +280,7 @@ export function LinksPanel({
           </>
         ) : (
           <>
-            <ClipboardCopy aria-hidden="true" />
+            <Copy aria-hidden="true" />
             Copiar enlaces
           </>
         )}
@@ -410,7 +410,7 @@ export function PreferencesPanel({
             <Label>Proveedores</Label>
             <div className="grid grid-cols-2 gap-x-4">
               {providerIds.map((provider) => {
-                // A JDownloader can't take Transfer.it: only copying uses it.
+                // A JDownloader can't take transfer.it: only copying uses it.
                 const unused =
                   copyOnlyProviders.has(provider) &&
                   effectiveDestination !== "COPY";

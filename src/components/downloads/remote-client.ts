@@ -64,7 +64,7 @@ async function remote<T>(path: string, init: RequestInit = {}): Promise<T> {
           : error.status === 409
             ? path.endsWith("/cancel")
               ? "El PC ya recibió la solicitud; no se puede cancelar desde aquí."
-              : "El perfil de descarga cambió. Actualiza los dispositivos y vuelve a elegir el destino."
+              : "La configuración de descarga cambió. Actualiza los dispositivos y vuelve a elegir el destino."
             : error.status === 429
               ? "Demasiados intentos. Espera unos minutos y vuelve a intentarlo."
               : error.status >= 500
@@ -169,9 +169,10 @@ export function remoteTarget(devices: RemoteDevice[], preferred: string) {
 }
 // What the PC (local_*) or the API recorded when it set a request aside.
 const attentionReasons: Record<string, (name: string) => string> = {
-  local_profile_unavailable: (name) => `${name} cambió su perfil de descarga`,
+  local_profile_unavailable: (name) =>
+    `${name} cambió su configuración de descarga`,
   "Destination profile changed": (name) =>
-    `${name} cambió su perfil de descarga`,
+    `${name} cambió su configuración de descarga`,
   local_record_unavailable: (name) =>
     `${name} no pudo añadir el anime a su biblioteca`,
 };

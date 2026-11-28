@@ -61,7 +61,7 @@ describe("deliverableEpisodes", () => {
       { portable: false },
     );
     expect(view).toMatchObject({
-      title: "Solo hay enlaces de Transfer.it",
+      title: "Solo hay enlaces de transfer.it",
       detail: "No se envían a JDownloader.",
       actions: [{ id: "copy", label: "Copiar enlaces", primary: true }],
     });
@@ -141,6 +141,6 @@ describe("presentActivity copy", () => {
       presentActivity(activity({ deliveredVia: "COPY", provider: "MEGA" }), {
         portable: false,
       }).title,
-    ).toBe("1 enlace de Mega copiado");
+    ).toBe("1 enlace de MEGA copiado");
   });
 });

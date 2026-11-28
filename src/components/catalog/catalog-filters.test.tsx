@@ -136,7 +136,7 @@ describe("CatalogFilters interactions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Título A–Z Ordenar" }));
     fireEvent.click(
-      await screen.findByRole("option", { name: "Mejor puntuación" }),
+      await screen.findByRole("option", { name: "Mejor puntuados" }),
     );
 
     await waitFor(() =>

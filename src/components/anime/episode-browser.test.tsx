@@ -187,13 +187,21 @@ describe("EpisodeBrowser", () => {
     three.unmount();
 
     // More than one page: the range covers spans the selection can't.
-    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    renderBrowser({
+      initial: pageOf(1, 3),
+      totalRecords: 120,
+      lastNumber: 120,
+    });
     expect(screen.getByRole("group", { name: "Rango de episodios" }));
     expect(screen.getByRole("checkbox", { name: "Seleccionar todos" }));
   });
 
   it("never repeats the episode total the page header shows", () => {
-    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    renderBrowser({
+      initial: pageOf(1, 3),
+      totalRecords: 120,
+      lastNumber: 120,
+    });
     expect(screen.queryByText(/120/)).toBeNull();
   });
 
@@ -251,7 +259,11 @@ describe("EpisodeBrowser", () => {
   });
 
   it("selects every episode of every page, then all but the first two", async () => {
-    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    renderBrowser({
+      initial: pageOf(1, 3),
+      totalRecords: 120,
+      lastNumber: 120,
+    });
     fireEvent.click(
       screen.getByRole("checkbox", { name: "Seleccionar todos" }),
     );
@@ -290,12 +302,16 @@ describe("EpisodeBrowser", () => {
   });
 
   it("starts the range on the page shown and follows it", async () => {
-    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    renderBrowser({
+      initial: [makeEpisode(1), makeEpisode(50)],
+      totalRecords: 120,
+      lastNumber: 120,
+    });
     expect(screen.getByRole("textbox", { name: "Desde" })).toHaveValue("1");
     expect(screen.getByRole("textbox", { name: "Hasta" })).toHaveValue("50");
 
     vi.mocked(apiFetch).mockResolvedValueOnce({
-      data: pageOf(51),
+      data: [makeEpisode(51), makeEpisode(100)],
       meta: { page: 2, perPage: 50, totalPages: 3, totalRecords: 120 },
     });
     const pager = screen.getByRole("navigation", {
@@ -318,7 +334,11 @@ describe("EpisodeBrowser", () => {
         meta: { page: apiPage, perPage: 50, totalPages: 3, totalRecords: 120 },
       };
     });
-    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    renderBrowser({
+      initial: pageOf(1, 2),
+      totalRecords: 120,
+      lastNumber: 120,
+    });
     fireEvent.click(
       screen.getByRole("switch", { name: "Más recientes primero" }),
     );
@@ -335,7 +355,7 @@ describe("EpisodeBrowser", () => {
     cleanup();
     window.history.replaceState(null, "", "/anime/otome?orden=primeros");
     renderBrowser({
-      initial: pageOf(1),
+      initial: pageOf(1, 2),
       totalRecords: 120,
       lastNumber: 120,
       order: "asc",
@@ -348,7 +368,11 @@ describe("EpisodeBrowser", () => {
   });
 
   it("keeps the range bounds from crossing and refills an emptied one", () => {
-    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    renderBrowser({
+      initial: [makeEpisode(1), makeEpisode(50)],
+      totalRecords: 120,
+      lastNumber: 120,
+    });
 
     // «Hasta» can't go below «Desde», nor «Desde» above «Hasta».
     setNumber("Desde", "10");
@@ -375,7 +399,7 @@ describe("EpisodeBrowser", () => {
   it("keeps decimal bounds and doesn't promise a count with specials", () => {
     // 61 episodes numbered 1–60 plus 60.5.
     renderBrowser({
-      initial: pageOf(1),
+      initial: [makeEpisode(1), makeEpisode(50)],
       totalRecords: 61,
       lastNumber: 60.5,
     });
@@ -393,7 +417,11 @@ describe("EpisodeBrowser", () => {
 
   it("says Copiar where the links go to the clipboard", () => {
     downloads.destination = "COPY";
-    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    renderBrowser({
+      initial: pageOf(1, 3),
+      totalRecords: 120,
+      lastNumber: 120,
+    });
     expect(screen.getByRole("button", { name: "Copiar todo" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Copiar rango" })).toBeVisible();
     fireEvent.click(screen.getByRole("checkbox", { name: "Episodio 2" }));
@@ -401,7 +429,11 @@ describe("EpisodeBrowser", () => {
   });
 
   it("leaves the confirmation of a long series to the downloads", () => {
-    renderBrowser({ initial: pageOf(1), totalRecords: 1180, lastNumber: 1180 });
+    renderBrowser({
+      initial: pageOf(1, 2),
+      totalRecords: 1180,
+      lastNumber: 1180,
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Descargar todo" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -414,7 +446,11 @@ describe("EpisodeBrowser", () => {
 
   it("keeps the page in the URL and recovers from a failed load", async () => {
     const metadata = seedMetadata();
-    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    renderBrowser({
+      initial: pageOf(1, 2),
+      totalRecords: 120,
+      lastNumber: 120,
+    });
     const top = screen.getByRole("navigation", {
       name: "Páginas de episodios",
     });
@@ -433,7 +469,7 @@ describe("EpisodeBrowser", () => {
     expect(metadata()).toEqual(Array(2).fill(`${siteUrl}/anime/otome`));
 
     vi.mocked(apiFetch).mockResolvedValueOnce({
-      data: pageOf(51),
+      data: pageOf(51, 2),
       meta: { page: 2, perPage: 50, totalPages: 3, totalRecords: 120 },
     });
     fireEvent.click(within(alert).getByRole("button", { name: "Reintentar" }));
@@ -447,7 +483,7 @@ describe("EpisodeBrowser", () => {
     ).toBeInTheDocument();
 
     vi.mocked(apiFetch).mockResolvedValueOnce({
-      data: pageOf(1),
+      data: pageOf(1, 2),
       meta: { page: 1, perPage: 50, totalPages: 3, totalRecords: 120 },
     });
     await act(async () => {
@@ -467,10 +503,14 @@ describe("EpisodeBrowser", () => {
     // Next restored the page-1 render while the URL says ?page=2.
     window.history.replaceState(null, "", "/anime/otome?page=2");
     vi.mocked(apiFetch).mockResolvedValueOnce({
-      data: pageOf(51),
+      data: pageOf(51, 2),
       meta: { page: 2, perPage: 50, totalPages: 3, totalRecords: 120 },
     });
-    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    renderBrowser({
+      initial: pageOf(1, 2),
+      totalRecords: 120,
+      lastNumber: 120,
+    });
 
     await waitFor(() =>
       expect(
@@ -486,7 +526,11 @@ describe("EpisodeBrowser", () => {
   });
 
   it("keeps the pressed pager control focused while its page loads", () => {
-    renderBrowser({ initial: pageOf(1), totalRecords: 120, lastNumber: 120 });
+    renderBrowser({
+      initial: pageOf(1, 2),
+      totalRecords: 120,
+      lastNumber: 120,
+    });
     const pager = screen.getByRole("navigation", {
       name: "Páginas de episodios",
     });

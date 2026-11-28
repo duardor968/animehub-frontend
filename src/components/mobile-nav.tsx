@@ -1,13 +1,13 @@
 "use client";
 
-import { CalendarDays, Home, Layers3, Search } from "lucide-react";
+import { CalendarDays, House, Layers, Search } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { isActiveLink, siteLinks } from "@/lib/navigation";
 
 const icons = {
-  "/": Home,
-  "/catalogo": Layers3,
+  "/": House,
+  "/catalogo": Layers,
   "/horario": CalendarDays,
   "/buscar": Search,
 } as const;

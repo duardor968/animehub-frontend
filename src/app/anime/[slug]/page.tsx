@@ -349,7 +349,7 @@ function ExternalButtonLink({
       rel="noopener noreferrer"
     >
       {children}
-      <ExternalLink size={16} aria-hidden="true" />
+      <ExternalLink aria-hidden="true" />
       <span className="sr-only">(se abre en otra pestaña)</span>
     </ButtonLink>
   );

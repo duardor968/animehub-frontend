@@ -16,7 +16,7 @@ import {
   TextField,
   Typography,
 } from "@heroui/react";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, RotateCw } from "lucide-react";
 import { useId, useState } from "react";
 import {
   requestEpisodes,
@@ -152,7 +152,7 @@ export function RemotePreferences({
             onPress={remote.refresh}
             isPending={remote.busy}
           >
-            <RefreshCw aria-hidden="true" />
+            <RotateCw aria-hidden="true" />
             Actualizar dispositivos
           </Button>
         )}

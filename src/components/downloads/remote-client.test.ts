@@ -147,7 +147,7 @@ describe("remote metadata transport", () => {
   });
   it("says which PC set a request aside and why, from its reason or the API's", () => {
     expect(attentionReason("local_profile_unavailable", "PC 1")).toBe(
-      "No se descargará · PC 1 cambió su perfil de descarga; vuelve a enviarla",
+      "No se descargará · PC 1 cambió su configuración de descarga; vuelve a enviarla",
     );
     expect(attentionReason("Destination profile changed", "PC 1")).toBe(
       attentionReason("local_profile_unavailable", "PC 1"),

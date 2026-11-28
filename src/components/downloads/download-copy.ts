@@ -125,7 +125,7 @@ export function describeConfirmation(
     heading,
     body:
       destination === "DESKTOP"
-        ? `Los episodios de ${request.title}${which} se solicitarán al PC con su perfil de descarga predeterminado.`
+        ? `Los episodios de ${request.title}${which} se solicitarán al PC con su configuración de descarga.`
         : `Los enlaces de ${request.title}${which} ${destinationPhrases[destination]}, con todos los espejos de ${mirrors}.`,
   };
 }
@@ -144,7 +144,7 @@ export function collectUrls(episodes: ResolvedEpisodeLike[]): string[] {
 export const countLinks = (episodes: ResolvedEpisodeLike[]) =>
   episodes.reduce((total, episode) => total + episode.links.length, 0);
 
-/** "4 enlaces", or "1 enlace de Mega" when only that provider's were taken. */
+/** "4 enlaces", or "1 enlace de MEGA" when only that provider's were taken. */
 export function describeLinks(
   episodes: ResolvedEpisodeLike[],
   provider?: DownloadProviderId,

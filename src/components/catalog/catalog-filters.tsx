@@ -62,7 +62,7 @@ type Category = components["schemas"]["CategoryDto"];
 const yearFormat = { useGrouping: false } as const;
 
 const defaultSort: Record<CatalogScope, readonly [string, string]> = {
-  catalog: ["latest_added", "Últimos agregados"],
+  catalog: ["latest_added", "Recién añadidos"],
   // The suggestions' order: the menu doesn't offer it twice.
   search: ["popular", "Más populares"],
 };

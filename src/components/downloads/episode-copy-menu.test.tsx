@@ -134,7 +134,7 @@ describe("EpisodeCopyMenu", () => {
       screen.getByRole("menuitem", { name: "1Fichier no tiene este episodio" }),
     ).toHaveFocus();
     fireEvent.keyDown(document.activeElement as Element, { key: "Home" });
-    const mega = screen.getByRole("menuitem", { name: /Mega/ });
+    const mega = screen.getByRole("menuitem", { name: /MEGA/ });
     expect(mega).toHaveFocus();
     fireEvent.click(mp4upload);
     expect(downloads.copyEpisodeLinks).not.toHaveBeenCalled();
@@ -164,7 +164,7 @@ describe("EpisodeCopyMenu", () => {
       "true",
     );
     const mega = screen.getByRole("menuitem", {
-      name: "Copiar el enlace de Mega",
+      name: "Copiar el enlace de MEGA",
     });
     expect(mega).not.toHaveAttribute("aria-disabled");
 
@@ -219,7 +219,7 @@ describe("EpisodeCopyMenu", () => {
     fireEvent.pointerMove(trigger, { pointerType: "mouse" });
 
     expect(
-      await screen.findByRole("menuitem", { name: "Copiar el enlace de Mega" }),
+      await screen.findByRole("menuitem", { name: "Copiar el enlace de MEGA" }),
     ).toBeInTheDocument();
     expect(downloads.resolveEpisodeLinks).not.toHaveBeenCalled();
   });

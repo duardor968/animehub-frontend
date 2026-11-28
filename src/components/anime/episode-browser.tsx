@@ -381,6 +381,7 @@ export function EpisodeBrowser({
   }
 
   const visibleNumbers = episodes.map((episode) => episode.number);
+  const selectedSet = new Set(selected);
   const allSelected = selected.length === totalRecords;
   const pager = {
     page,
@@ -570,7 +571,7 @@ export function EpisodeBrowser({
             selection={
               selectable
                 ? {
-                    checked: selected.includes(episode.number),
+                    checked: selectedSet.has(episode.number),
                     onToggle: () => toggleEpisode(episode.number),
                   }
                 : null

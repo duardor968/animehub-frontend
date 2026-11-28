@@ -11,15 +11,15 @@ export type DownloadDestination = "CNL" | "MYJD" | "COPY" | "DESKTOP";
 
 /** Every provider, in the order the UI lists them. */
 export const providerLabels: Record<DownloadProviderId, string> = {
-  MEGA: "Mega",
+  MEGA: "MEGA",
   PIXELDRAIN: "Pixeldrain",
   MP4UPLOAD: "MP4Upload",
   ONE_FICHIER: "1Fichier",
   STREAMTAPE: "Streamtape",
-  TRANSFERIT: "Transfer.it",
+  TRANSFERIT: "transfer.it",
 };
 
-/** Offered only to copy: JDownloader has no plugin for Transfer.it, so its
+/** Offered only to copy: JDownloader has no plugin for transfer.it, so its
  *  links never go to a JDownloader. */
 export const copyOnlyProviders: ReadonlySet<DownloadProviderId> = new Set([
   "TRANSFERIT",

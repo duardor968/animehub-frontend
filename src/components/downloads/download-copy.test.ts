@@ -69,7 +69,7 @@ describe("download copy helpers", () => {
 
   it("counts links, failures and audio fallbacks with plurals", () => {
     expect(describeLinks([episode(1, 2)])).toBe("2 enlaces");
-    expect(describeLinks([episode(1)], "MEGA")).toBe("1 enlace de Mega");
+    expect(describeLinks([episode(1)], "MEGA")).toBe("1 enlace de MEGA");
     expect(describeFailed([2])).toBe("El episodio 2 no tiene enlaces.");
     expect(describeFailed([1, 2, 3, 7])).toBe("Sin enlaces: episodios 1–3, 7.");
     expect(describeAudioFallback([episode(1, 1, "DUB" as never)], "SUB")).toBe(
@@ -100,7 +100,7 @@ describe("download copy helpers", () => {
       ),
     ).toEqual({
       heading: "¿Descargar 50 episodios?",
-      body: "Los enlaces de One Piece (Ep. 1–50) se enviarán a JDownloader, con todos los espejos de Mega y Pixeldrain.",
+      body: "Los enlaces de One Piece (Ep. 1–50) se enviarán a JDownloader, con todos los espejos de MEGA y Pixeldrain.",
     });
     expect(
       describeConfirmation(
@@ -116,7 +116,16 @@ describe("download copy helpers", () => {
         ["TRANSFERIT", "STREAMTAPE", "MEGA"],
       ).body,
     ).toBe(
-      "Los enlaces de One Piece (Ep. 1–50) se enviarán a JDownloader, con todos los espejos de Mega y Streamtape.",
+      "Los enlaces de One Piece (Ep. 1–50) se enviarán a JDownloader, con todos los espejos de MEGA y Streamtape.",
+    );
+    expect(
+      describeConfirmation(
+        { slug: "a", title: "One Piece", from: 1, to: 50, total: 50 },
+        "DESKTOP",
+        ["MEGA"],
+      ).body,
+    ).toBe(
+      "Los episodios de One Piece (Ep. 1–50) se solicitarán al PC con su configuración de descarga.",
     );
   });
 });

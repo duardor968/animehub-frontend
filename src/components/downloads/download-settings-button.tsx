@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Tooltip } from "@heroui/react";
-import { SlidersHorizontal } from "lucide-react";
+import { Settings } from "lucide-react";
 import { preloadDownloadDrawer, useDownloads } from "./download-provider";
 
 const label = "Preferencias de descarga";
@@ -22,12 +22,12 @@ export function DownloadSettingsButton() {
   return (
     <>
       <Button {...actions} className="max-xl:hidden">
-        <SlidersHorizontal aria-hidden="true" />
+        <Settings aria-hidden="true" />
         Preferencias
       </Button>
       <Tooltip delay={300}>
         <Button {...actions} isIconOnly className="xl:hidden">
-          <SlidersHorizontal aria-hidden="true" />
+          <Settings aria-hidden="true" />
         </Button>
         <Tooltip.Content>{label}</Tooltip.Content>
       </Tooltip>

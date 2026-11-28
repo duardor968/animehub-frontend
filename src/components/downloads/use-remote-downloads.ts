@@ -375,7 +375,7 @@ export function useRemoteDownloads(settingsOpen: boolean) {
       setProfileRetry(device.id);
       throw new ApiResponseError(
         409,
-        `En ${device.name}, abre AnimeHub para PC → Ajustes → Descargas y configura un perfil predeterminado.`,
+        `En ${device.name}, abre AnimeHub para PC → Ajustes → Descargas y configura la carpeta de descarga.`,
       );
     }
     setProfileRetry(null);

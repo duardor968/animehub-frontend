@@ -473,6 +473,7 @@ it("locates a missing profile in Desktop and retries the same PC after refreshin
       "AnimeHub para PC → Ajustes → Descargas",
     ),
   );
+  expect(result.current.error).not.toContain("perfil predeterminado");
   expect(result.current.errorScope).toBe("request");
   expect(result.current.profileRetry).toBe("pc1");
   expect(remoteClient.create).not.toHaveBeenCalled();

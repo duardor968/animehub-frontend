@@ -891,7 +891,7 @@ describe("DownloadProvider drawer", () => {
     const drawer = await screen.findByRole("dialog", {
       name: "Preferencias de descarga",
     });
-    for (const name of ["Mega", "Pixeldrain"])
+    for (const name of ["MEGA", "Pixeldrain"])
       fireEvent.click(within(drawer).getByRole("checkbox", { name }));
 
     // The last one marked can't be unmarked, and says why. Read-only, not
@@ -906,9 +906,9 @@ describe("DownloadProvider drawer", () => {
         .providers,
     ).toEqual(["MP4UPLOAD"]);
 
-    // Transfer.it only copies: a JDownloader destination can't use it.
+    // transfer.it only copies: a JDownloader destination can't use it.
     const transfer = within(drawer).getByRole("checkbox", {
-      name: "Transfer.it",
+      name: "transfer.it",
     });
     fireEvent.click(transfer);
     expect(transfer).not.toBeChecked();
@@ -921,7 +921,7 @@ describe("DownloadProvider drawer", () => {
     const drawer = await screen.findByRole("dialog", {
       name: "Preferencias de descarga",
     });
-    const mega = within(drawer).getByRole("checkbox", { name: "Mega" });
+    const mega = within(drawer).getByRole("checkbox", { name: "MEGA" });
     fireEvent.click(mega);
     fireEvent.click(mega);
     expect(
@@ -930,7 +930,7 @@ describe("DownloadProvider drawer", () => {
     ).toEqual(["MEGA", "PIXELDRAIN", "MP4UPLOAD"]);
   });
 
-  it("offers Transfer.it when links are copied, beside the last JDownloader one", async () => {
+  it("offers transfer.it when links are copied, beside the last JDownloader one", async () => {
     preferCopy(["MP4UPLOAD"]);
     renderProvider();
     act(() => handle.current?.openSettings());
@@ -938,7 +938,7 @@ describe("DownloadProvider drawer", () => {
       name: "Preferencias de descarga",
     });
     const transfer = within(drawer).getByRole("checkbox", {
-      name: "Transfer.it",
+      name: "transfer.it",
     });
     fireEvent.click(transfer);
     expect(transfer).toBeChecked();
@@ -1045,7 +1045,7 @@ describe("DownloadProvider large downloads", () => {
       name: "¿Descargar los episodios 1–25?",
     });
     expect(confirm).toHaveTextContent(
-      "Los enlaces de Otome Game Sekai 2 se enviarán a JDownloader, con todos los espejos de Mega, Pixeldrain y MP4Upload.",
+      "Los enlaces de Otome Game Sekai 2 se enviarán a JDownloader, con todos los espejos de MEGA, Pixeldrain y MP4Upload.",
     );
     fireEvent.click(within(confirm).getByRole("button", { name: "Cancelar" }));
     await waitFor(() =>
